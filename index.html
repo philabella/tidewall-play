@@ -5498,8 +5498,61 @@ const ART = {
     return M.geo();
   },
 };
+// LAS-43: the creatures that play against the light. Render names: diver (sinks when lit), dimmer (a dark halo eats the
+// beam), mirror (boss, shines back at the lighthouse). The mirror's glass disc is its own mesh (T.mirror.glass).
+Object.assign(ART, {
+  // the Diver (~0.9 long): a blind, seal-bodied eel-thing, low on the water, ridged back, paddle flippers, a bell of bone on the head
+  diver() {
+    const M = model(), dk = '#2f5a5c';
+    M.add(loft([[0, 0.05, 0.06, 0.06], [0.22, 0.2, 0.15, 0.16], [0.5, 0.26, 0.18, 0.2], [0.78, 0.2, 0.14, 0.15], [1.05, 0.1, 0.08, 0.08], [1.25, 0.03, 0.03, 0.03]], 7, 2.6),
+      CK.skin, [0, 0.34, -0.55], [Math.PI / 2, 0, 0], [1, 1, 1]);
+    M.add(loft([[0.12, 0.14, 0.04, 0.04, 0.15], [0.5, 0.17, 0.04, 0.04, 0.2]], 5, 2.6), CK.belly, [0, 0.08, 0.05], [Math.PI / 2, 0, 0]);
+    M.add(ico(0.2), '#8ec2b5', [0, 0.4, 0.5], [0.2, 0, 0], [1, 0.85, 1.2]);
+    M.add(cone(0.12, 0.3, 5), CK.bone, [0, 0.64, 0.5], [0, 0, 0]);   // the bell: a bone horn that feels the water
+    for (let i = 0; i < 5; i++) M.add(cone(0.07 - i * 0.008, 0.28 - i * 0.03, 4), CK.fin, [0, 0.58 - i * 0.02, 0.15 - i * 0.2], [-0.35, 0, 0]);
+    M.sym(s => M.add(new T3.BoxGeometry(0.34, 0.03, 0.2), dk, [0.3 * s, 0.22, 0.12], [0.1, -0.5 * s, -0.4 * s])
+      .add(new T3.BoxGeometry(0.22, 0.03, 0.14), dk, [0.2 * s, 0.2, -0.45], [0.1, 0.5 * s, -0.3 * s]));
+    M.add(new T3.BoxGeometry(0.02, 0.34, 0.3), dk, [0, 0.3, -1.2], [0.2, 0, 0]);   // the tail fluke (upright)
+    return M.geo();
+  },
+  // the Dimmer (~1.4, hovering): a shroud of black cloth round a dead lantern; no body, strips of rag, a pale hollow for a face
+  dimmer() {
+    const M = model(), cl = '#2b2f3f', ra = '#3b4056';
+    M.add(loft([[0.35, 0.05, 0.05, 0.05], [0.7, 0.22, 0.2, 0.2], [1.1, 0.3, 0.25, 0.25], [1.5, 0.2, 0.17, 0.17], [1.78, 0.05, 0.05, 0.05]], 8, 2.4), cl, [0, 0.3, 0]);
+    M.add(ico(0.17, 1), '#0c0e14', [0, 1.28, 0.2], [0, 0, 0], [1, 1.15, 0.6]);   // the face: a black hollow
+    M.add(cone(0.1, 0.5, 5), cl, [0, 1.95, -0.05], [-0.25, 0, 0]);   // the hood's point, bent back
+    M.add(ico(0.1), '#6a7396', [0, 0.78, 0.3], [0, 0, 0]);   // the dead lantern it clutches (cold, unlit glass)
+    M.add(new T3.BoxGeometry(0.16, 0.14, 0.16), '#474d63', [0, 0.97, 0.3]);
+    for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2;   // rag strips hanging from the hem
+      M.add(new T3.BoxGeometry(0.1, 0.55 - (i % 3) * 0.1, 0.02), i % 2 ? cl : ra, [Math.sin(a) * 0.27, 0.42, Math.cos(a) * 0.25], [0.1, a, 0.06 * (i - 3)]); }
+    M.sym(s => M.limb([0.2 * s, 1.22, 0.05], [0.42 * s, 0.9, 0.38], 0.05, 0.03, cl, 4).limb([0.42 * s, 0.9, 0.38], [0.14 * s, 0.82, 0.42], 0.03, 0.025, ra, 4));
+    return M.geo();
+  },
+  // the Mirror Warden (boss, ~4.2): a drowned giant in a cracked glass cuirass, a crown of shards, one arm holding a great round
+  // mirror out toward the lighthouse (the disc itself is mirrorGlass(), a separate mesh that flashes)
+  mirror() {
+    const M = model(), st = '#3d5a5a', gl = '#9fc9cf';
+    M.add(loft([[0.9, 0.5, 0.4, 0.4, 0], [1.7, 0.85, 0.6, 0.65, 0.1], [2.6, 0.95, 0.65, 0.75, 0.2], [3.3, 0.6, 0.45, 0.5, 0.3]], 8, 3.4), st);
+    M.add(loft([[1.4, 0.5, 0.06, 0.02, 0.62], [2.5, 0.62, 0.06, 0.02, 0.82]], 5, 3), gl);   // the glass cuirass
+    M.add(ico(0.42), '#6c9490', [0, 3.5, 0.55], [0.3, 0, 0], [1, 0.95, 1.1]);
+    for (let i = 0; i < 7; i++) { const a = (i - 3) * 0.32; M.add(cone(0.1, 0.5 + 0.2 * (3 - Math.abs(i - 3)), 4), gl, [Math.sin(a) * 0.5, 3.85, 0.45 - Math.abs(a) * 0.2], [0, 0, -a * 0.5]); }   // the crown of shards
+    M.sym(s => M.limb([0.95 * s, 3.0, 0.2], [1.25 * s, 2.0, 0.6], 0.3, 0.25, st, 6).limb([1.25 * s, 2.0, 0.6], [s > 0 ? 0.95 : 0.9, 1.4, 1.4], 0.25, 0.3, st, 6)
+      .limb([0.45 * s, 1.0, 0], [0.55 * s, 0.05, 0.1], 0.3, 0.24, st, 6).add(ico(0.26), CK.dark, [0.55 * s, 0.08, 0.14], [0, 0, 0], [1.3, 0.7, 1.5]));
+    for (let i = 0; i < 5; i++) M.add(ico(0.12 + (i % 2) * 0.05), CK.bone, [-0.55 + i * 0.28, 3.05 - (i % 2) * 0.4, -0.55], [i, 0, 0], [1, 0.7, 0.6]);   // barnacles on the back
+    return M.geo();
+  },
+});
+// the mirror's disc: a round pane held in front of the Warden's arms, face toward +z (the lighthouse); white vertex colour, the
+// instance colour is its dull-to-flash level
+function mirrorGlass() {
+  const M = model();
+  M.add(new T3.CylinderGeometry(1.25, 1.25, 0.08, 20), '#ffffff', [0, 0, 0], [Math.PI / 2, 0, 0]);
+  M.add(new T3.TorusGeometry(1.25, 0.1, 5, 20), CK.bone, [0, 0, 0]);
+  const g = M.geo(); g.translate(0, 2.3, 1.5); return g;
+}
 // eyes per kind: [halfSpacing, y, z, size] pairs mirrored (the Spawn has two pairs)
 const EYES = {
+  diver: [[0.1, 0.46, 0.64, 0.035], [0.14, 0.4, 0.55, 0.03]], dimmer: [[0.07, 1.3, 0.3, 0.045]], mirror: [[0.2, 3.55, 1.0, 0.1]],
   drowned: [[0.07, 1.13, 0.5, 0.045]], swarmer: [[0.06, 0.37, 0.26, 0.04], [0.11, 0.35, 0.18, 0.03]],
   brute: [[0.09, 1.76, 0.85, 0.05]], flyer: [[0.05, 1.27, 0.21, 0.035]],
   leviathan: [[0.3, 3.62, 1.45, 0.12]], siren: [[0.09, 3.28, 0.28, 0.06]], kraken: [[0.55, 1.75, 1.15, 0.22]],
@@ -5511,8 +5564,8 @@ function eyesGeo(kind) {
   if (kind === 'flyer') { g.translate(0, -0.75, 0); g.rotateX(1.05); g.translate(0, 0.75, 0); }
   return g;
 }
-const KIND = { drowned: 0, swarmer: 1, brute: 2, flyer: 3, leviathan: 4, siren: 5, kraken: 6 };
-const KLIST = Object.keys(KIND);
+const KIND = { drowned: 0, swarmer: 1, brute: 2, flyer: 3, diver: 4, dimmer: 5, leviathan: 6, siren: 7, kraken: 8, mirror: 9 };
+const KLIST = Object.keys(KIND), BOSSK = 6;   // ki >= BOSSK = a boss
 
 // ---------- walk / swim cycles (LAS-21): a vertex shader on each kind's instanced meshes (body and eyes alike, so
 // heads and eyes stay together). The stride phase comes from the creature's distance to the citadel (read from the
@@ -5542,6 +5595,15 @@ const GAIT = {
   siren: `{ vec3 p=position; float ph=uT*1.7+gId(); float tw=clamp((1.9-p.y)/1.9,0.0,1.0);
     transformed.x+=sin(ph-p.y*1.6)*0.32*tw*tw; transformed.z+=cos(ph*0.5-p.y)*0.08*tw;
     float aw=step(0.4,abs(p.x))*step(2.8,p.y); transformed.x+=sin(uT*2.3+gId())*0.12*aw*(p.y-2.8); transformed.x+=sin(ph*0.5)*0.06*(1.0-tw); }`,
+  // LAS-43. The Diver swims: a wave runs down the body (z is the long axis), flippers paddle, the tail fluke sways
+  diver: `{ vec3 p=position; float ph=gPh(5.0)+gId(); float w=sin(ph-p.z*3.2); transformed.x+=w*0.09*(0.4-p.z*0.5); transformed.y+=abs(sin(ph*0.5))*0.03;
+    float fl=step(0.2,abs(p.x))*step(abs(p.z),0.6); transformed.y+=sin(ph+(p.x>0.0?0.0:3.1416))*0.06*fl; }`,
+  // the Dimmer drifts: the shroud billows, the rag hem trails, the whole shape bobs slowly and leans into its slow glide
+  dimmer: `{ vec3 p=position; float ph=uT*1.6+gId(); float hem=clamp((0.9-p.y)/0.9,0.0,1.0); transformed.x+=sin(ph*1.3+p.y*5.0)*0.1*hem*(0.3+hem);
+    transformed.z+=cos(ph+p.x*4.0)*0.08*hem; transformed.y+=sin(ph*0.7)*0.1; transformed.x+=sin(ph*0.5)*0.03*p.y; }`,
+  // the Mirror Warden stands: heavy breath in the chest, the head and crown nod, the mirror arm holds steady
+  mirror: `{ vec3 p=position; float ph=uT*0.9+gId(); float up=clamp((p.y-1.0)/3.0,0.0,1.0); transformed.y+=sin(ph)*0.05*up; transformed.x+=sin(ph*0.5)*0.05*up*up;
+    transformed.z+=sin(ph+0.6)*0.04*up; }`,
   // the Kraken's arms curl and reach around the mantle, each out of step with the next
   kraken: `{ vec3 p=position; float r=length(p.xz); float a=atan(p.x,p.z); float w=smoothstep(0.6,1.4,r)*step(p.y,1.3);
     float d=sin(uT*1.8+a*3.0-r*1.7+gId())*0.3*(r-0.5)*w; transformed.x+=cos(a)*d; transformed.z-=sin(a)*d;
@@ -5653,13 +5715,13 @@ function buildScene() {
   // the Tide: per creature kind one InstancedMesh for the body (vertex colours x instance colour) and one for the eyes,
   // each with that kind's walk/swim shader; the Nightgaunts add two wing meshes (they flap) and a soft shadow on the water
   const col = new T3.Color(), T = {};
-  const cap = k => k === 'drowned' || k === 'swarmer' ? RLOOK.maxEnemies : k === 'brute' || k === 'flyer' ? 2000 : 16;
+  const cap = k => k === 'drowned' || k === 'swarmer' ? RLOOK.maxEnemies : k === 'brute' || k === 'flyer' || k === 'diver' || k === 'dimmer' ? 2000 : 16;
   const inst = (g, m, n) => { const x = new T3.InstancedMesh(g, m, n); x.instanceMatrix.setUsage(T3.DynamicDrawUsage); x.count = 0; x.frustumCulled = false; scene.add(x); return x; };
   for (const k of KLIST) {
     const bodyMat = gaitMat(new T3.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.6, metalness: 0.1 }), k, true);
     const eyeMat = gaitMat(new T3.MeshBasicMaterial({ color: RLOOK.eye }), k, false);
     const g = ART[k](), n = cap(k), body = inst(g, bodyMat, n);
-    body.receiveShadow = true; body.castShadow = KIND[k] >= 4;   // only bosses cast real shadows
+    body.receiveShadow = true; body.castShadow = KIND[k] >= BOSSK;   // only bosses cast real shadows
     for (let i = 0; i < n; i++) body.setColorAt(i, col.setRGB(1, 1, 1));
     body.instanceColor.setUsage(T3.DynamicDrawUsage);
     T[k] = { body, eyes: inst(eyesGeo(k), eyeMat, n), tris: tris(g) };
@@ -5674,6 +5736,19 @@ function buildScene() {
   litPool.renderOrder = 2; for (let i = 0; i < litPool.instanceMatrix.count; i++) litPool.setColorAt(i, col.setRGB(0, 0, 0)); litPool.instanceColor.setUsage(T3.DynamicDrawUsage);
   T.litPool = litPool;
   T.flyer.shadow = inst(new T3.CylinderGeometry(0.55, 0.55, 0.01, 10), new T3.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.32, depthWrite: false }), 2000);
+  // LAS-43: the Mirror Warden's disc (own mesh, flashes), the Dimmer's dark halos (eat the beam), ripples, bubbles' water rings, the mirror's flash
+  const mg = inst(mirrorGlass(), gaitMat(new T3.MeshBasicMaterial({ vertexColors: true, fog: false }), 'mirror', false), 16);
+  for (let i = 0; i < 16; i++) mg.setColorAt(i, col.setRGB(1, 1, 1)); mg.instanceColor.setUsage(T3.DynamicDrawUsage); T.mirror.glass = mg; T.mirror.tris += tris(mg.geometry);
+  const hg = new T3.PlaneGeometry(1, 1); hg.rotateX(-Math.PI / 2);
+  T.halo = inst(hg, new T3.MeshBasicMaterial({ color: '#000', map: darkTex(), transparent: true, depthWrite: false, fog: false, opacity: 0.92 }), 96); T.halo.renderOrder = 5;
+  T.ripple = inst(ringGeo(0.9), new T3.MeshBasicMaterial({ color: '#fff', transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false, side: T3.DoubleSide }), 64);
+  T.ripple.renderOrder = 3; for (let i = 0; i < 64; i++) T.ripple.setColorAt(i, col.setRGB(0, 0, 0)); T.ripple.instanceColor.setUsage(T3.DynamicDrawUsage);
+  const fgp = new T3.PlaneGeometry(14, 70); fgp.rotateX(-Math.PI / 2); fgp.translate(0, 0, 35);
+  const fgv = new T3.PlaneGeometry(14, 70); fgv.rotateX(-Math.PI / 2); fgv.rotateZ(Math.PI / 2); fgv.translate(0, 0, 35);
+  T.flash = inst(T3.mergeGeometries([fgp, fgv]), new T3.MeshBasicMaterial({ color: '#fff', map: coneTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, side: T3.DoubleSide, fog: false }), 16);
+  T.flash.renderOrder = 4; for (let i = 0; i < 16; i++) T.flash.setColorAt(i, col.setRGB(0, 0, 0)); T.flash.instanceColor.setUsage(T3.DynamicDrawUsage);
+  T.star = inst(new T3.PlaneGeometry(1, 1), new T3.MeshBasicMaterial({ color: '#fff', map: halo.material.map, transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false }), 16);
+  T.star.renderOrder = 6; for (let i = 0; i < 16; i++) T.star.setColorAt(i, col.setRGB(0, 0, 0)); T.star.instanceColor.setUsage(T3.DynamicDrawUsage);
   // shots, one InstancedMesh per gun: Cannon shells, Ballista bolts (long, they fly nose first), Mortar bombs, Tesla sparks
   const SHOT = {};
   const shotMesh = (g, c, add) => { const m = new T3.InstancedMesh(g, mat(c, { glow: 1, add }), RLOOK.maxShots); m.instanceMatrix.setUsage(T3.DynamicDrawUsage); m.count = 0; m.frustumCulled = false; scene.add(m); return m; };
@@ -5703,6 +5778,18 @@ function buildScene() {
     tris: { drowned: T.drowned.tris, kinds: KLIST.map(k => k + ' ' + T[k].tris).join(', ') } });
   buildMounts(scene);
   if (root.TWFx) root.TWFx.init({ T3, scene, cam, R, RLOOK });   // fx.js: numbers, banners, beam, flood, shake, sounds
+}
+
+// the Dimmer's halo: black with ragged tendrils that run out from the centre (the mesh turns slowly, so they crawl); alpha is the strength
+function darkTex() {
+  const N = 128, c = document.createElement('canvas'); c.width = c.height = N; const x = c.getContext('2d'), im = x.createImageData(N, N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const dx = (i + 0.5) / N * 2 - 1, dy = (j + 0.5) / N * 2 - 1, r = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+    const edge = 1 - 0.28 * (0.5 + 0.5 * Math.sin(a * 7 + 1.3)) * (0.6 + 0.4 * Math.sin(a * 3 - 0.4)) - 0.12 * Math.sin(a * 13);   // the ragged rim
+    const q = Math.max(0, 1 - r / edge), v = Math.min(1, Math.pow(q, 0.55) * 1.5) * (r < 1 ? 1 : 0), o = (j * N + i) * 4;
+    im.data[o] = im.data[o + 1] = im.data[o + 2] = 0; im.data[o + 3] = 255 * v;
+  }
+  x.putImageData(im, 0, 0); const t = new T3.CanvasTexture(c); t.colorSpace = T3.SRGBColorSpace; return t;
 }
 
 // a flat ring (inner 0.8, outer 1) facing up: the trimmed three has no RingGeometry
@@ -6411,7 +6498,7 @@ function resize() {
 // ---------- per-run state (render-owned: WeakMaps keyed by sim objects, never fields on them)
 function setRun(S) {
   R.S = S; R.camD = 0; R.prev = new WeakMap(); R.shotT0 = new WeakMap(); R.bossT0 = new Map(); if (R.D) R.D.k = -1;
-  R.spark = []; R.lastNow = 0; R.fpsT = 0; R.fpsN = 0; R.fps = 0; R.worst = 0; R.worstShown = 0;
+  R.spark = []; R.ripples = []; if (R.X) { R.X.sink.clear(); R.X.mf.clear(); } devInit(); R.lastNow = 0; R.fpsT = 0; R.fpsN = 0; R.fps = 0; R.worst = 0; R.worstShown = 0;
   if (root.TWFx) root.TWFx.reset(S);
 }
 
@@ -6452,7 +6539,7 @@ function dispPos(e, alpha) {
 const flyH = (e, d) => { const b = R.off > 0.05 ? Math.max(1.7, R.walkY + 0.3) : 1.7;   // over the outer wall's battlements once it stands
   return (e.atWall ? b : b + Math.min(1.4, Math.max(0, d - 4) * 0.12)) + 0.22 * Math.sin(R.t * 2.3 + e.id); };
 // the height of a creature's chest / head above its feet (shots aim at the chest, numbers float over the head)
-const CHEST = [0.8, 0.3, 1.2, 0.75, 2.6, 2.6, 2.0], HEAD = [1.5, 0.8, 2.4, 1.6, 4.6, 4.6, 4.0];
+const CHEST = [0.8, 0.3, 1.2, 0.75, 0.35, 1.0, 2.6, 2.6, 2.0, 2.4], HEAD = [1.5, 0.8, 2.4, 1.6, 0.9, 2.0, 4.6, 4.6, 4.0, 5.0];
 // a uniform-scale matrix whose +z points along (dx, dy, dz): bolts fly nose first
 function putDir(a, i, dx, dy, dz, x, y, z) {
   const L = Math.hypot(dx, dy, dz) || 1, fx = dx / L, fy = dy / L, fz = dz / L;
@@ -6546,6 +6633,97 @@ function litAmt(S, e) {   // 0..1; > 0 exactly when the guns can shoot e (sim is
   if (S.dark) { const D = S.dark; if (e.x * D.ca + e.y * D.sa >= Math.hypot(e.x, e.y) * D.ch) return 0; }
   const rem = e.litT - S.t; return rem < 0 ? 0 : rem >= LIT_FADE ? 1 : 0.12 + 0.88 * rem / LIT_FADE;
 }
+// ---------- LAS-43: the creatures that play against the light
+// Render contract for the sim (all optional, render falls back to what it can see):
+//   diver  : e.under > S.t = it is under water (already how litAmt reads it). Sinks, bubbles and a ripple on each dive / surfacing.
+//   dimmer : e.dimR = radius of its dark halo in sim units (default 6). The halo is drawn over the beam, so the light visibly dies in it.
+//   mirror : e.boss. Flashes whenever the beam (S.beam a/w/len, a2) sweeps over it, or e.shine > 0; the flash cone points at the lighthouse.
+// Dev: ?spawn=diver|dimmer|mirror|all (query or hash) draws a fixed group of that kind (render-only, never in S.enemies).
+const M4 = new T3.Matrix4(), V3a = new T3.Vector3(), V3b = new T3.Vector3();
+function inBeam(S, e) {
+  const B = S.beam; if (!B) return false;
+  const d = Math.hypot(e.x, e.y), a = Math.atan2(e.y, e.x); if (d > B.len + 3) return false;
+  const df = x => Math.abs(Math.atan2(Math.sin(a - x), Math.cos(a - x))) < B.w / 2 + 0.04;
+  return df(B.a) || (B.a2 !== null && B.a2 !== undefined && df(B.a2));
+}
+function devTick(S, t) {
+  for (const e of R.dev) {
+    e.hp = e.maxHp = 1; const lit = inBeam(S, e);
+    if (lit) e.litT = S.t + 3.5;
+    if (e.kind === 'diver') e.under = lit || e.hold ? S.t + 1 : 0;
+  }
+  return R.dev;
+}
+function devInit() {
+  const q = (root.location.search + '&' + root.location.hash).match(/[?&#]spawn=([a-z]+)/); R.dev = null; if (!q) return;
+  if (q[1] === 'crowd') {   // perf: 380 Divers + 380 Dimmers + 4 Wardens on top of the stress crowd (render-only)
+    let z = 12345; const rn = () => (z = (z * 16807) % 2147483647) / 2147483647; R.dev = [];
+    for (let i = 0; i < 764; i++) { const k = i < 380 ? 'diver' : i < 760 ? 'dimmer' : 'mirror', a = rn() * 6.283, r = 12 + rn() * 32;
+      R.dev.push({ id: 9500 + i, kind: k, x: Math.cos(a) * r, y: Math.sin(a) * r, hp: 1, maxHp: 1, litT: 0, under: 0, rad: 0.5, boss: k === 'mirror', dimR: 4, fly: false, atWall: false, dev: 1 }); }
+    return;
+  }
+  if (q[1] === 'sheet') {   // the model sheet: one row at x = 20 (checks/creatures.js frames it), the second Diver forced under water
+    R.dev = [['diver', -9, 0], ['diver', -6.5, 1], ['dimmer', -2.5, 0], ['mirror', 5, 0]].map(([kind, y, u], i) => ({ id: 9100 + i, kind, x: 20, y, hp: 1, maxHp: 1, litT: 0, under: 0, rad: 0.5, boss: kind === 'mirror', dimR: 3.2, fly: false, atWall: false, dev: 1, hold: u }));
+    return;
+  }
+  const kinds = q[1] === 'all' ? ['diver', 'dimmer', 'mirror'] : [q[1]]; const L = []; let id = 9000;
+  kinds.forEach((k, ki) => {
+    const big = k === 'mirror', n = big ? 2 : 6, rad = big ? 24 : 15 + ki * 3;
+    for (let i = 0; i < n; i++) {
+      const a = (kinds.length > 1 ? (ki - 1) * 0.55 : 0) + (i - (n - 1) / 2) * (big ? 0.5 : 0.17), r = rad + (i % 2) * 3;
+      L.push({ id: id++, kind: k, x: Math.cos(a) * r, y: Math.sin(a) * r, hp: 1, maxHp: 1, litT: 0, under: 0, rad: 0.5, boss: big, dimR: 5, fly: false, atWall: false, dev: 1 });
+    }
+  });
+  R.dev = L;
+}
+function specialBegin(S, t, dt) {
+  const X = R.X || (R.X = { g: 0, h: 0, f: 0, sink: new Map(), mf: new Map() });
+  X.h = X.f = 0; X.dt = dt; if (!R.ripples) R.ripples = [];
+  return X;
+}
+function ripple(x, z, s, life, c) { if (R.ripples.length < 60) R.ripples.push({ x, z, s, life, age: 0, c: c || 1 }); }
+function special(X, e, ki, j, s, yaw, p, bob, rise, S, t, dt) {
+  const T = R.T;
+  if (ki === 4) {   // the Diver: sinks while under water (the back fin stays up), a ripple and bubbles on every dive / surfacing, a stream while down
+    let st = X.sink.get(e.id); if (!st) X.sink.set(e.id, st = { q: 0, u: false, b: 0 });
+    const u = e.under > S.t; st.q += ((u ? 1 : 0) - st.q) * Math.min(1, dt * 5);
+    if (u !== st.u) { st.u = u; ripple(p.x, p.z, 0.6, 1.1); ripple(p.x, p.z, 0.3, 0.8, 0.8); for (let i = 0; i < 6; i++) puff(p.x + (Math.random() - 0.5) * 0.7, 0.3, p.z + (Math.random() - 0.5) * 0.7, 1, 0.9, 1.4, 0.5); }
+    if (st.q > 0.5 && (st.b -= dt) < 0) { st.b = 0.13 + Math.random() * 0.15; puff(p.x + (Math.random() - 0.5) * 0.5, 0.2, p.z + (Math.random() - 0.5) * 0.5, 1, 1.0, 1.6, 0.45); if (Math.random() < 0.4) ripple(p.x, p.z, 0.35, 0.9, 0.5); }
+    return st.q;
+  }
+  if (ki === 5) {   // the Dimmer: a dark halo on the water, tendrils crawling (it turns slowly), breathing
+    if (X.h < 96) { const r = (e.dimR || 6) * (1 + 0.05 * Math.sin(t * 1.3 + e.id)); putM(T.halo.instanceMatrix.array, X.h++, t * 0.12 + e.id, r * 2, p.x, 0.42, p.z); }
+    return 0;
+  }
+  // ki === 9, the Mirror Warden: the disc goes from dull steel to white-hot when the beam sweeps over it; a cone leaps back at the lighthouse
+  let fl = X.mf.get(e.id) || 0; const hit = e.shine > 0 || inBeam(S, e);
+  fl += ((hit ? 1 : 0) - fl) * Math.min(1, dt * (hit ? 14 : 2.4)); X.mf.set(e.id, fl);
+  const GC = T.mirror.glass.instanceColor.array, a = 0.22 + 0.04 * Math.sin(t * 1.5 + e.id);
+  GC[j * 3] = a + fl * 1.5; GC[j * 3 + 1] = a * 1.2 + fl * 1.5; GC[j * 3 + 2] = a * 1.3 + fl * 1.4;
+  if (X.f < 16) {
+    const f = X.f++, c = Math.cos(yaw), n = Math.sin(yaw), cx = p.x + n * 1.5 * s, cz = p.z + c * 1.5 * s, cy = p.y + rise + 2.3 * s;   // the disc's centre
+    const dx = -cx, dz = -cz, d = Math.hypot(dx, dz), ya = Math.atan2(dx, dz), FA = T.flash.instanceMatrix.array, o = f * 16;
+    FA.fill(0, o, o + 16); FA[o] = Math.cos(ya) * 0.55; FA[o + 2] = -Math.sin(ya) * 0.55; FA[o + 5] = 1; FA[o + 8] = Math.sin(ya) * d / 70; FA[o + 10] = Math.cos(ya) * d / 70;
+    FA[o + 12] = cx; FA[o + 13] = Math.max(1.5, cy); FA[o + 14] = cz; FA[o + 15] = 1;
+    const FC = T.flash.instanceColor.array, k = fl * fl * 0.4; FC[f * 3] = k; FC[f * 3 + 1] = k * 0.95; FC[f * 3 + 2] = k * 0.8;
+    V3a.set(cx, cy, cz); V3b.setScalar(2 + fl * 4.5); M4.compose(V3a, R.cam.quaternion, V3b).toArray(T.star.instanceMatrix.array, f * 16);
+    const SC = T.star.instanceColor.array, w = fl * fl * 0.55; SC[f * 3] = w; SC[f * 3 + 1] = w * 0.96; SC[f * 3 + 2] = w * 0.82;
+    if (hit && Math.random() < 0.5 && R.spark.length < RLOOK.maxSparks) R.spark.push({ x: cx + (Math.random() - 0.5) * 2.4, y: cy + (Math.random() - 0.5) * 2.4, z: cz + (Math.random() - 0.5) * 2.4, vx: (Math.random() - 0.5) * 3 + dx / d * 3, vy: 1 + Math.random() * 2, vz: (Math.random() - 0.5) * 3 + dz / d * 3, life: 0.35, age: 0, kill: false });
+  }
+  return 0;
+}
+function specialEnd(X, cnt) {
+  const T = R.T;
+  T.halo.count = X.h; T.halo.instanceMatrix.needsUpdate = true;
+  T.flash.count = T.star.count = X.f; T.flash.instanceMatrix.needsUpdate = T.flash.instanceColor.needsUpdate = T.star.instanceMatrix.needsUpdate = T.star.instanceColor.needsUpdate = true;
+  T.mirror.glass.count = cnt[9]; T.mirror.glass.instanceMatrix.needsUpdate = T.mirror.glass.instanceColor.needsUpdate = true;
+  // water rings: each ripple grows and fades (colour = strength)
+  const RA = T.ripple.instanceMatrix.array, RC = T.ripple.instanceColor.array; let n = 0;
+  for (const r of R.ripples) { r.age += X.dt; if (r.age >= r.life) continue; const q = r.age / r.life, sc = 0.3 + q * 3.2 * r.s;
+    putM(RA, n, 0, sc, r.x, 0.14, r.z); const f = r.c * 0.09 * (1 - q) * (1 - q); RC[n * 3] = f * 0.7; RC[n * 3 + 1] = f * 0.95; RC[n * 3 + 2] = f; R.ripples[n++] = r; }
+  R.ripples.length = n; T.ripple.count = n; T.ripple.instanceMatrix.needsUpdate = T.ripple.instanceColor.needsUpdate = true;
+  if (X.sink.size > 400) X.sink.clear();
+}
 function frame(S, alpha, now) {
   if (!R.on) return;
   if (S !== R.S) setRun(S);
@@ -6564,24 +6742,29 @@ function frame(S, alpha, now) {
 
   // the Tide: each creature goes into its kind's meshes
   R.t = t;
-  const E = S.enemies, n = Math.min(E.length, RLOOK.maxEnemies), col = R.col, T = R.T, cnt = R.cnt || (R.cnt = new Int32Array(KLIST.length));
+  const E = R.dev ? S.enemies.concat(devTick(S, t)) : S.enemies, n = Math.min(E.length, RLOOK.maxEnemies), col = R.col, T = R.T, cnt = R.cnt || (R.cnt = new Int32Array(KLIST.length));
   cnt.fill(0); R.tall.clear(); R.litMap.clear();
+  const X = specialBegin(S, t, dtR);
   const lp = T.litPool, PL = lp.instanceMatrix.array, PC = lp.instanceColor.array; let nl = 0;
   const F = T.flyer, WL = F.wings[0].instanceMatrix.array, WR = F.wings[1].instanceMatrix.array, SH = F.shadow.instanceMatrix.array;
   for (let i = 0; i < n; i++) {
     const e = E[i], ki = KIND[e.kind] || 0, m = T[KLIST[ki]], j = cnt[ki]++;
+    let sinkQ = 0;
     if (j >= m.body.instanceMatrix.count) { cnt[ki]--; continue; }
     const p = dispPos(e, alpha), ph = e.id * 1.7, fast = ki === 1 ? 2.2 : ki === 2 ? 0.6 : 1;
     const yaw = Math.atan2(-p.x, -p.z) + 0.12 * Math.sin(t * 3 * fast + ph);
     const bob = e.fly ? 0 : e.atWall ? 0.12 * Math.abs(Math.sin(t * 6 * fast + ph)) : 0.05 * Math.sin(t * 5 * fast + ph);
-    const s = ki >= 4 ? RLOOK.bossScale : (0.92 + 0.16 * ((e.id * 7919) % 13) / 13) * (ki === 0 ? 1.15 : 1);
+    const s = ki >= BOSSK ? RLOOK.bossScale : (0.92 + 0.16 * ((e.id * 7919) % 13) / 13) * (ki === 0 ? 1.15 : 1);
     let rise = 0;
     if (e.boss) {   // the entry: the boss heaves up out of the sea over bossRise s, throwing foam and spray
       let t0 = R.bossT0.get(e.id); if (t0 === undefined) { t0 = t; R.bossT0.set(e.id, t0); bossSplash(p.x, p.z, t); }
       const q = Math.min(1, (t - t0) / RLOOK.bossRise); if (q < 1) { const e3 = 1 - Math.pow(1 - q, 3); rise = -(1 - e3) * HEAD[ki] * s * 1.05 + Math.sin(q * Math.PI) * 0.4;
         if (Math.random() < 0.5) R.spark.length < RLOOK.maxSparks && R.spark.push({ x: p.x + (Math.random() - 0.5) * 3, y: 0.2, z: p.z + (Math.random() - 0.5) * 3, vx: (Math.random() - 0.5) * 3, vy: 4 + Math.random() * 4, vz: (Math.random() - 0.5) * 3, life: 0.8, age: 0, kill: true }); }
     }
-    putM(m.body.instanceMatrix.array, j, yaw, s, p.x, p.y + bob + rise, p.z); putM(m.eyes.instanceMatrix.array, j, yaw, s, p.x, p.y + bob + rise, p.z);
+    if (ki === 4 || ki === 5 || ki === 9) sinkQ = special(X, e, ki, j, s, yaw, p, bob, rise, S, t, dtR);
+    const yy = p.y + bob + rise - (ki === 4 ? 0.82 * sinkQ * s : 0) + (ki === 5 ? 0.55 + 0.12 * Math.sin(t * 1.6 + ph) : 0);
+    putM(m.body.instanceMatrix.array, j, yaw, s, p.x, yy, p.z); putM(m.eyes.instanceMatrix.array, j, yaw, s, p.x, yy, p.z);
+    if (ki === 9) putM(m.glass.instanceMatrix.array, j, yaw, s, p.x, yy, p.z);
     if (e.fly) {   // wings flap (fast up, slow down), a shadow on the water under it
       const fl = Math.sin(t * 9 + ph), roll = 0.15 + 0.6 * fl * Math.abs(fl);
       putW(WL, j, yaw, roll, s, p.x, p.y, p.z, 0.12, 0.88, 0.2); putW(WR, j, yaw, -roll, s, p.x, p.y, p.z, -0.12, 0.88, 0.2);
@@ -6589,7 +6772,7 @@ function frame(S, alpha, now) {
       putM(SH, j, 0, 0.7 + 0.15 * (p.y - gy), p.x, gy, p.z + 0.4);
     }
     if (e.fly || e.boss) R.tall.set(e.id, p.y + bob + HEAD[ki] * s);
-    const k = e.maxHp > 0 ? Math.max(0, e.hp / e.maxHp) : 1, v = 0.45 + 0.55 * k;   // wounded ones darken toward the deep
+    const k = e.maxHp > 0 ? Math.max(0, e.hp / e.maxHp) : 1, v = (0.45 + 0.55 * k) * (1 - 0.5 * sinkQ);   // wounded ones darken toward the deep
     // LAS-24: lit by the lighthouse (the guns can shoot it) = warm and bright; in the dark = dim and cold
     // LAS-41: la = how lit it is (1 = full, fades over the last LIT_FADE s of its lit time, 0 = the guns can't shoot it); the same rule as sim isLit()
     const la = litAmt(S, e); R.litMap.set(e.id, la);
@@ -6605,6 +6788,7 @@ function frame(S, alpha, now) {
     const m = T[KLIST[ki]]; m.body.count = m.eyes.count = cnt[ki];
     m.body.instanceMatrix.needsUpdate = m.eyes.instanceMatrix.needsUpdate = m.body.instanceColor.needsUpdate = true;
   }
+  specialEnd(X, cnt);
   F.wings[0].count = F.wings[1].count = F.shadow.count = cnt[3];
   F.wings[0].instanceMatrix.needsUpdate = F.wings[1].instanceMatrix.needsUpdate = F.shadow.instanceMatrix.needsUpdate = true;
 
@@ -6616,13 +6800,14 @@ function frame(S, alpha, now) {
   const SB = S.beam;
   R.sweep.visible = !burning;
   if (SB) {   // LAS-24: the sim's beam drives both lamps; the second (Twin Lamp) points opposite, its lantern riding round the gallery
-    const sx = Math.tan(SB.w / 2) * 10, sz = (SB.len + (R.off || 0)) / 70,   /* LAS-27: drawn R.off further out */ op = 0.38 + (SB.flare > 0 ? 0.25 : 0) + 0.03 * Math.sin(t * 1.7);
+    const rr0 = SB.len + (R.off || 0), hh = R.LAMP[1] - 0.3, pit = Math.atan2(hh, rr0),   // LAS-43: the cone slopes from the lamp down to the water AT the reach ring (flat, it seemed to run past it from the high camera)
+      sx = Math.tan(SB.w / 2) * 10, sz = Math.hypot(rr0, hh) / 70,   /* LAS-27: drawn R.off further out */ op = 0.38 + (SB.flare > 0 ? 0.25 : 0) + 0.03 * Math.sin(t * 1.7);
     const rr = SB.len + (R.off || 0); R.reachRing.visible = true; R.reachRing.scale.set(rr, 1, rr); R.reachRing.material.opacity = 0.26 + 0.06 * Math.sin(t * 1.3);
-    R.sweep.rotation.set(0.1, Math.PI / 2 - SB.a, 0); R.sweep.scale.set(sx, 1, sz); R.sweep.material.opacity = op;
+    R.sweep.rotation.set(pit, Math.PI / 2 - SB.a, 0); R.sweep.scale.set(sx, 1, sz); R.sweep.material.opacity = op;
     const two = SB.a2 !== null && SB.a2 !== undefined;
     R.sweep2.visible = two && !burning; R.flare2.visible = two;
     if (two) {
-      const y2 = Math.PI / 2 - SB.a2; R.lamp2.rotation.y = y2; R.sweep2.rotation.set(0.1, y2, 0); R.sweep2.scale.set(sx, 1, sz);
+      const y2 = Math.PI / 2 - SB.a2; R.lamp2.rotation.y = y2; R.sweep2.rotation.set(pit, y2, 0); R.sweep2.scale.set(sx, 1, sz);
       R.sweep2.material.opacity = op * 0.9; R.flare2.quaternion.copy(R.cam.quaternion);
       R.flare2.position.set(R.lamp2.position.x + Math.sin(y2) * 0.98, R.lamp2.position.y, R.lamp2.position.z + Math.cos(y2) * 0.98); R.flare2.scale.setScalar(1.8);
     }
@@ -6651,7 +6836,7 @@ function frame(S, alpha, now) {
     const q = Math.min(1, Math.max(0, 1 - (s.left - alpha * S.T.dt) / t0)), e = s.tgt, p = dispPos(e, alpha), ki = KIND[e.kind] || 0;
     const mz = R.muzzle.get(s.x + ',' + s.y), kind = R.SHOT[s.kind] ? s.kind : 'cannon', M = R.SHOT[kind];
     const sx = mz ? mz[0] : s.x, sy = mz ? mz[1] : RLOOK.plateau + RLOOK.gunY, sz = mz ? mz[2] : s.y;
-    const ex = p.x, ey = p.y + CHEST[ki] * (ki >= 4 ? RLOOK.bossScale : 1), ez = p.z, d = Math.hypot(ex - sx, ez - sz);
+    const ex = p.x, ey = p.y + CHEST[ki] * (ki >= BOSSK ? RLOOK.bossScale : 1), ez = p.z, d = Math.hypot(ex - sx, ez - sz);
     const arc = kind === 'mortar' ? 0.45 : kind === 'ballista' || kind === 'harpoon' ? 0.03 : kind === 'tesla' ? 0 : 0.1;
     const x = sx + (ex - sx) * q, z = sz + (ez - sz) * q, y = sy + (ey - sy) * q + Math.sin(q * Math.PI) * d * arc, j = SC[kind]++;
     if (j >= RLOOK.maxShots) continue;
@@ -6960,7 +7145,7 @@ const CSS = `
 #tw-cards:hover .card:not(:hover):not(.took):not(.gone){filter:brightness(.78)}   /* the others step back */
 .card .md{animation:twBob 3s ease-in-out infinite;animation-delay:calc(var(--i,0) * -.7s)}
 @keyframes twBob{0%,100%{translate:0 0}50%{translate:0 -4px}}
-.card .fo{position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:2;mix-blend-mode:screen;background:linear-gradient(115deg,transparent 30%,rgba(255,255,255,.2) 45%,rgba(255,150,120,.18) 50%,transparent 62%);background-size:250% 100%;animation:twFoil 3.2s ease-in-out infinite}   /* idle foil on the Build-breakers (Tropebrawl's top tier) */
+.card .cfoil{position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:2;mix-blend-mode:screen;background:linear-gradient(115deg,transparent 30%,rgba(255,255,255,.2) 45%,rgba(255,150,120,.18) 50%,transparent 62%);background-size:250% 100%;animation:twFoil 3.2s ease-in-out infinite}   /* idle foil on the Build-breakers (Tropebrawl's top tier) */
 @keyframes twFoil{0%{background-position:120% 0}55%,100%{background-position:-60% 0}}
 .card.took{animation:twTake .42s cubic-bezier(.5,0,.8,.4) forwards;z-index:5}
 .card.gone{animation:twGone .3s ease-in forwards}
@@ -7140,6 +7325,32 @@ const CSS = `
 @keyframes twNode{50%{box-shadow:inset 0 -3px 5px rgba(90,20,0,.5),0 0 0 5px rgba(255,179,107,.12),0 0 30px rgba(255,150,60,.9)}}
 #tw-goal,#tw-pick .sub,#tw-over .sub,#tw-set .sub{font-family:Cinzel,Georgia,serif;font-weight:500;letter-spacing:.05em}
 #tw-goal{font-size:13px}
+/* LAS-48: readable HUD (nothing under 13 px at 1080 high, growing with the window height), ability buttons with an icon, a name, a key cap
+   and a cooldown sweep + Barlow number, and the debug #fps only with #dev */
+#fps{display:none!important}
+body.twdev #fps{display:block!important}
+#tw-top .lab,#tw-stats .lab,#tw-rec .k{font-size:max(13px,1.25vh)}
+#tw-top .big{font-size:max(26px,2.5vh)}
+#tw-hpbar b{font-size:max(14px,1.35vh)}
+.up{width:max(170px,15.8vh)}
+.up .nm{font-size:max(15px,1.45vh)}
+.up .lv,.up .key{font-size:max(13px,1.2vh)}
+.up .now{font-size:max(14px,1.35vh)}
+.up .cost{font-size:max(17px,1.6vh)}
+.up.max .cost{font-size:max(13px,1.2vh)}
+#tw-goal{font-size:max(15px,1.4vh)}
+#tw-tip .hint,#tw-teach small{font-size:max(13px,1.2vh)}
+#tw-abs{gap:max(14px,1.3vh);padding:8px 12px 30px;align-items:flex-start}
+.ab{width:max(96px,9vh);height:max(96px,9vh);margin-bottom:6px}
+.ab .ic{inset:10%;background:radial-gradient(circle at 50% 30%,rgba(127,232,220,.26),rgba(5,17,19,.96) 72%)}
+.ab .ic svg{position:static;width:54%;height:54%;fill:none;stroke:#bff3ec;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 4px rgba(127,232,220,.55))}
+.ab .ic svg .f{fill:rgba(191,243,236,.3)}
+.ab.cool .ic svg{opacity:.45}
+.ab .sw{position:absolute;inset:10%;border-radius:50%;pointer-events:none;background:conic-gradient(rgba(3,10,12,.78) calc(var(--cd,0) * 1turn),transparent 0)}
+.ab .cdn{font-family:Barlow,sans-serif;font-size:max(30px,2.9vh);font-weight:700;font-variant-numeric:tabular-nums;color:#fff;text-shadow:0 0 6px #000,0 2px 6px #000}
+.ab .k{top:-3px;left:-3px;bottom:auto;transform:none;font-size:max(13px,1.2vh);min-width:1.6em;text-align:center;padding:1px 6px;border-radius:5px;background:#10373a;color:#e8fbf7;z-index:2}
+.ab .nm{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:5px;white-space:nowrap;font-family:Cinzel,Georgia,serif;font-weight:600;font-size:max(13px,1.2vh);letter-spacing:.08em;text-transform:uppercase;color:#a9d8d2}
+.ab.ready .nm{color:#e8fbf7}.ab.armed .nm{color:${AMBER}}
 /* the tree panel hugs the tree (square-ish) and sits beside the column; rows of stats stay compact */
 #tw-over .fgbox{max-width:min(1500px,128vh)}
 `;
@@ -7210,9 +7421,9 @@ const $ = id => document.getElementById(id);
 function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
 
 const AB = {
-  beam:  { name: 'Flare', key: 'Q', glyph: '&#x2600;', text: I => `The lighthouse flares: ${fmt(I.dmg)} damage to every creature within ${I.r} m, and the whole sea is lit for ${I.flareFor} s, so every gun can shoot.` },
-  keg:   { name: 'Powder Keg', key: 'R', glyph: '&#x2738;', text: I => `Thrown where you click: ${fmt(I.dmg)} damage to every creature within ${I.r} m.` },
-  flood: { name: 'Flood Gate', key: 'E', glyph: '&#x224B;', text: I => `Opens a ${Math.round(I.arc * 180 / Math.PI)}&deg; arc out to ${I.r} m: pushes the tide back ${I.push} m and halves its speed.` },
+  beam:  { name: 'Flare', key: 'Q', glyph: '<svg viewBox="0 0 32 32"><circle class="f" cx="16" cy="16" r="5"/><path d="M16 3v5M16 24v5M3 16h5M24 16h5M6.8 6.8l3.5 3.5M21.7 21.7l3.5 3.5M25.2 6.8l-3.5 3.5M10.3 21.7l-3.5 3.5"/></svg>', text: I => `The lighthouse flares: ${fmt(I.dmg)} damage to every creature within ${I.r} m, and the whole sea is lit for ${I.flareFor} s, so every gun can shoot.` },
+  keg:   { name: 'Powder Keg', key: 'R', glyph: '<svg viewBox="0 0 32 32"><path class="f" d="M9 11h14c2 3 2 11 0 14H9c-2-3-2-11 0-14z"/><path d="M9.6 15h12.8M9.6 21h12.8M16 11V8c0-2 2-3 4-3M23 3l1.5 2.5M26 6l-2.5 1M22 2.5l-.5 3"/></svg>', text: I => `Thrown where you click: ${fmt(I.dmg)} damage to every creature within ${I.r} m.` },
+  flood: { name: 'Flood Gate', key: 'E', glyph: '<svg viewBox="0 0 32 32"><path d="M4 11c3-3 5-3 8 0s5 3 8 0 5-3 8 0M4 17.5c3-3 5-3 8 0s5 3 8 0 5-3 8 0M4 24c3-3 5-3 8 0s5 3 8 0 5-3 8 0"/></svg>', text: I => `Opens a ${Math.round(I.arc * 180 / Math.PI)}&deg; arc out to ${I.r} m: pushes the tide back ${I.push} m and halves its speed.` },
 };
 
 function build() {
@@ -7418,7 +7629,7 @@ function build() {
     document.querySelectorAll('#tw-cards .card').forEach(c => { c.style.setProperty('--rx', '0deg'); c.style.setProperty('--ry', '0deg'); });
   });
   voices();
-  $('tw-dev').classList.toggle('on', U.dev);
+  $('tw-dev').classList.toggle('on', U.dev); document.body.classList.toggle('twdev', U.dev);
   if (Sim.newDawn) { const b = document.querySelector('#tw-dev [data-d="star"]'); b.disabled = false; b.title = 'Starlight is kept through New Dawn (applies from the next run)'; }
 
   // aiming on the field
@@ -7511,7 +7722,7 @@ function listSel(sc, i) {
 function onKey(e) {
   if (e.repeat) return;
   const k = e.key;
-  if (k === '`') { U.dev = !U.dev; $('tw-dev').classList.toggle('on', U.dev); return; }
+  if (k === '`') { U.dev = !U.dev; $('tw-dev').classList.toggle('on', U.dev); document.body.classList.toggle('twdev', U.dev); return; }
   if (U.set) { if (k === 'Escape') openSet(false); return; }
   if (U.mode === 'title') {
     if (k === 'ArrowDown' || k === 's' || k === 'S') menuSel(U.menuSel + 1);
@@ -7648,6 +7859,7 @@ function frame(S, now) {
     const b = U.abEls[k], a = S.ab[k], max = a.max || Sim.abInfo(S, k).cd;
     const f2 = a.cd > 0 ? 1 - a.cd / Math.max(max, 1e-6) : 1;
     b.querySelector('.ring').style.strokeDashoffset = String(b._C * (1 - f2));
+    b.style.setProperty('--cd', (1 - f2).toFixed(3));
     setTxt(b.querySelector('.cdn'), a.cd > 0 ? String(Math.ceil(a.cd)) : '');
     if (a.cd <= 0 && b._cool) { restart(b, 'pop'); snd('ready'); }
     b._cool = a.cd > 0;
@@ -7748,9 +7960,12 @@ const META = {   // id: [branch, icon, label, big override, more]
 };
 function cardMeta(c) {
   const m = META[c.id] || ['gun', 'shot', c.name], br = BR[m[0]];
-  const num = (c.text.match(c.id === 'jack' ? /x\d+/ : /[+\-]?x?\d[\d.,]*%?/) || [''])[0].replace(/^-/, '−');
+  const raw = (c.text.match(c.id === 'jack' ? /x\d+/ : /[+\-]?x?\d+(?:[.,]\d+)*%?/) || [''])[0], num = raw.replace(/^-/, '−');   // a trailing , or . is punctuation, not part of the number
+  let desc = m[4] ? c.text : '';   // the line under the headline must not repeat it: drop a first clause that holds the number and the label ("Max HP +110, and the wall..." -> "The wall...")
+  const cl = desc.match(/^([^.,]*)[.,]\s+(?:and\s+)?([\s\S]+)$/);
+  if (cl && raw && cl[1].includes(raw) && cl[1].toLowerCase().includes(m[2].toLowerCase())) desc = cl[2].charAt(0).toUpperCase() + cl[2].slice(1);
   const big = m[3] || (/^x/i.test(num) ? '×' + num.slice(1) : num);
-  return { br: c.loud ? 'Loud card' : br[0], c: c.loud ? '#ff5f4a' : br[1], icon: `<svg viewBox="0 0 64 64">${IC[m[1]] || IC.shot}</svg>`, big, lb: m[2], more: !!m[4] };
+  return { br: c.loud ? 'Loud card' : br[0], c: c.loud ? '#ff5f4a' : br[1], icon: `<svg viewBox="0 0 64 64">${IC[m[1]] || IC.shot}</svg>`, big, lb: m[2], desc };
 }
 
 function openPick(S) {
@@ -7760,12 +7975,12 @@ function openPick(S) {
   S.pick.choices.forEach((id, i) => {
     const c = Sim.card(id, S), taken = S.picks.filter(p => p === id).length;
     const m = cardMeta(c), pips = c.max ? Array.from({ length: c.max }, (_, k) => `<i class="${k < taken ? 'on' : ''}"></i>`).join('') : '';
-    const b = el('button', 'card' + (c.loud ? ' loud' : ''), `${c.loud ? '<span class="lr">BUILD-BREAKER</span><s class="fo"></s>' : ''}<i class="rv"></i><i class="rv"></i><i class="rv"></i><i class="rv"></i>
+    const b = el('button', 'card' + (c.loud ? ' loud' : ''), `${c.loud ? '<span class="lr">BUILD-BREAKER</span><s class="cfoil"></s>' : ''}<i class="rv"></i><i class="rv"></i><i class="rv"></i><i class="rv"></i>
       <div class="br"></div><div class="md">${m.icon}</div><h3 class="disp"></h3><div class="mid"><div class="bn num"></div><div class="lb"></div><p></p></div>
       <div class="ft"><span class="ck">${i + 1}</span><span class="pp">${pips}${c.max ? `&nbsp;${taken}/${c.max}` : taken ? `Taken ${taken}x` : ''}</span></div>`);
     b.style.setProperty('--c', m.c); b.querySelector('.br').textContent = m.br;
     b.querySelector('h3').textContent = c.name; b.querySelector('.bn').textContent = m.big; b.querySelector('.lb').textContent = m.lb;
-    b.querySelector('p').textContent = m.more ? c.text : '';
+    b.querySelector('p').textContent = m.desc;
     b.onclick = () => choose(i);
     b.dataset.i = i; b.style.setProperty('--i', i); const jj = i - (S.pick.choices.length - 1) / 2; b.style.setProperty('--j', jj); b.style.setProperty('--aj', Math.abs(jj));
     box.appendChild(b);
@@ -8074,7 +8289,7 @@ function buildAbs(S) {
     const b = el('button', 'ab', `<svg viewBox="0 0 86 86"><circle cx="43" cy="43" r="40" fill="none" stroke="rgba(127,232,220,.15)" stroke-width="5"/>
       <circle class="ring" cx="43" cy="43" r="40" fill="none" stroke="${TEAL}" stroke-width="5" stroke-linecap="round"
         stroke-dasharray="${C}" stroke-dashoffset="0" transform="rotate(-90 43 43)"/></svg>
-      <div class="ic"><span class="g">${AB[k].glyph}</span></div><div class="cdn num"></div><span class="k">${AB[k].key}</span>`);
+      <div class="ic">${AB[k].glyph}</div><div class="sw"></div><div class="cdn num"></div><span class="k">${AB[k].key}</span><span class="nm">${AB[k].name}</span>`);
     b.addEventListener('click', () => arm(k));
     b.addEventListener('mouseenter', () => { U.tipFor = { ab: k, el: b }; });
     b.addEventListener('mouseleave', () => { U.tipFor = null; });
