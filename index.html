@@ -3717,8 +3717,11 @@ void main() {
 //    { k:'kill', id, x, y, gold, boss }     { k:'wallhit', id, dmg }
 //    { k:'pick', open: true, wave, choices }   then   { k:'pick', id, wave } when chosen
 //    { k:'ability', key:'beam', flare: true, a, r, dur, hits, dmg } (the Flare)   { k:'ability', key:'flood', a, r, arc, hits }
-//  The lighthouse (LAS-24): S.beam = { a, a2, w, len, flare } (render draws it); creature e.litT >= S.t = lit (the guns can
-//                  shoot it); S.aim = an angle (rad) while the player steers (Lantern Eye), else null. TUNE.light.
+//  The lighthouse (LAS-24): S.beam = { a, a2, w, len, flare, dir } (render draws it); creature e.litT >= S.t = lit (the guns can
+//                  shoot it; LAS-53: only while it is inside a cone, no linger); S.aim = an angle (rad) while the player steers
+//                  (right mouse; Lantern Eye faster), else null. TUNE.light.
+//  The Wall Guard (LAS-53): S.guard = [{ x, y, cd }] (swivel guns on the wall), S.ringR = the brazier ring's radius (m from
+//                  the centre; TUNE.guard.r m out from the wall). Guard shots: S.shots kind 'guard', events { k:'shot', guard: true }.
 //    { k:'fall', wave, t }
 //    { k:'newKind', kind, wave, name, line }   (first Spawn / Hulk / Nightgaunt of the run: banner + the line)
 //    { k:'ability', key:'harpoon', x, y, id, dmg }   boss/kill/waveStart also carry kind / bossKind
@@ -3814,7 +3817,11 @@ const TUNE = {
     // LAS-32: one answer per light creature, offered once the player can have met it
     { id: 'hook',    name: 'Hooked Chains',  eff: { hook: 2.5 },   max: 2, from: 18, text: 'Sounders the beam lights stay at the surface {hook} s longer before they dive.' },
     { id: 'oil',     name: 'Whale Oil',      eff: { oil: 1 },      max: 1, from: 3,  text: 'The beam burns through the murk: Gloams no longer hide the creatures around them.' },
-    { id: 'glow',    name: 'Afterglow',      eff: { linger: 1 },   max: 2, from: 24, text: 'Creatures the beam touches stay lit {linger} s longer (Shadelings walk slowly while lit).' },
+    { id: 'glow',    name: 'Afterglow',      eff: { glow: 3 },     max: 2, from: 24, text: 'Shadelings the beam touches stay slow for {glow} s after it passes. The guns still fire only into the beam.' },
+    // LAS-53: the Wall Guard (swivel guns that fire only inside the brazier ring)
+    { id: 'swivel',  name: 'Swivel Guns',    eff: { guard: 1 },    max: 3,   text: 'One more swivel gun on the wall. The Wall Guard fires only at creatures inside the brazier ring.' },
+    { id: 'brazier', name: 'More Braziers',  eff: { ring: 4 },     max: 2,   text: 'Brazier ring +{ring} m: it lights more sea around the wall, so the Wall Guard reaches farther.' },
+    { id: 'case',    name: 'Case Shot',      eff: { guardDmg: 1 }, max: 3,   text: 'Wall Guard damage +{guardDmg%}.' },
   ],
   // Loud cards: build-breaking, max 1 each, only in the loud slot. eff keys ending in X multiply.
   loud: [
@@ -3826,17 +3833,26 @@ const TUNE = {
   splashR: 2.5, splashMax: 5,   // Grapeshot radius (m) and most creatures one hit splashes
   // Mouse-aimed abilities. Both start ready.
   ab: {
-    beam:  { cd: 35, dmgMul: 1.5, r: 20, flareFor: 4 },   // the Flare (LAS-24): dmgMul x cannon damage to every creature within r m, and the whole sea is lit for flareFor s
+    beam:  { cd: 30, dmgMul: 1.5, r: 20, flareFor: 4 },   // LAS-53: cd 35 -> 30. The Flare (LAS-24): dmgMul x cannon damage to every creature within r m, and the whole sea is lit for flareFor s
     flood: { cd: 20, r: 22, arc: 1.0, push: 9, slow: 0.5, slowFor: 4 },   // arc (rad) out to r: push back 9 m, half speed 4 s
     keg:   { cd: 25, dmgMul: 30, r: 8, dist: 15 },   // Forge unlock: thrown at a point (or 15 m along an angle)
     harpoon: { cd: 18, dmgMul: 80, r: 6, dist: 20 }, // Forge unlock: the toughest creature within 6 m of the point
   },
   // The lighthouse aims the citadel (LAS-24): it stands in the middle; its beam is a cone (width rad, len m) that turns
-  // the full circle, one turn in `turn` s. Mounts only shoot creatures that are lit: inside the cone now, or touched by it
-  // in the last `linger` s. mode: 'linger' (the rule), 'plain' (no linger), 'auto' (old auto-aim: every creature lit; A/B only).
+  // the full circle, one turn in `turn` s. Mounts only shoot creatures that are lit: inside the cone now (mode 'plain', the
+  // rule since LAS-53), or touched in the last `linger` s ('linger', the LAS-24..31 rule; A/B only); 'auto' = old auto-aim.
   // Lantern Eye (keystone): while the player holds the aim, the beam turns toward it at steerX x the turn speed.
   // LAS-38: len = the beam's reach at the start (m); +lenPer m per Spyglass level, Long Sight and Great Lens add more.
-  light: { mode: 'linger', width: 0.70, len: 35, lenPer: 3, turn: 6, linger: 3.5, steerX: 3 },
+  // LAS-53 (Philippe: "that's not how lighthouses work"): mode 'plain', linger 0: the guns fire only at what the beam (or
+  // the Flare) lights in that step. steer: base steering (hold the right mouse button: the beam turns to the cursor at
+  // steer x the turn speed; 0 = off; Lantern Eye: steerX). sweep: 'turn' (the full circle) or 'arc' (the lamp swings back
+  // and forth over the tide's spawn arc; the same as 'turn' once the tide surrounds the citadel).
+  light: { mode: 'plain', width: 1.2, len: 35, lenPer: 3, turn: 5, linger: 0, steerX: 3, steer: 1, sweep: 'arc' },   // LAS-53: was 0.70 rad, turn 6 s, linger 3.5 s
+  // LAS-53 the Wall Guard (Philippe: "basic shooters near the base that only shoot within that smaller radius"): braziers
+  // light a ring of sea r m out from the wall; n swivel guns on the wall fire only at creatures inside it (dmg x cannon
+  // damage, rate shots/s each, no crits, no splash). The big mounts still fire only at what the beam lights.
+  // mountsToo: 1 = the ring also lights creatures for the mounts (A/B only).
+  guard: { n: 2, r: 10, dmg: 0.12, rate: 1.5, mountsToo: 0 },
   // Mount kinds the Forge unlocks (the Cannon is TUNE.cannon). Upgrades, picks and the Forge scale every kind by
   // the same factors: a kind's damage/rate/range = Cannon value x (kind / cannon).
   mountKinds: {
@@ -3917,7 +3933,7 @@ const TUNE = {
       { id: 'l_harpoon', b: 'light', d: 5, x: -50, y: -26, p: ['l_storm'], name: 'Harpoon', eff: { harpoon: 1 }, text: 'Unlocks the Harpoon ability: {harpMul} x cannon damage to the toughest creature within {harpR} m of where you click. Cooldown {harpCd} s.' },
       { id: 'l_barb', b: 'light', d: 6, x: -60, y: -29, p: ['l_harpoon'], name: 'Barbed Harpoon', eff: { harpoonX: 3 }, text: 'Harpoon damage x{harpoonX}.' },
       { id: 'l_bell2', b: 'light', d: 6, x: -63, y: -20, p: ['l_bell', 'l_undertow'], name: 'Midnight Bell', eff: { abCd: 0.2 }, text: 'All ability cooldowns -{abCd%} more.' },
-      { id: 'l_eye', b: 'light', d: 8, x: -84, y: -27, p: ['l_bell2', 'l_barb'], key: 1, gate: 45, name: 'Lantern Eye', eff: { eye: 1 }, text: 'Keystone. Hold the right mouse button and the lighthouse beam turns to your cursor, {steerX} times as fast as it turns on its own. The Flare deals x{eyeBeamX} damage.' },
+      { id: 'l_eye', b: 'light', d: 8, x: -84, y: -27, p: ['l_bell2', 'l_barb'], key: 1, gate: 45, name: 'Lantern Eye', eff: { eye: 1 }, text: 'Keystone. When you steer the beam (hold the right mouse button), it turns to your cursor {steerX} times as fast. The Flare deals x{eyeBeamX} damage.' },
       // Plunder (lower right). Lane toward the Walls: gold; lane toward Arcana: Embers.
       { id: 'p_salvage', b: 'plunder', d: 1, x: 6, y: 9, p: ['g_powder'], name: 'Salvage Rights', eff: { gold: 0.2 }, text: 'Gold per kill +{gold%}.' },
       { id: 'p_chest', b: 'plunder', d: 2, x: 20, y: 13, p: ['p_salvage'], name: 'Sea Chest', eff: { startGold: 50 }, text: 'Start every run with {startGold} gold.' },
@@ -3955,7 +3971,7 @@ const TUNE = {
       { id: 'x_wrecks', b: 'plunder', bridge: 1, d: 5, x: 52, y: 17, p: ['w_tar', 'p_charter'], name: 'Wreck Divers', eff: { embers: 0.2 }, text: 'Embers per run +{embers%}.' },
       { id: 'x_augury', b: 'arcana', bridge: 1, d: 3, x: 0, y: 33, p: ['p_bellows', 'a_fourth'], name: 'Paid Augury', eff: { reroll: 1 }, text: 'Redraw the cards of a pick {reroll} more time per run.' },
       { id: 'x_oracle', b: 'arcana', bridge: 1, d: 5, x: 0, y: 55, p: ['p_furnace', 'a_omen'], name: "Oracle's Fee", eff: { startPick: 1 }, text: 'Start every run with {startPick} more random pick card already taken.' },
-      { id: 'x_starglass', b: 'light', bridge: 1, d: 3, x: -31, y: 10, p: ['a_hand', 'l_clock'], name: 'Star Glass', eff: { linger: 0.5 }, text: 'Creatures the beam touches stay lit {linger} s longer.' },
+      { id: 'x_starglass', b: 'light', bridge: 1, d: 3, x: -31, y: 10, p: ['a_hand', 'l_clock'], name: 'Star Glass', eff: { ring: 3 }, text: 'Star-glass lamps on the outer wall: the brazier ring lights {ring} m more sea, so the Wall Guard reaches farther.' },
       { id: 'x_lantern', b: 'light', bridge: 1, d: 5, x: -52, y: 17, p: ['a_owl', 'l_prism'], gate: 27, name: 'Corpse Lantern', eff: { critMulX: 1.3 }, text: 'Crit damage x{critMulX}.' },
       { id: 'x_signal', b: 'guns', bridge: 1, d: 3, x: -19, y: -27, p: ['l_keg', 'g_bronze|g_chain'], name: 'Signal Fires', eff: { abCd: 0.1 }, text: 'All ability cooldowns -{abCd%}.' },
       { id: 'x_flare', b: 'guns', bridge: 1, d: 5, x: -32, y: -44, p: ['l_storm', 'g_rifling'], name: 'Flare Shells', eff: { range: 0.1 }, text: 'All mounts reach {range%} farther.' },
@@ -4155,7 +4171,7 @@ function fgShow(T, fg, k) {
     case 'floodPush': case 'floodSlow': return 'push ' + r1(T.ab.flood.push * (1 + g('floodPush'))) + ' m, slow ' + (T.ab.flood.slowFor + g('floodSlow')) + ' s';
     case 'beamCd': return 'Flare ' + cd('beam');
     case 'rot': return 'a turn every ' + r1(T.light.turn / (1 + g('rot'))) + ' s';
-    case 'linger': return 'lit ' + r1(T.light.linger + g('linger')) + ' s after the beam';
+    case 'ring': return 'ring ' + r1(T.guard.r + g('ring')) + ' m from the wall';
     case 'lamp2': return g('lamp2') ? 'two lamps' : 'one lamp';
     case 'keg': return abList(fg);
     case 'abCd': return 'Flare ' + cd('beam') + ', Flood Gate ' + cd('flood');
@@ -4174,7 +4190,7 @@ function fgShow(T, fg, k) {
     case 'beamW': return Math.round(T.light.width * (1 + g('beamW')) * 180 / Math.PI) + '° beam';
     case 'hammer': return g('hammer') ? 'steady fire hits harder' : 'every hit the same';
     case 'unbroken': return g('unbroken') ? 'the wall stands twice' : 'the wall stands once';
-    case 'eye': return g('eye') ? 'you steer the beam' : 'the beam sweeps';
+    case 'eye': return g('eye') ? 'the beam steers x' + T.light.steerX : 'the beam steers x' + (T.light.steer || 0);
     case 'spoils': return g('spoils') ? 'a pick per ' + T.forge.key.spoilsEvery + ' bosses' : 'no boss picks';
     case 'echo': return g('echo') ? 'crits echo' : 'crits strike once';
   }
@@ -4317,9 +4333,11 @@ function newRun(opts) {
     lv, ab, mod: {}, pick: null, picks: [], pickedAt: 0,
     pickEvery: Math.max(2, T.pick.every + (fg.pickEvery || 0)), pickN: T.pick.n + (fg.pickN || 0), rerolls: fg.reroll || 0,
     enemies: [], shots: [], nextId: 1, mounts: [],
-    beam: { a: Math.PI / 2, a2: null, w: T.light.width, len: T.light.len + (fg.len || 0), flare: 0 }, aim: null, flareT: -1,
+    beam: { a: Math.PI / 2, a2: null, w: T.light.width, len: T.light.len + (fg.len || 0), flare: 0, dir: 1 }, aim: null, flareT: -1,
+    guard: [], ringR: T.citadel.r + T.guard.r + (fg.ring || 0),   // LAS-53: the Wall Guard's guns, the lit ring's radius (m from the centre)
     ev, fx: ev,                                         // S.fx: old name, same array
   };
+  placeGuard(S);
   const pm = meta ? meta.mounts : [];
   for (let s = 0; s < mountSlots(fg); s++) mountAt(S, fg.unlock.indexOf(pm[s]) >= 0 ? pm[s] : 'cannon', 1);
   for (const k of ABS) if ((k !== 'keg' || fg.keg) && (k !== 'harpoon' || fg.harpoon)) ab[k] = { cd: 0, max: abCd(S, k), uses: 0 };
@@ -4689,16 +4707,25 @@ function beamLen(S) { const L = S.T.light; return L.len + (L.lenPer || 0) * S.lv
 function moveBeam(S) {
   const L = S.T.light, B = S.beam, dt = S.T.dt, TAU = 2 * Math.PI, w = TAU / L.turn * beamSpeedMul(S);
   B.w = Math.min(Math.PI, beamWidth(S)); B.len = beamLen(S);
-  if (G(S, 'eye') && typeof S.aim === 'number' && isFinite(S.aim)) {   // Lantern Eye: turn the short way toward the aim
+  const sx = G(S, 'eye') ? L.steerX : L.steer || 0;
+  if (sx > 0 && typeof S.aim === 'number' && isFinite(S.aim)) {   // steering (Lantern Eye: faster): turn the short way toward the aim
     let d = (S.aim - B.a) % TAU; if (d > Math.PI) d -= TAU; else if (d < -Math.PI) d += TAU;
-    const mv = w * L.steerX * dt;
+    const mv = w * sx * dt;
     B.a += Math.abs(d) <= mv ? d : Math.sign(d) * mv;
-  } else B.a += w * dt;
+  } else {
+    const half = (spawnArc(S.T.wave, Math.max(1, S.wave)) + B.w) / 2;
+    if (L.sweep === 'arc' && half < Math.PI) {   // swing over the tide's arc (centred on the sea side, +y) and back
+      let o = (B.a - Math.PI / 2) % TAU; if (o > Math.PI) o -= TAU; else if (o < -Math.PI) o += TAU;
+      if (Math.abs(o) >= half) B.dir = o > 0 ? -1 : 1;   // at an end of the arc (or steered off it): turn back
+      B.a += B.dir * w * dt;
+    } else B.a += (B.dir || 1) * w * dt;
+  }
   B.a = ((B.a % TAU) + TAU) % TAU;
   B.a2 = G(S, 'lamp2') ? (B.a + Math.PI) % TAU : null;
   B.flare = Math.max(0, S.flareT - S.t);
-  // mark: a creature inside a cone is lit until now + linger
-  const lit = S.t + (L.mode === 'plain' ? 0 : L.linger) + G(S, 'linger') + M(S, 'linger');
+  // mark: a creature inside a cone is lit until now (+ linger in the old 'linger' mode, A/B only)
+  const lit = S.t + (L.mode === 'plain' ? 0 : L.linger), glow = S.t + M(S, 'glow');
+  S.ringR = S.T.citadel.r + S.T.guard.r + M(S, 'ring') + G(S, 'ring');
   const hw = B.w / 2, ch = dcos(hw), ca = dcos(B.a), sa = dsin(B.a), r2 = B.len * B.len;
   const two = B.a2 !== null, ca2 = two ? dcos(B.a2) : 0, sa2 = two ? dsin(B.a2) : 0;
   let gl = null;   // living Gloams (LAS-32): their murk hides the creatures around them (and them) beyond near m (Whale Oil: no murk)
@@ -4711,6 +4738,7 @@ function moveBeam(S) {
     const nr = S.T.kinds.dimmer.near + S.T.citadel.r;
     if (gl && !e.boss && d2 > nr * nr && inMurk(e, gl)) continue;
     e.litT = lit;
+    if (e.dark) e.glowT = glow;   // Afterglow (LAS-53): a Shadeling the beam touched stays slow glow s after it passes
     if (e.dive && e.diveAt < 0 && !e.atWall) e.diveAt = S.t + e.dive.react + M(S, 'hook');   // lit: it dives soon
   }
 }
@@ -4741,7 +4769,15 @@ function isLit(S, e) {
   if (e.under > S.t) return false;
   if (S.T.light.mode === 'auto' || S.flareT > S.t) return true;
   if (S.dark) { const D = S.dark; if (e.x * D.ca + e.y * D.sa >= Math.hypot(e.x, e.y) * D.ch) return false; }
-  return e.litT >= S.t;
+  return e.litT >= S.t || (S.T.guard.mountsToo > 0 && inRing(S, e));
+}
+// LAS-53: inside the braziers' ring (S.ringR m from the centre), so the Wall Guard can shoot it (never under water).
+function inRing(S, e) { return !(e.under > S.t) && e.x * e.x + e.y * e.y <= S.ringR * S.ringR; }
+function guardN(S) { return Math.max(0, Math.round(S.T.guard.n + M(S, 'guard') + G(S, 'guard'))); }
+// The Wall Guard's guns stand evenly round the wall (the first faces the sea); placed again when a card adds one.
+function placeGuard(S) {
+  const n = guardN(S), r = S.T.citadel.r, old = S.guard; S.guard = [];
+  for (let i = 0; i < n; i++) { const a = Math.PI / 2 + i * 2 * Math.PI / n; S.guard.push({ x: r * dcos(a), y: r * dsin(a), cd: old[i] ? old[i].cd : 0 }); }
 }
 
 // ---- keystones (Forge v2) ----
@@ -4807,7 +4843,7 @@ function step(S) {
     if (!e.atWall) {
       let sp = C.speed * e.speed;
       if (e.under > S.t) sp *= e.dive.swimX;
-      if (e.dark) sp *= isLit(S, e) ? e.litSp : e.dark;   // Shadelings: slow in the light, fast in the dark
+      if (e.dark) sp *= isLit(S, e) || e.glowT > S.t || inRing(S, e) ? e.litSp : e.dark;   // Shadelings: slow in the light (and Afterglow, and the ring), fast in the dark
       if (e.slowT > 0) { e.slowT -= dt; sp *= T.ab.flood.slow; }
       const d = Math.hypot(e.x, e.y);
       if (moat && d < moatD && !e.fly) sp *= 1 - moat;
@@ -4854,6 +4890,27 @@ function step(S) {
     }
   }
 
+  // the Wall Guard (LAS-53): each gun fires at the creature nearest the wall inside the ring (not doomed, not under water)
+  if (S.guard.length !== guardN(S)) placeGuard(S);
+  if (S.guard.length) {
+    const gd = T.guard.dmg * st.dmg * (1 + M(S, 'guardDmg') + G(S, 'guardDmg')), gr = T.guard.rate * (1 + M(S, 'guardRate')), R2 = S.ringR * S.ringR;
+    for (const g of S.guard) {
+      g.cd -= dt;
+      while (g.cd <= 0) {
+        let best = null, bd = R2;
+        for (let i = 0; i < E.length; i++) {
+          const e = E[i]; if (e.dead || e.hp - e.due <= 0 || e.under > S.t) continue;
+          const d2 = e.x * e.x + e.y * e.y; if (d2 <= bd) { bd = d2; best = e; }
+        }
+        if (!best) { g.cd = 0; break; }
+        g.cd += 1 / gr; best.due += gd;
+        const dx = best.x - g.x, dy = best.y - g.y;
+        S.shots.push({ x: g.x, y: g.y, tgt: best, dmg: gd, crit: false, kind: 'guard', ks: null, left: Math.hypot(dx, dy) / T.cannon.shotSpeed });
+        if (S.ev) S.ev.push({ k: 'shot', from: g, id: best.id, kind: 'guard', guard: true });
+      }
+    }
+  }
+
   // shots in flight land after distance / shotSpeed
   const Sh = S.shots, sr2 = T.splashR * T.splashR;
   for (let i = Sh.length - 1; i >= 0; i--) {
@@ -4870,7 +4927,7 @@ function step(S) {
     damage(S, e, s.dmg * big, s.crit, false);
     if (s.crit && G(S, 'echo')) echoHit(S, e, ex, ey, s.dmg);   // Echoing Fate (keystone)
     if (s.kind !== 'cannon') kindHit(S, s, e, ex, ey);
-    if (st.splash > 0) {
+    if (st.splash > 0 && s.kind !== 'guard') {
       const sd = s.dmg * st.splash;
       for (let j = 0, left = T.splashMax; j < E.length && left > 0; j++) {
         const o = E[j]; if (o === e || o.dead) continue;
@@ -6796,13 +6853,13 @@ function camBase(d) {
 }
 
 const LIT_FADE = 0.8;
-// LAS-51: the small-lights ring round the base (sim units). LAS-53 adds it to TUNE; until then none (the sea ring below is cosmetic)
-function baseRad(S) { const T = S.T || {}; return (T.light && T.light.baseR) || (T.base && T.base.r) || 0; }
+// LAS-51: the small-lights ring round the base (sim units, from the centre): S.ringR (LAS-53, TUNE.guard.r m out from the wall)
+function baseRad(S) { const T = S.T || {}; return S.ringR || (T.light && T.light.baseR) || (T.base && T.base.r) || 0; }   // LAS-53: S.ringR = the brazier ring (m from the centre)
 function litAmt(S, e) {   // 0..1; > 0 exactly when the guns can shoot e (sim isLit): beam / linger mark / Flare / auto mode; not under water, not in the Black Lamp's dark cone
   if (e.under > S.t) return 0;
   if (S.T.light.mode === 'auto' || S.flareT > S.t) return 1;
   if (S.dark) { const D = S.dark; if (e.x * D.ca + e.y * D.sa >= Math.hypot(e.x, e.y) * D.ch) return 0; }
-  return inBeam(S, e) ? 1 : 0;   // LAS-55: drawn only while the beam is on it (a linger mark in the sim stays unseen)
+  return e.litT >= S.t ? 1 : 0;   // LAS-55: drawn only while the beam is on it; LAS-53: no linger, so the sim's mark is exactly 'in the cone now' (and honours Gloam murk)
 }
 // ---------- LAS-43: the creatures that play against the light
 // Render contract for the sim (all optional, render falls back to what it can see):
@@ -7729,7 +7786,7 @@ function build() {
       </nav>
     </div>
     <div class="br"><div id="tw-tmeta" class="num"></div>
-      <div><span class="k">1</span>-<span class="k">7</span> upgrades &nbsp; <span class="k">Q</span> Flare &nbsp; <span class="k">E</span> aim &nbsp; <span class="k">Space</span> pause</div></div>
+      <div><span class="k">1</span>-<span class="k">7</span> upgrades &nbsp; <span class="k">Q</span> Flare &nbsp; <span class="k">E</span> aim &nbsp; <span class="k">Right mouse</span> steer the light &nbsp; <span class="k">Space</span> pause</div></div>
   </div>
   <div id="tw-pick" class="scr dim">
     <h2 class="disp">Wave <span id="tw-pw"></span> holds</h2><div class="sub">Choose one. The tide waits.</div>
@@ -7919,7 +7976,7 @@ function build() {
   });
   cv.addEventListener('contextmenu', e => e.preventDefault());
   root.addEventListener('keydown', onKey);
-  // Lantern Eye (keystone): hold the right mouse button to turn the lighthouse beam toward the cursor
+  // steering (LAS-53, everyone; Lantern Eye: faster): hold the right mouse button to turn the lighthouse beam toward the cursor
   root.addEventListener('mousedown', e => { if (e.button === 2 && !U.armed) U.steer = true; });
   root.addEventListener('mouseup', e => { if (e.button === 2) U.steer = false; });
   root.addEventListener('blur', () => { U.steer = false; });
@@ -8082,7 +8139,7 @@ function setTxt(e, s) { if (e._t !== s) { e._t = s; e.textContent = s; } }
 function frame(S, now) {
   if (!U.root) return;
   if (S !== U.S) setRun(S);
-  if (S.fg && S.fg.eye) { const p = U.steer && U.mode === 'run' && cam() ? worldAt(U.mouse.x, U.mouse.y) : null; S.aim = p ? Math.atan2(p.y, p.x) : null; }
+  if (S.fg && (S.fg.eye || S.T.light.steer > 0)) { const p = U.steer && U.mode === 'run' && cam() ? worldAt(U.mouse.x, U.mouse.y) : null; S.aim = p ? Math.atan2(p.y, p.x) : null; }
   if (U.dev) devInfo(S);
   if (U.mode !== 'run') { tip(S); return; }
 
@@ -8188,7 +8245,7 @@ function teach(S, now) {
       const p = screenAt(e.x, e.y);
       if (!p || p[0] < 200 || p[0] > root.innerWidth - 200 || p[1] < 180 || p[1] > root.innerHeight - 220) continue;
       T.on = { e, at: now, lit: 0 }; hintDone('beam');
-      h.className = 'panel'; h.innerHTML = '<b>In the dark.</b> Your guns fire where the light falls.<small>The beam comes round. Click to hide.</small>';
+      h.className = 'panel'; h.innerHTML = '<b>In the dark.</b> Your guns fire only into the light.<small>The beam comes back. Hold the right mouse button to turn it here. Click to hide.</small>';
       break;
     }
   }
@@ -8196,7 +8253,7 @@ function teach(S, now) {
   if (!O) { if (h.style.display !== 'none') h.style.display = 'none'; return; }
   const e = O.e;
   if (!O.lit && !e.dead && e.litT >= S.t) {
-    O.lit = now; h.className = 'panel lit'; h.innerHTML = '<b>In the light.</b> Now they fire.<small>The Lighthouse upgrade turns it faster.</small>';
+    O.lit = now; h.className = 'panel lit'; h.innerHTML = '<b>In the light.</b> Now they fire.<small>Lamp Gears turn it faster. At the wall, braziers light the sea for the Wall Guard.</small>';
   }
   if (e.dead && !O.lit) O.lit = now;
   if ((O.lit && now - O.lit > 2600) || now - O.at > 12000) { T.on = null; h.style.display = 'none'; return; }
@@ -8246,7 +8303,8 @@ const META = {   // id: [branch, icon, label, big override, more]
   blow: ['gun', 'blow', 'Crit damage'], splash: ['gun', 'splash', 'Splash damage', null, 1], second: ['gun', 'twin', 'Second cannon', '2nd', 1], exec: ['gun', 'exec', 'Finishing blow', null, 1],
   bounty: ['gold', 'coin', 'Gold per kill'], tithe: ['gold', 'moon', 'Gold now'], mend: ['wall', 'wall', 'Max HP', null, 1],
   lens: ['light', 'lens', 'Flare damage', null, 1], sluice: ['sea', 'wave', 'Cooldown', null, 1],
-  hook: ['light', 'chain', 'Sounders at the surface', null, 1], oil: ['light', 'lamp', 'Gloams lose their murk', 'Clear', 1], glow: ['light', 'glow', 'Creatures stay lit', null, 1],
+  hook: ['light', 'chain', 'Sounders at the surface', null, 1], oil: ['light', 'lamp', 'Gloams lose their murk', 'Clear', 1], glow: ['light', 'glow', 'seconds Shadelings stay slow', null, 1],
+  swivel: ['wall', 'twin', 'Wall Guard gun', '+1', 1], brazier: ['wall', 'lamp', 'm of brazier ring', null, 1], case: ['wall', 'splash', 'Wall Guard damage'],
   pact: ['gun', 'pact', 'All damage', null, 1], rod: ['light', 'rod', 'Ability damage'], jack: ['gun', 'dice', "Devil's odds", null, 1],
 };
 function cardMeta(c) {
