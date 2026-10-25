@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tidewall</title>
-<style>html,body{margin:0;height:100%;background:#000;color:#cfd8dc;font:14px system-ui,sans-serif}</style>
+<style>html,body{margin:0;height:100%;background:#05080c;color:#cfd8dc;font:14px system-ui,sans-serif}</style>
 </head><body>
 <script>/* vendor/three-tw.js */
 /* three.js r160 (MIT, (c) 2010-2023 three.js authors), trimmed: see vendor/entry.js */
@@ -5186,7 +5186,6 @@ function draw(S) {
 function bossPlate(S, g, w, h) {
   for (const e of S.enemies) {
     if (!e.boss || e.hp <= 0) continue;
-    if (F.R && F.R.visMap && !(F.R.visMap.get(e.id) > 0.004)) continue;   // LAS-55: no plate, no arrow for what the light does not show
     const tall = F.R && F.R.tall && F.R.tall.get(e.id), [vx, vz] = V(e.x, e.y), v = F.v.set(vx, (tall !== undefined ? tall : 6) + 0.9, vz).project(F.cam);
     let x = (v.x + 1) / 2 * w, y = (1 - v.y) / 2 * h, off = false; if (v.z > 1) { x = w - x; y = h - y; }
     const mx = 150, my = intro.age < FX.intro ? 300 : 120; if (x < mx || x > w - mx || y < my || y > h - 150 || v.z > 1) { off = true; x = Math.max(mx, Math.min(w - mx, x)); y = Math.max(my, Math.min(h - 150, y)); }
@@ -5371,13 +5370,13 @@ const T3 = root.TW3;
 
 const SHADOW = false;   // LAS-49: the dark contact blob under swimmers: ~15% fps at 2,000 for little look (the wake ring grounds them)
 const RLOOK = {
-  page: '#000', fog: '#000', fogDensity: 0.011,   // LAS-55: the dark is pure black
+  page: '#071315', fog: '#0a2227', fogDensity: 0.011,
   hemiCol: '#8fd6e0', ground: '#0d3036', hemi: 1.2, key: 3.4, keyCol: '#ffb36b', keyPos: [-30, 24, 14],
   rimCol: '#4fc3c8', rim: 1.8, rimPos: [10, 14, 60], exposure: 1.15, shadow: 2048, shadowBox: 14,
   amber: '#ffb36b', lamp: '#ffd08a', stone: '#6d6a66', stoneDark: '#45474a', roof: '#3a2f2c', rock: '#3b4446', rockDark: '#262d30',
   sea: '#0e3238', tide: '#7fb3aa', tideDeep: '#3e6863', eye: '#9ff5ea', boss: '#24413f', shot: '#ffc27a', spark: '#ffb36b', splash: '#7fe8dc',
   filter: 'saturate(1.05) contrast(1.06)',
-  vignette: 'radial-gradient(ellipse 70% 80% at 50% 46%,transparent 55%,rgba(0,0,0,.6) 100%)',
+  vignette: 'radial-gradient(ellipse 70% 80% at 50% 46%,transparent 55%,rgba(2,14,16,.6) 100%),url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%27200%27 height=%27200%27><filter id=%27n%27><feTurbulence baseFrequency=%27.9%27 numOctaves=%272%27/></filter><rect width=%27200%27 height=%27200%27 filter=%27url(%23n)%27 opacity=%27.07%27/></svg>")',
   maxEnemies: 6000, maxShots: 1024, maxSparks: 512, plateau: 1.2, shore: 7.5, gunY: 4.6, deck: 4.1, walk: 1.7,
   skyTop: '#040b10', skyMid: '#0b2129', moon: '#e8f4ee', moonGlow: '#8fd6e0', foam: '#bff3ea', crest: '#2f7f80',
   smoke: '#2a3134', fire: '#ff8a3a', bossScale: 2.1, bossRise: 2.4, creatureK: 1.8,   // LAS-49: creatures 80% bigger, the boss x2.1 (it must read from 74 m)
@@ -5748,7 +5747,7 @@ function initGL() {
 function buildScene() {
   const scene = new T3.Scene();
   scene.fog = new T3.FogExp2(RLOOK.fog, RLOOK.fogDensity);
-  scene.background = new T3.Color('#000');   // LAS-55: no sky, no moon, no stars
+  scene.background = skyTex();   // screen-space: night sky over a fog bank, the moon low on the left
   const cam = new T3.PerspectiveCamera(42, 16 / 9, 0.5, 400);
 
   // lights (Look C)
@@ -5765,6 +5764,7 @@ function buildScene() {
   buildSea(scene);
   const rocks = new T3.Group(); scene.add(rocks);
   buildLand(scene, rocks);
+  buildFlank(scene, rocks);
   const cit = new T3.Group(); cit.position.y = RLOOK.plateau; scene.add(cit);
   const D = buildCitadel(scene, cit);
 
@@ -5888,7 +5888,7 @@ function buildScene() {
   const rings = [0, 1, 2].map(() => { const m = new T3.Mesh(ringGeo(), new T3.MeshBasicMaterial({ color: RLOOK.foam, transparent: true, depthWrite: false,
     blending: T3.AdditiveBlending, fog: false })); m.visible = false; m.renderOrder = 2; scene.add(m); return m; });
 
-  Object.assign(R, { litMap: new Map(), visMap: new Map(), litAmt, scene, cam, T, SHOT, shots: SHOT.cannon, sparks, smoke, puffs: [], rings, reachRing, col, key, hemi, glow, flare, sweep, LAMP, tall: new Map(),
+  Object.assign(R, { litMap: new Map(), litAmt, scene, cam, T, SHOT, shots: SHOT.cannon, sparks, smoke, puffs: [], rings, reachRing, col, key, hemi, glow, flare, sweep, LAMP, tall: new Map(),
     lamp2, sweep2, flare2, streak, motes, camD: 0, isleK: 0,
     D, light0: { hemi: hemi.intensity, key: key.intensity, glow: glow.intensity },
     tris: { drowned: T.drowned.tris, kinds: KLIST.map(k => k + ' ' + T[k].tris).join(', ') } });
@@ -5939,14 +5939,12 @@ function buildSea(scene) {
       float foam=smoothstep(2.6,0.0,d)*smoothstep(0.25,0.75,n*0.7+band*0.5)*(0.55+0.45*smoothstep(1.2,0.0,d));
       foam+=smoothstep(0.26,0.4,vW.y)*smoothstep(0.55,0.8,n)*0.5;
       diffuseColor.rgb=mix(diffuseColor.rgb,${hex3(RLOOK.foam)},clamp(foam,0.0,1.0)*0.85); vFoam=clamp(foam,0.0,1.0);
-      vec2 q=vW.xz; float rq=length(q); vLm=max(bmask(q,uBa,uBw,uBl),bmask(q,uBa2,uBw,uBl)); vLm=max(vLm,uFl*smoothstep(uBl+1.0,uBl-1.0,rq));
+      vec2 q=vW.xz; float rq=length(q); vLm=max(bmask(q,uBa,uBw,uBl),bmask(q,uBa2,uBw,uBl)); vLm=max(vLm,uFl*smoothstep(uBl+2.0,uBl*0.7,rq));
       vBs=uBase>0.0?smoothstep(uBase+2.0,uBase*0.25,rq)*(0.78+0.22*sin(uT*7.0+rq*2.0)*sin(uT*4.3+1.0)):0.0;
       diffuseColor.rgb*=mix(uDk,1.0,clamp(vLm+vBs,0.0,1.0)); }`);
     sh.fragmentShader = 'float vFoam=0.0;\n' + sh.fragmentShader;
     fAfter(sh, 'emissivemap_fragment', `totalEmissiveRadiance+=${hex3(RLOOK.foam)}*vFoam*0.16*(0.35+0.65*clamp(vLm+vBs,0.0,1.0));
       { float gl=pow(vn(vW.xz*2.6+vec2(uT*0.7,-uT*0.45)),5.0)*vn(vW.xz*7.0-uT*0.9); totalEmissiveRadiance+=vec3(1.0,0.74,0.42)*vLm*(0.2+2.2*gl*(1.0-0.85*uFl))*(1.0-0.3*uFl)+vec3(1.0,0.5,0.18)*vBs*(0.16+1.2*gl); }`);
-    // LAS-55: pure black outside the light: the beam, the Flare, the base ring and the surf at the island's foot are all that show
-    fAfter(sh, 'fog_fragment', 'gl_FragColor.rgb*=clamp(vLm+vBs+smoothstep(uShore+2.0,uShore-0.3,length(vW.xz)),0.0,1.0);');
     // LAS-27: the amber key light's glare on the faceted swell made a brown triangulated patch at the screen's lower
     // right: the sea's direct highlights are kept cold (teal, by their brightness) and soft
     fAfter(sh, 'lights_fragment_end', 'reflectedLight.directSpecular=dot(reflectedLight.directSpecular,vec3(0.3,0.5,0.2))*vec3(0.32,0.7,0.72)*0.3;');
@@ -5955,12 +5953,12 @@ function buildSea(scene) {
   // the moon path: a soft additive streak of glints on the water, from the far left toward the citadel
   const gp = new T3.PlaneGeometry(1, 1); gp.rotateX(-Math.PI / 2);
   const glint = new T3.InstancedMesh(gp, new T3.MeshBasicMaterial({ color: RLOOK.moon, map: haloTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false, opacity: 0.5 }), 260);
-  glint.instanceMatrix.setUsage(T3.DynamicDrawUsage); glint.frustumCulled = false; glint.renderOrder = 1; glint.visible = false; scene.add(glint);   // LAS-55: no moon path
+  glint.instanceMatrix.setUsage(T3.DynamicDrawUsage); glint.frustumCulled = false; glint.renderOrder = 1; scene.add(glint);
   jseed = 31; const G = [];
   for (let i = 0; i < 260; i++) { const f = Math.pow(jr(), 0.8), w = 1.5 + f * 16; G.push({ f, off: (jr() - 0.5) * w, ph: jr() * 6.28, sp: 1.5 + jr() * 3, len: 0.6 + f * 4 }); }
   Object.assign(R, { sea, glint, G });
 }
-const BMASK = 'float bmask(vec2 q,float a,float w,float L){float r=length(q);if(a>8.0||r<0.05)return 0.0;float c=dot(q/r,vec2(cos(a),sin(a)));float ang=acos(clamp(c,-1.0,1.0));float sf=clamp(0.8/r,0.004,0.12);float m=smoothstep(w*0.5+sf,w*0.5-sf,ang);return m*smoothstep(L+1.0,L-1.0,r);}\n'; // LAS-55: sharp edge, ~1.6 m wide at any distance
+const BMASK = 'float bmask(vec2 q,float a,float w,float L){float r=length(q);if(a>8.0||r<0.05)return 0.0;float c=dot(q/r,vec2(cos(a),sin(a)));float ang=acos(clamp(c,-1.0,1.0));float m=smoothstep(w*0.5+0.1,w*0.5-0.05,ang);return m*smoothstep(L+1.5,L*0.72,r);}\n';
 const hex3 = c => { const k = new T3.Color(c); return `vec3(${k.r.toFixed(3)},${k.g.toFixed(3)},${k.b.toFixed(3)})`; };
 
 // the sky behind the fog bank (screen space, under everything): a deep gradient, faint stars, the moon low on the left
@@ -6016,6 +6014,12 @@ function buildLand(scene, rocks) {
   }
   // the path down the promontory to a little jetty on the sea side, a wooden stair cut in the rock
   for (let i = 0; i < 5; i++) mk(rocks, new T3.BoxGeometry(0.9, 0.12, 0.5), '#5a4a3c', { p: [3.6 + i * 0.12, P - 0.25 - i * 0.26, 3.4 + i * 0.42], r: [0, -0.7, 0] });
+  // sea stacks out in the fog on every side (beyond the spawn ring): depth cues, banded rock
+  for (let i = 0; i < 16; i++) {
+    const a = (i + jr() * 0.6) / 16 * Math.PI * 2, d = 58 + jr() * 60, x = Math.cos(a) * d, z = Math.sin(a) * d, h = 3 + jr() * 6, r0 = 1.8 + jr() * 1.5;
+    mk(rocks, rockify(new T3.CylinderGeometry(0.8 + jr(), r0, h, 6, 3), 0.1, i), RLOOK.rockDark, { p: [x, h / 2 - 0.4, z], r: [0, jr() * 3, (jr() - 0.5) * 0.15] });
+    mk(rocks, new T3.CylinderGeometry(r0 * 1.02, r0 * 1.05, 0.5, 6), '#38403f', { p: [x, 0.4, z] });
+  }
 }
 
 // LAS-49: the flanks. At 21:9 the screen shows ~65 m each side of the citadel: sea stacks with lanterns (beyond the spawn
@@ -6809,7 +6813,7 @@ function litAmt(S, e) {   // 0..1; > 0 exactly when the guns can shoot e (sim is
   if (e.under > S.t) return 0;
   if (S.T.light.mode === 'auto' || S.flareT > S.t) return 1;
   if (S.dark) { const D = S.dark; if (e.x * D.ca + e.y * D.sa >= Math.hypot(e.x, e.y) * D.ch) return 0; }
-  return inBeam(S, e) ? 1 : 0;   // LAS-55: drawn only while the beam is on it (a linger mark in the sim stays unseen)
+  const rem = e.litT - S.t; return rem < 0 ? 0 : rem >= LIT_FADE ? 1 : 0.12 + 0.88 * rem / LIT_FADE;
 }
 // ---------- LAS-43: the creatures that play against the light
 // Render contract for the sim (all optional, render falls back to what it can see):
@@ -6818,19 +6822,9 @@ function litAmt(S, e) {   // 0..1; > 0 exactly when the guns can shoot e (sim is
 //   mirror : e.boss. Flashes whenever the beam (S.beam a/w/len, a2) sweeps over it, or e.shine > 0; the flash cone points at the lighthouse.
 // Dev: ?spawn=diver|dimmer|mirror|all (query or hash) draws a fixed group of that kind (render-only, never in S.enemies).
 const M4 = new T3.Matrix4(), V3a = new T3.Vector3(), V3b = new T3.Vector3();
-// LAS-55: is the view point (x, z) inside the light (beam cone, Flare disc, base ring, the island's own foot)?
-function litPt(S, x, z) {
-  const r = Math.hypot(x, z), B = S.beam, off = R.off || 0;
-  if (r <= (R.isleStep ? RLOOK.outerR[R.isleStep] + 1 : RLOOK.shore)) return true;
-  if (S.flareT > S.t) return true;
-  const br = baseRad(S); if (br > 0 && r <= br + off) return true;
-  if (!B || r > B.len + off + 1) return false;
-  const a = Math.atan2(z, x), sf = 0.04 + 0.8 / r, df = q => Math.abs(Math.atan2(Math.sin(a - q), Math.cos(a - q))) < B.w / 2 + sf;
-  return df(B.a) || (B.a2 !== null && B.a2 !== undefined && df(B.a2));
-}
 function inBeam(S, e) {
   const B = S.beam; if (!B) return false;
-  const d = Math.hypot(e.x, e.y), a = Math.atan2(e.y, e.x); if (d > B.len + 0.5) return false;
+  const d = Math.hypot(e.x, e.y), a = Math.atan2(e.y, e.x); if (d > B.len + 3) return false;
   const df = x => Math.abs(Math.atan2(Math.sin(a - x), Math.cos(a - x))) < B.w / 2 + 0.04;
   return df(B.a) || (B.a2 !== null && B.a2 !== undefined && df(B.a2));
 }
@@ -6931,29 +6925,24 @@ function frame(S, alpha, now) {
   // the Tide: each creature goes into its kind's meshes
   R.t = t;
   const E = R.dev ? S.enemies.concat(devTick(S, t)) : S.enemies, n = Math.min(E.length, RLOOK.maxEnemies), col = R.col, T = R.T, cnt = R.cnt || (R.cnt = new Int32Array(KLIST.length));
-  cnt.fill(0); R.tall.clear(); R.litMap.clear(); if (R.visMap.size > 30000) R.visMap.clear();   // visMap keeps the last frame's light so a kill still finds its creature
+  cnt.fill(0); R.tall.clear(); R.litMap.clear();
   const X = specialBegin(S, t, dtR), baseR = baseRad(S);
   const lp = T.litPool, PL = lp.instanceMatrix.array, PC = lp.instanceColor.array; let nl = 0, nw = 0;
   const SHP = T.shadowP.instanceMatrix.array, WKP = T.wakeP.instanceMatrix.array, WKC = T.wakeP.instanceColor.array;
   const F = T.flyer, WL = F.wings[0].instanceMatrix.array, WR = F.wings[1].instanceMatrix.array, SH = F.shadow.instanceMatrix.array;
   for (let i = 0; i < n; i++) {
-    const e = E[i], ki = KIND[e.kind] || 0, m = T[KLIST[ki]];
-    // LAS-55: pure black outside the light: a creature is drawn (with its wake, pool, eyes) only while the beam, the Flare or the base ring lights it
-    const la = litAmt(S, e), bk = baseR > 0 ? Math.max(0, 1 - Math.hypot(e.x, e.y) / baseR) : 0, lb2 = Math.max(la, bk * 0.55), hid = lb2 < 0.004;
-    R.litMap.set(e.id, la); R.visMap.set(e.id, lb2);
-    if (hid && ki !== 5) continue;   // (the Dimmer's dark halo stays: it eats the beam)
-    const j = cnt[ki]++;
+    const e = E[i], ki = KIND[e.kind] || 0, m = T[KLIST[ki]], j = cnt[ki]++;
     let sinkQ = 0;
     if (j >= m.body.instanceMatrix.count) { cnt[ki]--; continue; }
     const p = dispPos(e, alpha), ph = e.id * 1.7, fast = ki === 1 ? 2.2 : ki === 2 ? 0.6 : 1;
     const yaw = Math.atan2(-p.x, -p.z) + 0.12 * Math.sin(t * 3 * fast + ph);
     const bob = e.fly ? 0 : e.atWall ? 0.12 * Math.abs(Math.sin(t * 6 * fast + ph)) : 0.05 * Math.sin(t * 5 * fast + ph);
-    const s = hid ? 0 : ki >= BOSSK ? RLOOK.bossScale : (0.92 + 0.16 * ((e.id * 7919) % 13) / 13) * (ki === 0 ? 1.15 : 1) * RLOOK.creatureK;
+    const s = ki >= BOSSK ? RLOOK.bossScale : (0.92 + 0.16 * ((e.id * 7919) % 13) / 13) * (ki === 0 ? 1.15 : 1) * RLOOK.creatureK;
     let rise = 0;
     if (e.boss) {   // the entry: the boss heaves up out of the sea over bossRise s, throwing foam and spray
-      let t0 = R.bossT0.get(e.id); if (t0 === undefined) { t0 = t; R.bossT0.set(e.id, t0); if (!hid) bossSplash(p.x, p.z, t); }
+      let t0 = R.bossT0.get(e.id); if (t0 === undefined) { t0 = t; R.bossT0.set(e.id, t0); bossSplash(p.x, p.z, t); }
       const q = Math.min(1, (t - t0) / RLOOK.bossRise); if (q < 1) { const e3 = 1 - Math.pow(1 - q, 3); rise = -(1 - e3) * HEAD[ki] * s * 1.05 + Math.sin(q * Math.PI) * 0.4;
-        if (!hid && Math.random() < 0.5) R.spark.length < RLOOK.maxSparks && R.spark.push({ x: p.x + (Math.random() - 0.5) * 3, y: 0.2, z: p.z + (Math.random() - 0.5) * 3, vx: (Math.random() - 0.5) * 3, vy: 4 + Math.random() * 4, vz: (Math.random() - 0.5) * 3, life: 0.8, age: 0, kill: true }); }
+        if (Math.random() < 0.5) R.spark.length < RLOOK.maxSparks && R.spark.push({ x: p.x + (Math.random() - 0.5) * 3, y: 0.2, z: p.z + (Math.random() - 0.5) * 3, vx: (Math.random() - 0.5) * 3, vy: 4 + Math.random() * 4, vz: (Math.random() - 0.5) * 3, life: 0.8, age: 0, kill: true }); }
     }
     if (ki === 4 || ki === 5 || ki === 9) sinkQ = special(X, e, ki, j, s, yaw, p, bob, rise, S, t, dtR);
     const yy = p.y + bob + rise - (ki === 4 ? 0.82 * sinkQ * s : 0) + (ki === 5 ? 0.55 + 0.12 * Math.sin(t * 1.6 + ph) : 0);
@@ -6969,13 +6958,15 @@ function frame(S, alpha, now) {
     const k = e.maxHp > 0 ? Math.max(0, e.hp / e.maxHp) : 1, v = (0.45 + 0.55 * k) * (1 - 0.5 * sinkQ);   // wounded ones darken toward the deep
     // LAS-24: lit by the lighthouse (the guns can shoot it) = warm and bright; in the dark = dim and cold
     // LAS-41: la = how lit it is (1 = full, fades over the last LIT_FADE s of its lit time, 0 = the guns can't shoot it); the same rule as sim isLit()
-    const lr = 2.2 * lb2, lg = 1.2 * lb2, lb = 0.3 * lb2;   // LAS-55: the unlit ones are not drawn at all
+    const la = litAmt(S, e); R.litMap.set(e.id, la);
+    const bk = baseR > 0 ? Math.max(0, 1 - Math.hypot(e.x, e.y) / baseR) : 0, lb2 = Math.max(la, bk * 0.55);   // LAS-51: black outside the light; the base ring warms what is inside it
+    const lr = 0.1 + 2.2 * lb2, lg = 0.12 + 1.2 * lb2, lb = 0.17 + 0.3 * lb2;   // LAS-49: the unlit ones keep a readable cold body
     const C = m.body.instanceColor.array; C[j * 3] = v * (0.8 + 0.2 * k) * lr; C[j * 3 + 1] = v * lg; C[j * 3 + 2] = v * lb;
     if (la > 0 && nl < PL.length / 16) {
       const gy = e.fly ? Math.max(0.16, hAt(Math.hypot(p.x, p.z)) + 0.04) : p.y + 0.04, gr = (e.boss ? 7 : 1 + (e.rad || 0.5) * 2.2) * (0.85 + 0.15 * la);
       putM(PL, nl, 0, gr, p.x, gy, p.z); const o = nl++ * 3; PC[o] = 0.85 * la; PC[o + 1] = 0.42 * la; PC[o + 2] = 0.12 * la;
     }
-    if (!e.fly && !hid && nw < SHP.length / 16) {   // LAS-49: contact shadow + wake ring under a swimmer (a sunk Diver's shrinks away)
+    if (!e.fly && nw < SHP.length / 16) {   // LAS-49: contact shadow + wake ring under a swimmer (a sunk Diver's shrinks away)
       const wy = p.y + 0.08, wr = (e.boss ? 3.4 : 0.55 + (e.rad || 0.5) * 1.4) * (1 - 0.8 * sinkQ) * (ki >= BOSSK ? 1 : RLOOK.creatureK * 0.85), ph2 = (t * (e.boss ? 0.5 : 0.9) + ph) % 1;
       if (SHADOW) putM(SHP, nw, 0, wr * 1.1, p.x, wy, p.z);
       const a = (1 - ph2) * (e.atWall ? 0.55 : 1) * (1 - sinkQ); putM(WKP, nw, 0, wr * (1.05 + 0.3 * ph2), p.x, wy + 0.03, p.z);
@@ -7004,7 +6995,7 @@ function frame(S, alpha, now) {
   if (SB) {   // LAS-24: the sim's beam drives both lamps; the second (Twin Lamp) points opposite, its lantern riding round the gallery
     const rr0 = SB.len + (R.off || 0), hh = R.LAMP[1] - 0.3, pit = Math.atan2(hh, rr0),   // LAS-43: the cone slopes from the lamp down to the water AT the reach ring (flat, it seemed to run past it from the high camera)
       sx = Math.tan(SB.w / 2) * 10, sz = Math.hypot(rr0, hh) / 70,   /* LAS-27: drawn R.off further out */ op = 0.38 + (SB.flare > 0 ? 0.25 : 0) + 0.03 * Math.sin(t * 1.7);
-    const rr = SB.len + (R.off || 0); R.reachRing.visible = false;   // LAS-55: no reach ring on the sea
+    const rr = SB.len + (R.off || 0); R.reachRing.visible = true; R.reachRing.scale.set(rr, 1, rr); R.reachRing.material.opacity = 0.26 + 0.06 * Math.sin(t * 1.3);
     R.sweep.rotation.set(pit, Math.PI / 2 - SB.a, 0); R.sweep.scale.set(sx, 1, sz); R.sweep.material.opacity = op;
     const two = SB.a2 !== null && SB.a2 !== undefined;
     R.sweep2.visible = two && !burning; R.flare2.visible = two;
@@ -7044,7 +7035,6 @@ function frame(S, alpha, now) {
     const arc = kind === 'mortar' ? 0.45 : kind === 'ballista' || kind === 'harpoon' ? 0.03 : kind === 'tesla' ? 0 : 0.1;
     const x = sx + (ex - sx) * q, z = sz + (ez - sz) * q, y = sy + (ey - sy) * q + Math.sin(q * Math.PI) * d * arc, j = SC[kind]++;
     if (j >= RLOOK.maxShots) continue;
-    if (!litPt(S, x, z)) { SC[kind]--; continue; }   // LAS-55: a shot is seen only while it flies through the light
     if (kind === 'ballista' || kind === 'harpoon') {   // aim the bolt along its path (tangent of the arc)
       const dy = (ey - sy) + Math.cos(q * Math.PI) * Math.PI * d * arc; putDir(M.instanceMatrix.array, j, ex - sx, dy, ez - sz, x, y, z);
     } else putM(M.instanceMatrix.array, j, t * 7 + i, kind === 'tesla' ? 0.7 + 0.5 * Math.random() : 1, x + (kind === 'tesla' ? (Math.random() - 0.5) * 0.3 : 0), y, z);
@@ -7054,7 +7044,6 @@ function frame(S, alpha, now) {
   // sparks: hits (amber) and kills (a teal splash), read from S.fx (main.js clears it after the frame)
   if (S.fx) for (const ev of S.fx) {
     if (ev.k !== 'hit' && ev.k !== 'kill') continue;
-    if (!(R.visMap.get(ev.id) > 0.004)) continue;   // LAS-55: nothing flies in the dark
     const kill = ev.k === 'kill', m = kill ? 6 : 2, [vx, vz] = toView(ev.x, ev.y), ty = R.tall.get(ev.id), y0 = ty !== undefined ? ty - 0.9 : hAt(Math.hypot(vx, vz)) + 0.8;
     for (let j = 0; j < m && R.spark.length < RLOOK.maxSparks; j++) {
       const a = Math.random() * Math.PI * 2, v = kill ? 2.5 + Math.random() * 2 : 1.5 + Math.random();
@@ -7136,7 +7125,7 @@ function lightFrame(S, t, burning) {
   const fl = S.flareT > S.t ? 1 : 0; U.fl.value += (fl - U.fl.value) * 0.2;
   U.base.value = br > 0 ? br + off : 5.5 + off;
   if (!R.streak) return;
-  R.streak.quaternion.copy(R.cam.quaternion); R.streak.scale.set(burning ? 12 : 6, burning ? 1.2 : 0.7, 1); R.streak.material.opacity = (burning ? 0.5 : 0.28) * (1 + 0.1 * Math.sin(t * 2.1));
+  R.streak.quaternion.copy(R.cam.quaternion); R.streak.scale.set(burning ? 40 : 22, burning ? 2.2 : 1.1, 1); R.streak.material.opacity = (burning ? 0.5 : 0.28) * (1 + 0.1 * Math.sin(t * 2.1));
   const M = R.motes, A = M.instanceMatrix.array, C = M.instanceColor.array, a = SB ? SB.a : 0.95 * Math.sin(t * 0.45), w = SB ? SB.w : 0.3, L = SB ? SB.len + off : 40, hh = R.LAMP[1] - 0.3;
   for (let i = 0; i < M.count; i++) {
     const h1 = (i * 0.61803) % 1, h2 = (i * 0.7548) % 1, h3 = (i * 0.5698) % 1, s = (h1 + t * (0.012 + 0.01 * h3)) % 1, d = 3 + s * (L - 3);
@@ -7575,8 +7564,8 @@ body.twdev #fps{display:block!important}
 #tw-top .lab,#tw-stats .lab,#tw-rec .k{font-size:max(13px,1.25vh)}
 #tw-top .big{font-size:max(26px,2.5vh)}
 #tw-hpbar b{font-size:max(14px,1.35vh)}
-.up{width:max(170px,15.8vh)}
-.up .nm{font-size:max(15px,1.45vh)}
+.up{width:max(186px,17.2vh)}
+.up .nm{font-size:max(14px,1.34vh)}
 .up .lv,.up .key{font-size:max(13px,1.2vh)}
 .up .now{font-size:max(14px,1.35vh)}
 .up .cost{font-size:max(17px,1.6vh)}
@@ -7596,6 +7585,51 @@ body.twdev #fps{display:block!important}
 .ab.ready .nm{color:#e8fbf7}.ab.armed .nm{color:${AMBER}}
 /* the tree panel hugs the tree (square-ish) and sits beside the column; rows of stats stay compact */
 #tw-over .fgbox{max-width:min(1500px,128vh)}
+/* LAS-56: the upgrade bar rebuilt from Tropebrawl's shop cards: layered frame with a branch-colour top edge, an art medallion, level pips,
+   a coin cost, a gold "ready" glow, hover lift + tilt, a buy pop with a burst ring. Same family as the pick cards (.card). */
+.up{--c:#ff9a5c;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto 1fr auto;column-gap:9px;row-gap:1px;align-items:center;
+  padding:9px 10px 7px;border-radius:10px;border:1px solid rgba(127,232,220,.18);border-top:3px solid var(--c);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--c) 16%,#0a1d1f) 0,#08191b 70%);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.5),inset 0 2px 0 rgba(255,244,220,.07),0 6px 14px rgba(0,0,0,.45);
+  transition:transform .12s ease-out,translate .12s,background .1s,border-color .1s,box-shadow .15s;transform:perspective(520px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg))}
+.up:hover{translate:0 -4px;border-color:color-mix(in srgb,var(--c) 70%,#000);background:linear-gradient(180deg,color-mix(in srgb,var(--c) 26%,#0a1d1f) 0,#0a1f21 70%);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.5),inset 0 2px 0 rgba(255,244,220,.12),0 12px 22px rgba(0,0,0,.55),0 0 22px color-mix(in srgb,var(--c) 40%,transparent)}
+.up .md{grid-row:2;position:relative;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;
+  background:radial-gradient(circle at 50% 35%,color-mix(in srgb,var(--c) 30%,#0b2222),#06181a 72%);
+  box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--c) 70%,#000),inset 0 0 0 4px rgba(0,0,0,.5),0 0 12px color-mix(in srgb,var(--c) 25%,transparent);transition:filter .15s,opacity .15s}
+.up .md svg{width:32px;height:32px;fill:none;stroke:var(--c);stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 4px color-mix(in srgb,var(--c) 70%,transparent))}
+.up .md svg .f{fill:color-mix(in srgb,var(--c) 38%,transparent)}
+.up:hover .md svg{animation:twBob 1.6s ease-in-out infinite}
+.up .lv{margin-left:6px}
+.up .hd{grid-column:1 / 3;grid-row:1;margin-bottom:5px;padding-right:24px;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#f3e6c8}
+.up .now{grid-column:2;grid-row:2;margin:0;align-self:center;white-space:normal;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.up .ft{grid-column:1 / 3;grid-row:3;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;padding-top:5px;border-top:1px solid rgba(127,232,220,.12)}
+.up .pp{display:flex;white-space:nowrap;gap:3px;align-items:center}
+.up .pp i{width:7px;height:7px;border-radius:50%;border:1.5px solid color-mix(in srgb,var(--c) 65%,#000);background:transparent}
+.up .pp i.on{background:var(--c);box-shadow:0 0 5px var(--c)}
+.up .pp em{font-style:normal;font-size:max(13px,1.2vh);color:var(--c);margin-left:2px}
+.up .cost{white-space:nowrap}
+.up .cost::before{content:'';display:inline-block;width:.78em;height:.78em;border-radius:50%;margin-right:.35em;vertical-align:-.04em;
+  background:radial-gradient(circle at 35% 35%,#ffe2a8,#e09a3e 60%,#9c5d1c);box-shadow:0 0 6px rgba(255,179,107,.5)}
+.up.max .cost::before{display:none}
+.up .key{top:6px;right:7px;background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.02));box-shadow:0 2px 0 rgba(0,0,0,.6)}
+.up:hover .key{color:#1a1208;background:var(--c);border-color:var(--c)}
+/* can't afford: the art and cost go dim; affordable now: a gold frame that breathes */
+.up:not(.can):not(.max) .md{filter:grayscale(.7) brightness(.8)}
+.up:not(.can):not(.max) .cost{color:#9a7f78}
+.up.can{border-color:#ffb36b;background:linear-gradient(180deg,color-mix(in srgb,var(--c) 22%,#0a1d1f) 0,#0a1d1f 70%);animation:twReady 1.6s ease-in-out infinite alternate}
+.up.can:hover{animation:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.5),0 0 0 2px #ffb36b,0 12px 22px rgba(0,0,0,.55),0 0 28px rgba(255,179,107,.55)}
+@keyframes twReady{from{box-shadow:inset 0 0 0 1px rgba(0,0,0,.5),0 0 0 2px #ffb36b,0 0 8px rgba(255,179,107,.3)}to{box-shadow:inset 0 0 0 1px rgba(0,0,0,.5),0 0 0 2px #ffb36b,0 0 22px rgba(255,179,107,.62)}}
+.up.max{border-top-color:#f0c755}
+/* buying: the card pops, the art spins once, a ring bursts out, the level number ticks (twCnt) */
+.up .bst{position:absolute;inset:0;border-radius:50%;border:2px solid var(--c);opacity:0;pointer-events:none}
+.up.bought .bst{animation:twBurst .55s ease-out}
+.up.bought .md{animation:twSpin .5s cubic-bezier(.2,1.4,.4,1)}
+.up.flash{animation:twBuyPop .38s cubic-bezier(.2,1.6,.4,1)}
+@keyframes twBurst{0%{opacity:.9;scale:.8}100%{opacity:0;scale:2.3}}
+@keyframes twSpin{0%{rotate:-60deg;scale:.8}60%{scale:1.18}100%{rotate:0deg;scale:1}}
+@keyframes twBuyPop{0%{scale:1;box-shadow:0 0 0 0 rgba(255,179,107,.9)}40%{scale:1.08;box-shadow:0 0 0 12px rgba(255,179,107,0),0 0 34px rgba(255,200,130,.7)}100%{scale:1}}
+.up.deny{animation:twShake .3s}
 `;
 
 // ---------- numbers
@@ -7753,8 +7787,12 @@ function build() {
   // upgrade buttons
   const ups = $('tw-ups'); U.upEls = {};
   Sim.UPS.forEach((k, i) => {
-    const b = el('button', 'up', `<span class="key">${i + 1}</span><div><span class="nm"></span><span class="lv num"></span></div>
-      <div class="now num"></div><div class="cost num"></div>`);
+    const b = el('button', 'up', `<span class="key">${i + 1}</span><span class="md"><span class="bst"></span><svg viewBox="0 0 64 64">${UPIC[k]}</svg></span>
+      <div class="hd"><span class="nm"></span><span class="lv num"></span></div><div class="now num"></div>
+      <div class="ft"><span class="pp">${'<i></i>'.repeat(PIPS)}<em class="num"></em></span><span class="cost num"></span></div>`);
+    b.style.setProperty('--c', UPCOL[k]);
+    b.addEventListener('mousemove', e => { const r = b.getBoundingClientRect(); b.style.setProperty('--ry', ((e.clientX - r.left) / r.width - .5) * 9 + 'deg'); b.style.setProperty('--rx', (.5 - (e.clientY - r.top) / r.height) * 7 + 'deg'); });
+    b.addEventListener('mouseleave', () => { b.style.setProperty('--rx', '0deg'); b.style.setProperty('--ry', '0deg'); });
     b.dataset.k = k;
     b.addEventListener('click', () => buyUp(k));
     b.addEventListener('mouseenter', () => { U.tipFor = { up: k, el: b }; });
@@ -8083,9 +8121,11 @@ function frame(S, now) {
   for (const k of Sim.UPS) {
     const b = U.upEls[k], t = Sim.upText(S, k), can = !t.maxed && S.gold >= t.cost;
     setTxt(b.querySelector('.nm'), t.name);
-    setTxt(b.querySelector('.lv'), 'Lv ' + t.lv);
-    setTxt(b.querySelector('.now'), t.now);
-    setTxt(b.querySelector('.cost'), t.maxed ? 'MAX' : fmt(t.cost) + ' gold');
+    setTxt(b.querySelector('.lv'), String(t.lv));
+    const pp = b.querySelectorAll('.pp i'); for (let j = 0; j < pp.length; j++) pp[j].classList.toggle('on', j < t.lv);
+    setTxt(b.querySelector('.pp em'), t.lv > PIPS ? '+' + (t.lv - PIPS) : '');
+    setTxt(b.querySelector('.now'), t.now.replace(/ (m|s|HP[/]s)(?![a-z])/g, String.fromCharCode(160) + '$1'));
+    setTxt(b.querySelector('.cost'), t.maxed ? 'MAX' : fmt(t.cost));
     b.classList.toggle('max', t.maxed);
     if (can && b._can === false) restart(b, 'shine');
     b._can = can; b.classList.toggle('can', can);
@@ -8171,6 +8211,18 @@ function teach(S, now) {
 
 // LAS-39: how a pick card looks. Branch colour + icon + the number that changes (read from the card text, so TUNE stays the one source) + a short stat label.
 // more: the text has more to say than the number and label (shown as the rule line).
+// LAS-56: art for the 7 gold upgrades (64 box, .f = tinted fill) and their colours (same palette as the pick-card branches)
+const PIPS = 7;
+const UPCOL = { dmg: '#ff9a5c', rate: '#ffb36b', range: '#7fe8dc', crit: '#f0c755', wall: '#b7c4a8', bounty: '#f0c755', rot: '#6fa8ff' };
+const UPIC = {
+  dmg: '<path class="f" d="M18 26h28v26a6 6 0 01-6 6H24a6 6 0 01-6-6z"/><path d="M18 26h28M24 26v-6h16v6M32 20c0-6 6-6 8-12"/><path d="M26 38h12M26 46h12"/>',
+  rate: '<path class="f" d="M6 38h30l8-6h14v12H44l-8-6"/><circle cx="14" cy="50" r="4"/><circle cx="26" cy="50" r="4"/><path d="M10 26h14M10 18h22"/>',
+  range: '<path class="f" d="M8 26l30-8 8 20-30 8z"/><path d="M46 20l10-4v26l-10-4M16 40l-4 12M30 36l4 16M4 52h12"/>',
+  crit: '<path class="f" d="M6 32c8-12 18-18 26-18s18 6 26 18c-8 12-18 18-26 18S14 44 6 32z"/><circle cx="32" cy="32" r="9"/><circle class="f" cx="32" cy="32" r="3"/>',
+  wall: '<path class="f" d="M6 38h20v12H6zM30 38h28v12H30zM14 24h22v12H14zM40 24h18v12H40z"/><path d="M6 50h52M6 38h52M14 24h44"/>',
+  bounty: '<path class="f" d="M8 28h48v26H8z"/><path d="M8 28l8-12h32l8 12M32 28v26M22 28v8h20v-8"/><circle cx="32" cy="42" r="3"/>',
+  rot: '<circle class="f" cx="32" cy="32" r="9"/><path d="M32 6v8M32 50v8M6 32h8M50 32h8M14 14l6 6M44 44l6 6M50 14l-6 6M20 44l-6 6"/><circle cx="32" cy="32" r="18" stroke-dasharray="7 4"/>',
+};
 const BR = { gun: ['Cannon', '#ff9a5c'], light: ['Lighthouse', '#7fe8dc'], sea: ['Flood Gate', '#6fa8ff'], wall: ['Wall', '#b7c4a8'], gold: ['Gold', '#f0c755'] };
 const IC = {
   shot: '<circle class="f" cx="32" cy="32" r="11"/><path d="M32 8v8M32 48v8M8 32h8M48 32h8M15 15l6 6M43 43l6 6M49 15l-6 6M21 43l-6 6"/>',
