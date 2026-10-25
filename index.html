@@ -3783,7 +3783,7 @@ const TUNE = {
   cards: [
     { id: 'heavy',   name: 'Heavy Shot',     eff: { dmg: 0.40 },             text: 'Cannon damage +{dmg%}.' },
     { id: 'quick',   name: 'Quick Hands',    eff: { rate: 0.25 },            text: 'Fire rate +{rate%}.' },
-    { id: 'sight',   name: 'Long Sight',     eff: { range: 0.15 }, max: 3,   text: 'Range +{range%}.' },
+    { id: 'sight',   name: 'Long Sight',     eff: { range: 0.15, len: 8 }, max: 3, text: 'Range +{range%}. The lighthouse beam reaches {len} m farther.' },
     { id: 'keen',    name: 'Keen Eye',       eff: { crit: 0.10 },  max: 4,   text: 'Crit chance +{crit%}.' },
     { id: 'blow',    name: 'Killing Blow',   eff: { critMul: 1 },            text: 'Crits deal +{critMul%} damage.' },
     { id: 'splash',  name: 'Grapeshot',      eff: { splash: 0.30 }, max: 2,  text: 'Hits splash {splash%} damage to up to {splashMax} creatures within {splashR} m.' },
@@ -3814,7 +3814,8 @@ const TUNE = {
   // the full circle, one turn in `turn` s. Mounts only shoot creatures that are lit: inside the cone now, or touched by it
   // in the last `linger` s. mode: 'linger' (the rule), 'plain' (no linger), 'auto' (old auto-aim: every creature lit; A/B only).
   // Lantern Eye (keystone): while the player holds the aim, the beam turns toward it at steerX x the turn speed.
-  light: { mode: 'linger', width: 0.70, len: 60, turn: 8, linger: 3.5, steerX: 3 },
+  // LAS-38: len = the beam's reach at the start (m); +lenPer m per Spyglass level, Long Sight and Great Lens add more.
+  light: { mode: 'linger', width: 0.70, len: 35, lenPer: 3, turn: 6, linger: 3.5, steerX: 3 },
   // Mount kinds the Forge unlocks (the Cannon is TUNE.cannon). Upgrades, picks and the Forge scale every kind by
   // the same factors: a kind's damage/rate/range = Cannon value x (kind / cannon).
   mountKinds: {
@@ -3882,7 +3883,7 @@ const TUNE = {
       { id: 'w_heart', b: 'walls', d: 7, x: 73, y: -24, p: ['w_third', 'w_brine'], name: 'Granite Heart', eff: { hpX: 2 }, text: 'Wall max HP x{hpX}.' },
       { id: 'w_unbroken', b: 'walls', d: 8, x: 84, y: -27, p: ['w_heart'], key: 1, gate: 45, name: 'Unbroken', eff: { unbroken: 1 }, text: 'Keystone. Once per run, when the wall falls it stands again with {unbrokenHp%} of its max HP, and the sea is thrown back {unbrokenPush} m (bosses {unbrokenBoss%} as far).' },
       // Lighthouse (left). Lane toward Arcana: the lamp (sweep, width, a second lamp, steering) and the Flare; lane toward the Guns: Keg, Flood Gate, Harpoon.
-      { id: 'l_lens', b: 'light', d: 1, x: -10, y: -3, p: ['g_powder'], name: 'Great Lens', eff: { beamX: 2 }, text: 'Flare damage x{beamX}.' },
+      { id: 'l_lens', b: 'light', d: 1, x: -10, y: -3, p: ['g_powder'], name: 'Great Lens', eff: { beamX: 2, len: 10 }, text: 'The lighthouse beam reaches {len} m farther. Flare damage x{beamX}.' },
       { id: 'l_clock', b: 'light', d: 2, x: -24, y: 2, p: ['l_lens'], name: "Keeper's Clock", eff: { rot: 0.3 }, text: 'The lighthouse turns {rot%} faster, so its beam comes back sooner.' },
       { id: 'l_keg', b: 'light', d: 2, x: -18, y: -15, p: ['l_lens'], name: 'Powder Keg', eff: { keg: 1 }, text: 'Unlocks the Powder Keg ability: {kegMul} x cannon damage to every creature within {kegR} m of where it lands. Cooldown {kegCd} s.' },
       { id: 'l_bell', b: 'light', d: 3, x: -31, y: -10, p: ['l_clock', 'l_keg'], name: 'Night Bell', eff: { abCd: 0.2 }, text: 'All ability cooldowns -{abCd%}.' },
@@ -4113,6 +4114,7 @@ function fgShow(T, fg, k) {
     case 'spikes': return p(g('spikes')) + ' per s';
     case 'slot2': case 'slot3': { const n = 1 + g('slot2') + g('slot3'); return n + (n > 1 ? ' mounts' : ' mount'); }
     case 'range': return '+' + p(g('range')) + ' range';
+    case 'len': return 'beam reaches ' + r1(T.light.len + g('len')) + ' m';
     case 'kindPlus': return g('kindPlus') ? 'tricks improved' : 'tricks as listed';
     case 'harpoon': return abList(fg);
     case 'kegR': return r1(T.ab.keg.r * (1 + g('kegR'))) + ' m Keg blast';
@@ -4289,7 +4291,7 @@ function newRun(opts) {
     lv, ab, mod: {}, pick: null, picks: [], pickedAt: 0,
     pickEvery: Math.max(2, T.pick.every + (fg.pickEvery || 0)), pickN: T.pick.n + (fg.pickN || 0), rerolls: fg.reroll || 0,
     enemies: [], shots: [], nextId: 1, mounts: [],
-    beam: { a: Math.PI / 2, a2: null, w: T.light.width, len: T.light.len, flare: 0 }, aim: null, flareT: -1,
+    beam: { a: Math.PI / 2, a2: null, w: T.light.width, len: T.light.len + (fg.len || 0), flare: 0 }, aim: null, flareT: -1,
     ev, fx: ev,                                         // S.fx: old name, same array
   };
   const pm = meta ? meta.mounts : [];
@@ -4343,7 +4345,7 @@ function upText(S, key) {
   const T = {
     dmg:    ['Cannon damage x' + (1 + U.dmg.per).toFixed(2) + ' per level.', Math.round(st.dmg) + ' damage'],
     rate:   ['Fire rate +' + pct(U.rate.per) + ' per level.', st.rate.toFixed(2) + ' shots/s'],
-    range:  ['Range +' + pct(U.range.per) + ' per level.', st.range.toFixed(1) + ' m'],
+    range:  ['Range +' + pct(U.range.per) + ' per level, and the lighthouse beam reaches ' + S.T.light.lenPer + ' m farther.', st.range.toFixed(1) + ' m, beam ' + Math.round(beamLen(S)) + ' m'],
     crit:   ['Crit chance +' + pct(U.crit.per) + ' per level.', pct(st.crit) + ' crit'],
     wall:   ['Max HP +' + U.wall.per + ', regen +' + U.wall.regen + ' HP/s per level.', S.maxHp + ' HP, ' + st.regen.toFixed(2) + ' HP/s'],
     bounty: ['Gold per kill +' + pct(U.bounty.per) + ' per level.', 'x' + st.bounty.toFixed(2) + ' gold'],
@@ -4648,9 +4650,11 @@ function kindHit(S, s, e, ex, ey) {
 // width, rad), len, flare (s of Flare light left) }. The lamp turns counter-clockwise, the full circle in turn s.
 function beamSpeedMul(S) { return 1 + S.T.up.rot.per * S.lv.rot + M(S, 'rot') + G(S, 'rot'); }
 function beamWidth(S) { return S.T.light.width * (1 + M(S, 'beamW') + G(S, 'beamW')); }
+// LAS-38: the beam's reach (m) starts short and grows: lenPer per Spyglass level, Long Sight cards, Forge nodes.
+function beamLen(S) { const L = S.T.light; return L.len + (L.lenPer || 0) * S.lv.range + M(S, 'len') + G(S, 'len'); }
 function moveBeam(S) {
   const L = S.T.light, B = S.beam, dt = S.T.dt, TAU = 2 * Math.PI, w = TAU / L.turn * beamSpeedMul(S);
-  B.w = Math.min(Math.PI, beamWidth(S)); B.len = L.len;
+  B.w = Math.min(Math.PI, beamWidth(S)); B.len = beamLen(S);
   if (G(S, 'eye') && typeof S.aim === 'number' && isFinite(S.aim)) {   // Lantern Eye: turn the short way toward the aim
     let d = (S.aim - B.a) % TAU; if (d > Math.PI) d -= TAU; else if (d < -Math.PI) d += TAU;
     const mv = w * L.steerX * dt;
