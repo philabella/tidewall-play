@@ -5096,6 +5096,24 @@ function draw(S) {
     g.fillStyle = n.crit ? FX.critCol : FX.numCol; g.fillText(s, x, y);
   }
   F.nums.length = keep; g.globalAlpha = 1;
+  bossPlate(S, g, w, h);
+}
+// LAS-49: the boss's name plate and health bar over its head; off screen it sticks to the screen edge with an arrow toward it
+function bossPlate(S, g, w, h) {
+  for (const e of S.enemies) {
+    if (!e.boss || e.hp <= 0) continue;
+    const tall = F.R && F.R.tall && F.R.tall.get(e.id), [vx, vz] = V(e.x, e.y), v = F.v.set(vx, (tall !== undefined ? tall : 6) + 0.9, vz).project(F.cam);
+    let x = (v.x + 1) / 2 * w, y = (1 - v.y) / 2 * h, off = false; if (v.z > 1) { x = w - x; y = h - y; }
+    const mx = 150, my = intro.age < FX.intro ? 300 : 120; if (x < mx || x > w - mx || y < my || y > h - 150 || v.z > 1) { off = true; x = Math.max(mx, Math.min(w - mx, x)); y = Math.max(my, Math.min(h - 150, y)); }
+    const bw = Math.max(200, Math.min(300, w * 0.13)), k = Math.max(0, Math.min(1, e.hp / e.maxHp)), nm = foe(e.kind).name.toUpperCase();
+    g.save(); g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.font = '700 ' + Math.round(Math.max(14, h * 0.017)) + 'px Georgia,serif'; g.lineJoin = 'round';
+    g.lineWidth = 4; g.strokeStyle = 'rgba(2,8,10,.9)'; g.strokeText(nm, x, y - 10); g.fillStyle = '#ffb59a'; g.fillText(nm, x, y - 10);
+    g.fillStyle = 'rgba(2,8,10,.8)'; g.fillRect(x - bw / 2 - 2, y - 4, bw + 4, 12);
+    g.fillStyle = '#7a1f16'; g.fillRect(x - bw / 2, y - 2, bw, 8); g.fillStyle = k < 0.25 ? '#ff6a3c' : '#e5533d'; g.fillRect(x - bw / 2, y - 2, bw * k, 8);
+    if (off) { const ax = v.x * (v.z > 1 ? -1 : 1), ay = -v.y * (v.z > 1 ? -1 : 1), L = Math.hypot(ax, ay) || 1, dx = ax / L, dy = ay / L, cx = x + dx * (bw / 2 + 26), cy = y + 2 + dy * 26;
+      g.translate(cx, cy); g.rotate(Math.atan2(dy, dx)); g.fillStyle = '#ff9b7a'; g.beginPath(); g.moveTo(14, 0); g.lineTo(-8, -10); g.lineTo(-8, 10); g.closePath(); g.fill(); }
+    g.restore();
+  }
 }
 
 // ---------- banners: one at a time, the newest wins (a boss or milestone outranks a plain wave banner)
@@ -5266,6 +5284,7 @@ root.TWFx = { init, reset, hideBanner, frame, draw, fmt, setVolume, sound: k => 
 if (typeof document === 'undefined' || !root.TW3) return;   // headless (Node vm): nothing to draw
 const T3 = root.TW3;
 
+const SHADOW = false;   // LAS-49: the dark contact blob under swimmers: ~15% fps at 2,000 for little look (the wake ring grounds them)
 const RLOOK = {
   page: '#071315', fog: '#0a2227', fogDensity: 0.011,
   hemiCol: '#8fd6e0', ground: '#0d3036', hemi: 1.2, key: 3.4, keyCol: '#ffb36b', keyPos: [-30, 24, 14],
@@ -5276,7 +5295,7 @@ const RLOOK = {
   vignette: 'radial-gradient(ellipse 70% 80% at 50% 46%,transparent 55%,rgba(2,14,16,.6) 100%),url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%27200%27 height=%27200%27><filter id=%27n%27><feTurbulence baseFrequency=%27.9%27 numOctaves=%272%27/></filter><rect width=%27200%27 height=%27200%27 filter=%27url(%23n)%27 opacity=%27.07%27/></svg>")',
   maxEnemies: 4000, maxShots: 1024, maxSparks: 512, plateau: 1.2, shore: 7.5, gunY: 4.6, deck: 4.1, walk: 1.7,
   skyTop: '#040b10', skyMid: '#0b2129', moon: '#e8f4ee', moonGlow: '#8fd6e0', foam: '#bff3ea', crest: '#2f7f80',
-  smoke: '#2a3134', fire: '#ff8a3a', bossScale: 1.35, bossRise: 1.9,
+  smoke: '#2a3134', fire: '#ff8a3a', bossScale: 2.1, bossRise: 2.4, creatureK: 1.8,   // LAS-49: creatures 80% bigger, the boss x2.1 (it must read from 74 m)
   // LAS-26: the camera orbits the lighthouse (world origin) at camPitch deg; its distance follows the mounts' reach
   // (reach x camK, clamped camMin..camMax, eased ~1 s). Fog thins as it pulls back so the island stays clear.
   camPitch: 50, camLookY: 2.2, camK: 1.1, camMin: 36, camOpen: 74, camMax: 110, camEase: 3, fogAt: 40,
@@ -5566,6 +5585,7 @@ function eyesGeo(kind) {
 }
 const KIND = { drowned: 0, swarmer: 1, brute: 2, flyer: 3, diver: 4, dimmer: 5, leviathan: 6, siren: 7, kraken: 8, mirror: 9 };
 const KLIST = Object.keys(KIND), BOSSK = 6;   // ki >= BOSSK = a boss
+KIND.shade = 1;   // LAS-32: Shadelings use the Spawn model (alias added after KLIST, so the model list is unchanged)
 
 // ---------- walk / swim cycles (LAS-21): a vertex shader on each kind's instanced meshes (body and eyes alike, so
 // heads and eyes stay together). The stride phase comes from the creature's distance to the citadel (read from the
@@ -5660,6 +5680,7 @@ function buildScene() {
   buildSea(scene);
   const rocks = new T3.Group(); scene.add(rocks);
   buildLand(scene, rocks);
+  buildFlank(scene, rocks);
   const cit = new T3.Group(); cit.position.y = RLOOK.plateau; scene.add(cit);
   const D = buildCitadel(scene, cit);
 
@@ -5731,10 +5752,15 @@ function buildScene() {
   T.flyer.wings = wg.map(g => inst(g, flapMat, 2000));
   T.flyer.tris += tris(wg[0]) * 2;
   // LAS-41: a warm pool of light under every creature the guns can shoot (strength = how much lit time is left), one draw call
-  const litPool = inst(new T3.CylinderGeometry(1, 1, 0.01, 14), new T3.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, depthWrite: false,
+  const pg = new T3.PlaneGeometry(2, 2); pg.rotateX(-Math.PI / 2);   // LAS-49: a soft glow (was a hard disc: the "lily pads"), radius 1
+  const litPool = inst(pg, new T3.MeshBasicMaterial({ color: '#ffffff', map: haloTex(), transparent: true, opacity: 0.8, depthWrite: false,
     blending: T3.AdditiveBlending, fog: false }), RLOOK.maxEnemies + 64);
   litPool.renderOrder = 2; for (let i = 0; i < litPool.instanceMatrix.count; i++) litPool.setColorAt(i, col.setRGB(0, 0, 0)); litPool.instanceColor.setUsage(T3.DynamicDrawUsage);
   T.litPool = litPool;
+  // LAS-49: under every swimmer a soft dark contact shadow and a cold wake ring (one InstancedMesh each), so it stands on the water
+  T.shadowP = inst(pg, new T3.MeshBasicMaterial({ color: '#000', map: haloTex(), transparent: true, opacity: 0.55, depthWrite: false, fog: false }), RLOOK.maxEnemies + 64); T.shadowP.renderOrder = 1;
+  T.wakeP = inst(pg, new T3.MeshBasicMaterial({ color: '#fff', map: wakeTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false }), RLOOK.maxEnemies + 64); T.wakeP.renderOrder = 2;
+  for (let i = 0; i < RLOOK.maxEnemies + 64; i++) T.wakeP.setColorAt(i, col.setRGB(0, 0, 0)); T.wakeP.instanceColor.setUsage(T3.DynamicDrawUsage);
   T.flyer.shadow = inst(new T3.CylinderGeometry(0.55, 0.55, 0.01, 10), new T3.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.32, depthWrite: false }), 2000);
   // LAS-43: the Mirror Warden's disc (own mesh, flashes), the Dimmer's dark halos (eat the beam), ripples, bubbles' water rings, the mirror's flash
   const mg = inst(mirrorGlass(), gaitMat(new T3.MeshBasicMaterial({ vertexColors: true, fog: false }), 'mirror', false), 16);
@@ -5899,6 +5925,48 @@ function buildLand(scene, rocks) {
     mk(rocks, rockify(new T3.CylinderGeometry(0.8 + jr(), r0, h, 6, 3), 0.1, i), RLOOK.rockDark, { p: [x, h / 2 - 0.4, z], r: [0, jr() * 3, (jr() - 0.5) * 0.15] });
     mk(rocks, new T3.CylinderGeometry(r0 * 1.02, r0 * 1.05, 0.5, 6), '#38403f', { p: [x, 0.4, z] });
   }
+}
+
+// LAS-49: the flanks. At 21:9 the screen shows ~65 m each side of the citadel: sea stacks with lanterns (beyond the spawn
+// ring), drifting mist banks and slow dark fins gliding back and forth, so the sides have life and depth. Static rock is
+// baked with the rest; mist and fins are instanced and move in flankTick().
+function buildFlank(scene, rocks) {
+  jseed = 77;
+  for (let i = 0; i < 44; i++) {
+    const side = i % 2 ? 1 : -1, x = side * (40 + jr() * 60), z = -20 + jr() * 100;
+    if (Math.hypot(x, z) < 56) continue;
+    const n = 1 + Math.floor(jr() * 3), h0 = 4 + jr() * 8;
+    for (let k = 0; k < n; k++) {
+      const h = h0 * (k ? 0.45 + jr() * 0.3 : 1), r0 = (1.6 + jr() * 1.6) * (k ? 0.7 : 1), ox = k ? (jr() - 0.5) * 7 : 0, oz = k ? (jr() - 0.5) * 7 : 0;
+      mk(rocks, rockify(new T3.CylinderGeometry(0.5 + jr() * 0.8, r0, h, 6, 3), 0.14, i * 3 + k), jr() < 0.5 ? '#3b4a4c' : '#2c3a3d', { p: [x + ox, h / 2 - 0.5, z + oz], r: [0, jr() * 3, (jr() - 0.5) * 0.25], cast: false });
+      mk(rocks, new T3.CylinderGeometry(r0 * 1.03, r0 * 1.12, 0.6, 6), '#5a6a68', { p: [x + ox, 0.3, z + oz] });   // pale tide line at the foot
+      if (!k && i % 4 === 0) { mk(rocks, new T3.CylinderGeometry(0.14, 0.2, 0.9, 5), '#2a2f31', { p: [x, h - 0.1, z] }); mk(rocks, new T3.IcosahedronGeometry(0.28, 0), RLOOK.amber, { glow: 1, p: [x, h + 0.55, z] }); }   // a wrecker's lantern
+    }
+  }
+  const col = new T3.Color(), pg = new T3.PlaneGeometry(1, 1); pg.rotateX(-Math.PI / 2);
+  const mist = new T3.InstancedMesh(pg, new T3.MeshBasicMaterial({ color: '#7fb4b8', map: haloTex(), transparent: true, depthWrite: false, fog: false, opacity: 0.3 }), 18);
+  mist.instanceMatrix.setUsage(T3.DynamicDrawUsage); mist.frustumCulled = false; mist.renderOrder = 1; scene.add(mist);
+  const M = []; for (let i = 0; i < 18; i++) M.push({ x: (i % 2 ? 1 : -1) * (36 + jr() * 60), z: -18 + jr() * 90, s: 22 + jr() * 22, sp: (jr() - 0.5) * 0.7, ph: jr() * 6.28 });
+  const fg = T3.mergeGeometries([(() => { const c = new T3.ConeGeometry(0.5, 2.2, 3); c.scale(0.45, 1, 1); c.translate(0, 1.1, 0); c.rotateX(-0.35); return c; })(),
+    (() => { const c = new T3.ConeGeometry(0.3, 1.2, 3); c.scale(0.4, 1, 1); c.translate(0, 0.6, 1.5); c.rotateX(-0.2); return c; })()]);
+  const fins = new T3.InstancedMesh(fg, new T3.MeshStandardMaterial({ color: '#25393c', flatShading: true, roughness: 0.5 }), 12);
+  const fwk = new T3.InstancedMesh(pg, new T3.MeshBasicMaterial({ color: '#8fe0d6', map: wakeTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false, opacity: 0.5 }), 12);
+  for (const m of [fins, fwk]) { m.instanceMatrix.setUsage(T3.DynamicDrawUsage); m.frustumCulled = false; scene.add(m); } fwk.renderOrder = 2;
+  const Fi = []; for (let i = 0; i < 12; i++) Fi.push({ a0: (i % 2 ? 0.5 : -0.5) * Math.PI + (jr() - 0.5) * 1.3, r: 58 + jr() * 30, sw: 0.25 + jr() * 0.3, sp: 0.05 + jr() * 0.06, ph: jr() * 6.28, sc: 1 + jr() * 0.8 });
+  R.flank = { mist, M, fins, fwk, Fi };
+}
+function flankTick(t) {
+  const F = R.flank; if (!F) return;
+  const A = F.mist.instanceMatrix.array; for (let i = 0; i < F.M.length; i++) { const m = F.M[i]; putM(A, i, 0, m.s * (1 + 0.08 * Math.sin(t * 0.13 + m.ph)), m.x + Math.sin(t * 0.04 * m.sp * 6 + m.ph) * 9, 0.9 + 0.2 * Math.sin(t * 0.2 + m.ph), m.z); }
+  F.mist.count = F.M.length; F.mist.instanceMatrix.needsUpdate = true;
+  const FA = F.fins.instanceMatrix.array, WA = F.fwk.instanceMatrix.array;
+  for (let i = 0; i < F.Fi.length; i++) {
+    const f = F.Fi[i], u = t * f.sp + f.ph, a = f.a0 + f.sw * Math.sin(u), x = Math.cos(a) * f.r, z = Math.sin(a) * f.r, dir = Math.cos(u) * (f.sw < 0 ? -1 : 1);
+    const yaw = Math.atan2(-Math.sin(a) * dir, Math.cos(a) * dir) * -1 + Math.PI / 2;   // tangent of the orbit, nose first
+    const dy = 0.0 + 0.08 * Math.sin(t * 1.3 + f.ph);
+    putM(FA, i, yaw, f.sc, x, dy, z); putM(WA, i, 0, 2.6 * f.sc, x, 0.12, z);
+  }
+  F.fins.count = F.fwk.count = F.Fi.length; F.fins.instanceMatrix.needsUpdate = F.fwk.instanceMatrix.needsUpdate = true;
 }
 
 // one step of the outer works: a battered ring wall with a wall-walk and battlements at the island's edge, flanking
@@ -6468,11 +6536,21 @@ function shaftTex() {
 // LAS-24: the gameplay beam: the same wedge as shaftTex, but lit edge to edge and fading slowly, so the cone the guns
 // can see is the cone the player sees
 function coneTex() {
-  const W = 64, H = 256, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d'), im = x.createImageData(W, H);
+  const W = 256, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d'), im = x.createImageData(W, H);
   for (let j = 0; j < H; j++) {
-    const far = j / (H - 1), w = 0.06 + 0.94 * far, I = 0.3 + 0.7 * Math.pow(1 - far, 0.8);
-    for (let i = 0; i < W; i++) { const u = Math.abs(i / (W - 1) - 0.5) * 2, a = Math.min(1, Math.max(0, (1 - u / w) * 4)), v = 255 * I * a, o = (j * W + i) * 4;
+    const far = j / (H - 1), w = 0.06 + 0.94 * far, I = (0.3 + 0.7 * Math.pow(1 - far, 0.8)) * Math.min(1, (1 - far) * 7);   // LAS-49: soft edges (smoothstep, 256 px wide: no stairs) and a soft tail at the reach ring
+    for (let i = 0; i < W; i++) { const u = Math.abs(i / (W - 1) - 0.5) * 2, e = Math.min(1, Math.max(0, (1 - u / w) * 2.6)), a = e * e * (3 - 2 * e), v = 255 * I * a, o = (j * W + i) * 4;
       im.data[o] = im.data[o + 1] = im.data[o + 2] = v; im.data[o + 3] = 255; }
+  }
+  x.putImageData(im, 0, 0); const t = new T3.CanvasTexture(c); t.colorSpace = T3.SRGBColorSpace; return t;
+}
+
+// LAS-49: a soft ring (a wake / bow wave): bright at 0.6-0.95 of the radius, fading both ways
+function wakeTex() {
+  const N = 128, c = document.createElement('canvas'); c.width = c.height = N; const x = c.getContext('2d'), im = x.createImageData(N, N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const dx = (i + 0.5) / N * 2 - 1, dy = (j + 0.5) / N * 2 - 1, r = Math.hypot(dx, dy), q = Math.max(0, 1 - Math.abs(r - 0.78) / 0.22), v = 255 * q * q * (r < 1 ? 1 : 0) + 40 * Math.max(0, 1 - r), o = (j * N + i) * 4;
+    im.data[o] = im.data[o + 1] = im.data[o + 2] = Math.min(255, v); im.data[o + 3] = 255;
   }
   x.putImageData(im, 0, 0); const t = new T3.CanvasTexture(c); t.colorSpace = T3.SRGBColorSpace; return t;
 }
@@ -6668,7 +6746,7 @@ function devInit() {
   }
   const kinds = q[1] === 'all' ? ['diver', 'dimmer', 'mirror'] : [q[1]]; const L = []; let id = 9000;
   kinds.forEach((k, ki) => {
-    const big = k === 'mirror', n = big ? 2 : 6, rad = big ? 24 : 15 + ki * 3;
+    const big = k === 'mirror' || (KIND[k] >= BOSSK && k !== 'mirror'), n = k === 'mirror' ? 2 : big ? 1 : 6, rad = big ? 24 : 15 + ki * 3;
     for (let i = 0; i < n; i++) {
       const a = (kinds.length > 1 ? (ki - 1) * 0.55 : 0) + (i - (n - 1) / 2) * (big ? 0.5 : 0.17), r = rad + (i % 2) * 3;
       L.push({ id: id++, kind: k, x: Math.cos(a) * r, y: Math.sin(a) * r, hp: 1, maxHp: 1, litT: 0, under: 0, rad: 0.5, boss: big, dimR: 5, fly: false, atWall: false, dev: 1 });
@@ -6745,7 +6823,8 @@ function frame(S, alpha, now) {
   const E = R.dev ? S.enemies.concat(devTick(S, t)) : S.enemies, n = Math.min(E.length, RLOOK.maxEnemies), col = R.col, T = R.T, cnt = R.cnt || (R.cnt = new Int32Array(KLIST.length));
   cnt.fill(0); R.tall.clear(); R.litMap.clear();
   const X = specialBegin(S, t, dtR);
-  const lp = T.litPool, PL = lp.instanceMatrix.array, PC = lp.instanceColor.array; let nl = 0;
+  const lp = T.litPool, PL = lp.instanceMatrix.array, PC = lp.instanceColor.array; let nl = 0, nw = 0;
+  const SHP = T.shadowP.instanceMatrix.array, WKP = T.wakeP.instanceMatrix.array, WKC = T.wakeP.instanceColor.array;
   const F = T.flyer, WL = F.wings[0].instanceMatrix.array, WR = F.wings[1].instanceMatrix.array, SH = F.shadow.instanceMatrix.array;
   for (let i = 0; i < n; i++) {
     const e = E[i], ki = KIND[e.kind] || 0, m = T[KLIST[ki]], j = cnt[ki]++;
@@ -6754,7 +6833,7 @@ function frame(S, alpha, now) {
     const p = dispPos(e, alpha), ph = e.id * 1.7, fast = ki === 1 ? 2.2 : ki === 2 ? 0.6 : 1;
     const yaw = Math.atan2(-p.x, -p.z) + 0.12 * Math.sin(t * 3 * fast + ph);
     const bob = e.fly ? 0 : e.atWall ? 0.12 * Math.abs(Math.sin(t * 6 * fast + ph)) : 0.05 * Math.sin(t * 5 * fast + ph);
-    const s = ki >= BOSSK ? RLOOK.bossScale : (0.92 + 0.16 * ((e.id * 7919) % 13) / 13) * (ki === 0 ? 1.15 : 1);
+    const s = ki >= BOSSK ? RLOOK.bossScale : (0.92 + 0.16 * ((e.id * 7919) % 13) / 13) * (ki === 0 ? 1.15 : 1) * RLOOK.creatureK;
     let rise = 0;
     if (e.boss) {   // the entry: the boss heaves up out of the sea over bossRise s, throwing foam and spray
       let t0 = R.bossT0.get(e.id); if (t0 === undefined) { t0 = t; R.bossT0.set(e.id, t0); bossSplash(p.x, p.z, t); }
@@ -6776,14 +6855,22 @@ function frame(S, alpha, now) {
     // LAS-24: lit by the lighthouse (the guns can shoot it) = warm and bright; in the dark = dim and cold
     // LAS-41: la = how lit it is (1 = full, fades over the last LIT_FADE s of its lit time, 0 = the guns can't shoot it); the same rule as sim isLit()
     const la = litAmt(S, e); R.litMap.set(e.id, la);
-    const lr = 0.55 + 1.75 * la, lg = 0.62 + 1.23 * la, lb = 0.78 + 0.37 * la;
+    const lr = 0.7 + 1.6 * la, lg = 0.8 + 1.1 * la, lb = 0.95 + 0.3 * la;   // LAS-49: the unlit ones keep a readable cold body
     const C = m.body.instanceColor.array; C[j * 3] = v * (0.8 + 0.2 * k) * lr; C[j * 3 + 1] = v * lg; C[j * 3 + 2] = v * lb;
     if (la > 0 && nl < PL.length / 16) {
-      const gy = e.fly ? Math.max(0.16, hAt(Math.hypot(p.x, p.z)) + 0.04) : p.y + 0.04, gr = (e.boss ? 3.2 : 0.7 + (e.rad || 0.5) * 1.3) * (0.85 + 0.15 * la);
+      const gy = e.fly ? Math.max(0.16, hAt(Math.hypot(p.x, p.z)) + 0.04) : p.y + 0.04, gr = (e.boss ? 7 : 1 + (e.rad || 0.5) * 2.2) * (0.85 + 0.15 * la);
       putM(PL, nl, 0, gr, p.x, gy, p.z); const o = nl++ * 3; PC[o] = 0.85 * la; PC[o + 1] = 0.42 * la; PC[o + 2] = 0.12 * la;
+    }
+    if (!e.fly && nw < SHP.length / 16) {   // LAS-49: contact shadow + wake ring under a swimmer (a sunk Diver's shrinks away)
+      const wy = p.y + 0.08, wr = (e.boss ? 3.4 : 0.55 + (e.rad || 0.5) * 1.4) * (1 - 0.8 * sinkQ) * (ki >= BOSSK ? 1 : RLOOK.creatureK * 0.85), ph2 = (t * (e.boss ? 0.5 : 0.9) + ph) % 1;
+      if (SHADOW) putM(SHP, nw, 0, wr * 1.1, p.x, wy, p.z);
+      const a = (1 - ph2) * (e.atWall ? 0.55 : 1) * (1 - sinkQ); putM(WKP, nw, 0, wr * (1.05 + 0.3 * ph2), p.x, wy + 0.03, p.z);
+      const o = nw * 3; if (e.boss) { WKC[o] = 0.95 * a; WKC[o + 1] = 0.4 * a; WKC[o + 2] = 0.22 * a; } else { WKC[o] = 0.4 * a; WKC[o + 1] = 0.6 * a; WKC[o + 2] = 0.6 * a; }
+      nw++;
     }
   }
   lp.count = nl; lp.instanceMatrix.needsUpdate = lp.instanceColor.needsUpdate = true;
+  T.shadowP.count = SHADOW ? nw : 0; T.wakeP.count = nw; T.shadowP.instanceMatrix.needsUpdate = T.wakeP.instanceMatrix.needsUpdate = T.wakeP.instanceColor.needsUpdate = true;
   for (let ki = 0; ki < KLIST.length; ki++) {
     const m = T[KLIST[ki]]; m.body.count = m.eyes.count = cnt[ki];
     m.body.instanceMatrix.needsUpdate = m.eyes.instanceMatrix.needsUpdate = m.body.instanceColor.needsUpdate = true;
@@ -6823,7 +6910,7 @@ function frame(S, alpha, now) {
   }
 
   // the mounts turn, fire and recoil; the citadel shows its damage; smoke drifts
-  mountsTick(S, t, dtR, alpha); growth(S, dtR, t); damage(S, t, dtR); smokeTick(dtR); ringsTick(t);
+  flankTick(t); mountsTick(S, t, dtR, alpha); growth(S, dtR, t); damage(S, t, dtR); smokeTick(dtR); ringsTick(t);
   const dT = Math.max(RLOOK.camOpen, RLOOK.camMin, Math.min(RLOOK.camMax, RLOOK.camFort[R.isleStep || 0] / RLOOK.fortMin, (reach(S) + (R.off || 0)) * RLOOK.camK));   // the reach is drawn R.off further out
   R.camD = R.camD ? R.camD + (dT - R.camD) * Math.min(1, dtR * RLOOK.camEase) : dT; camBase(R.camD);
 
@@ -6836,7 +6923,7 @@ function frame(S, alpha, now) {
     const q = Math.min(1, Math.max(0, 1 - (s.left - alpha * S.T.dt) / t0)), e = s.tgt, p = dispPos(e, alpha), ki = KIND[e.kind] || 0;
     const mz = R.muzzle.get(s.x + ',' + s.y), kind = R.SHOT[s.kind] ? s.kind : 'cannon', M = R.SHOT[kind];
     const sx = mz ? mz[0] : s.x, sy = mz ? mz[1] : RLOOK.plateau + RLOOK.gunY, sz = mz ? mz[2] : s.y;
-    const ex = p.x, ey = p.y + CHEST[ki] * (ki >= BOSSK ? RLOOK.bossScale : 1), ez = p.z, d = Math.hypot(ex - sx, ez - sz);
+    const ex = p.x, ey = p.y + CHEST[ki] * (ki >= BOSSK ? RLOOK.bossScale : RLOOK.creatureK), ez = p.z, d = Math.hypot(ex - sx, ez - sz);
     const arc = kind === 'mortar' ? 0.45 : kind === 'ballista' || kind === 'harpoon' ? 0.03 : kind === 'tesla' ? 0 : 0.1;
     const x = sx + (ex - sx) * q, z = sz + (ez - sz) * q, y = sy + (ey - sy) * q + Math.sin(q * Math.PI) * d * arc, j = SC[kind]++;
     if (j >= RLOOK.maxShots) continue;
