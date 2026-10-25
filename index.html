@@ -7065,7 +7065,6 @@ const CSS = `
 .fl .c{display:block;font-weight:600;color:#a9c6c2}
 .fl.can .c{color:${AMBER}}
 .fl.key{font-family:Cinzel,serif;font-size:14px;font-weight:600;color:#f1ead9;letter-spacing:.03em}
-.fl.key .c{font-family:Barlow,sans-serif;font-size:11px;font-weight:400;letter-spacing:0;color:#9fb3b0}
 .fl.dim{color:#7d9693}
 .fg-view .fg-mounts{position:absolute;left:12px;top:10px;margin:0;z-index:3}
 .fo{position:absolute;translate:-50% -50%;padding:0 5px;border-radius:7px;font-size:10px;font-weight:600;letter-spacing:.08em;line-height:14px;
@@ -7101,6 +7100,48 @@ const CSS = `
 #tw-dev button,#tw-dev input{font:inherit;padding:3px 7px;border-radius:4px;border:1px solid rgba(127,232,220,.3);background:rgba(127,232,220,.06);color:#e8f1ef}
 #tw-dev input{width:52px;pointer-events:auto}
 #tw-dev button:disabled{opacity:.4;cursor:default}
+/* LAS-42 type system. Two faces only: Cinzel (display serif) for titles, names, buttons and costs; labels, legends, keys and
+   captions are Cinzel small caps (tracked, 600, muted colour). Barlow stays for numbers in body text and long descriptions. */
+#twui .sc,#tw-top .lab,#tw-stats .lab,#tw-rec .k,.fg-head .t,.fb,.fo,.fg-leg,.fg-ctl>span,.fg-mounts,.btn .kb,.up .key,.up .lv,.up.max .cost,
+#tw-tip .hint,#tw-teach small,.srow .l small,.ab .k,.fl .c,#tw-title .br,#tw-title .br .k,.fg-head .nx{
+  font-family:Cinzel,Georgia,serif;font-weight:600;text-transform:uppercase;letter-spacing:.14em}
+#tw-top .lab,#tw-stats .lab,#tw-rec .k,.up .lv,.up .key,.btn .kb,.ab .k,.fl .c{font-size:10px}
+.fg-leg,.fg-ctl>span,.fg-mounts,#tw-tip .hint,.srow .l small,#tw-teach small,.fg-head .nx{font-size:11px}
+.fg-head .nx{letter-spacing:.1em}
+.fg-head .t{font-size:12px;letter-spacing:.24em}
+.fl .c{letter-spacing:.06em}
+.fl.key .c{font-size:10px;font-weight:600;color:#9fb3b0;letter-spacing:.12em}
+.btn,.up .nm,.up .cost,.ab .ic,.ab .cdn,.fl,.dw,.seg button,.fg-mounts button,#tw-tip h4,#tw-hpbar b,.fg-ctl button,.srow .l,#tw-rec b,
+#tw-dev button,#tw-dev input{font-family:Cinzel,Georgia,serif;font-weight:600}
+.btn{letter-spacing:.1em;text-transform:uppercase}
+.btn.sec{letter-spacing:.12em}
+.up .nm{font-size:13px;letter-spacing:.04em}
+#tw-rec b{font-weight:700}
+.fl{font-size:11px;letter-spacing:.03em}
+.fl.key{font-size:13px}
+.fl .c{display:block;margin-top:1px}
+.fl.cmp .c{display:none}
+/* forged nodes (LAS-42): iron discs with a lit rim; owned = bright metal in the branch colour; can forge = hot ember core */
+.fn{border:3px solid transparent;box-sizing:border-box;
+  --hi:color-mix(in srgb,var(--c) 45%,#fff);--lo:color-mix(in srgb,var(--c) 35%,#000);
+  --rim:conic-gradient(from 200deg,var(--hi),var(--c) 30%,var(--lo) 55%,var(--c) 75%,var(--hi));
+  background:radial-gradient(circle at 38% 30%,#2a3b3d,#0b1719 62%) padding-box,var(--rim) border-box;
+  box-shadow:inset 0 2px 3px rgba(255,255,255,.12),inset 0 -4px 6px rgba(0,0,0,.6),0 2px 5px rgba(0,0,0,.6);color:var(--c)}
+.fn.own{background:radial-gradient(circle at 36% 28%,var(--hi),var(--c) 48%,var(--lo)) padding-box,var(--rim) border-box;color:#10181a;
+  box-shadow:inset 0 2px 3px rgba(255,255,255,.5),inset 0 -4px 6px rgba(0,0,0,.4),0 0 12px color-mix(in srgb,var(--c) 45%,transparent),0 2px 5px rgba(0,0,0,.6)}
+.fn.rdy{background:radial-gradient(circle at 38% 30%,color-mix(in srgb,var(--c) 38%,#18282a),#0b1719 70%) padding-box,var(--rim) border-box}
+.fn.can{background:radial-gradient(circle at 50% 62%,#ffe9a8,#ff9a3c 38%,#a8330f 78%) padding-box,conic-gradient(from 200deg,#ffe2a8,#ff9a3c 30%,#8a2a0c 55%,#ff9a3c 75%,#ffe2a8) border-box;
+  box-shadow:inset 0 -3px 5px rgba(90,20,0,.5),0 0 0 3px rgba(255,179,107,.2),0 0 22px rgba(255,150,60,.65)}
+.fn.lock{background:radial-gradient(circle at 38% 30%,#1b2829,#081012 66%) padding-box,conic-gradient(from 200deg,color-mix(in srgb,var(--c) 35%,#34403f),color-mix(in srgb,var(--c) 18%,#1c2726) 50%,color-mix(in srgb,var(--c) 35%,#34403f)) border-box;
+  box-shadow:inset 0 -3px 5px rgba(0,0,0,.6)}
+.fn.ex{background:#050c0d;box-shadow:none}
+.fn.key{border-width:4px;outline:2px solid color-mix(in srgb,var(--c) 55%,transparent);outline-offset:3px}
+.fn.key.own{color:#10181a}
+@keyframes twNode{50%{box-shadow:inset 0 -3px 5px rgba(90,20,0,.5),0 0 0 5px rgba(255,179,107,.12),0 0 30px rgba(255,150,60,.9)}}
+#tw-goal,#tw-pick .sub,#tw-over .sub,#tw-set .sub{font-family:Cinzel,Georgia,serif;font-weight:500;letter-spacing:.05em}
+#tw-goal{font-size:13px}
+/* the tree panel hugs the tree (square-ish) and sits beside the column; rows of stats stay compact */
+#tw-over .fgbox{max-width:min(1500px,128vh)}
 `;
 
 // ---------- numbers
@@ -7820,7 +7861,7 @@ let FG_BOX = null;   // the tree's bounds in TUNE units, labels included
 function fgBox() {
   if (FG_BOX) return FG_BOX;
   const N = Sim.TUNE.forge.nodes, xs = N.map(n => n.x), ys = N.map(n => n.y);
-  return (FG_BOX = { x0: Math.min(...xs) - 16, x1: Math.max(...xs) + 16, y0: Math.min(...ys) - 15, y1: Math.max(...ys) + 18 });
+  return (FG_BOX = { x0: Math.min(...xs) - 16, x1: Math.max(...xs) + 16, y0: Math.min(...ys) - 15, y1: Math.max(...ys) + 40 });
 }
 function forgeHTML(M) {
   const F = Sim.TUNE.forge, cost = Sim.nodeCost(M), nx = Sim.nextNode(M), need = nx ? Math.max(0, nx.cost - M.embers) : 0;
@@ -7919,7 +7960,7 @@ function fgLayout(v) {
     const x = ox + e.dataset.x * s, y = oy + e.dataset.y * s, r = (+e.dataset.r || 0) * s;
     e.style.left = x + 'px'; e._x = x; e._y0 = y; e._r = r;
     if (e.classList.contains('fn')) { e.style.top = y + 'px'; e.style.setProperty('--d', Math.round(2 * r) + 'px'); }
-    else if (e.classList.contains('fl')) { e.style.top = (y + r + 4) + 'px'; e.style.display = all || !e.classList.contains('opt') ? '' : 'none'; }
+    else if (e.classList.contains('fl')) { e.style.top = (y + r + 4) + 'px'; e.style.display = ''; e.classList.toggle('big', all); }
     else if (e.dataset.dn) { e._y0 = y + r + 50; e.style.top = e._y0 + 'px'; }   // a lower branch's name, under its keystone's two-line label
     else e.style.top = y + 'px';
   });
@@ -7927,19 +7968,29 @@ function fgLayout(v) {
   // (can forge, keystones, ready, the rest); one that would overlap goes above its node, else it hides (hover still names it)
   const box = [], hit = a => box.some(b => a.l < b.r && a.r > b.l && a.t < b.b && a.b > b.t);
   const mz = e => { if (!e._w) { e._w = e.offsetWidth; e._h = e.offsetHeight; } };
-  const rect = (e, t) => ({ l: e._x - e._w / 2 - 2, r: e._x + e._w / 2 + 2, t, b: t + e._h });
+  const rect = (e, t, dx = 0) => ({ l: e._x + dx - e._w / 2 - 2, r: e._x + dx + e._w / 2 + 2, t, b: t + e._h });
   v.querySelectorAll('.fb,.fo').forEach(e => { mz(e); box.push(rect(e, e._y0 - e._h / 2)); });
-  const nodes = [...v.querySelectorAll('.fn')].map(e => ({ x: e._x, y: e._y0, r: e._r }));
+  // fixed furniture (legend, controls, mount buttons) is an obstacle too
+  const vr = v.getBoundingClientRect();
+  v.querySelectorAll('.fg-leg,.fg-ctl,.fg-mounts').forEach(e => { const r = e.getBoundingClientRect(); box.push({ l: r.left - vr.left - 4, r: r.right - vr.left + 4, t: r.top - vr.top - 4, b: r.bottom - vr.top + 4 }); });
+  const nodes = [...v.querySelectorAll('.fn')].map(e => ({ x: e._x, y: e._y0, r: e._r + 2 }));
   const onNode = (a, me) => nodes.some(n => (n.x !== me._x || n.y !== me._y0) && a.l < n.x + n.r && a.r > n.x - n.r && a.t < n.y + n.r && a.b > n.y - n.r);
   const pr = e => e.classList.contains('can') ? 0 : e.classList.contains('key') ? 1 : e.classList.contains('dim') ? 3 : 2;
-  const fl = [...v.querySelectorAll('.fl')].filter(e => e.style.display !== 'none').sort((a, b) => pr(a) - pr(b));
+  const fl = [...v.querySelectorAll('.fl')].sort((a, b) => pr(a) - pr(b));
   for (const e of fl) {
-    mz(e);
-    // below the node, else above; a spot on another node's ring is only the second choice
-    const dn = rect(e, e._y0 + e._r + 4), up = rect(e, e._y0 - e._r - 4 - e._h);
-    const a = [dn, up].find(c => !hit(c) && !onNode(c, e)) || [dn, up].find(c => !hit(c));
-    if (!a) { e.style.display = 'none'; continue; }
-    e.style.top = a.t + 'px'; box.push(a);
+    // below the node, above, then beside it; never on another node, a label or the furniture. A name that can't fit with its
+    // cost line tries again as a bare name; if there is still no room it hides (hover names it, a forgeable node still glows).
+    let placed = false;
+    for (const cmp of [0, 1]) {
+      if (placed || (cmp && !e.querySelector('.c'))) break;
+      e.classList.toggle('cmp', !!cmp); e._w = e.offsetWidth; e._h = e.offsetHeight; e.style.display = '';
+      const g = e._r + 4, sd = e._w / 2 + e._r + 4, mid = e._y0 - e._h / 2;
+      const c = [rect(e, e._y0 + g), rect(e, e._y0 - g - e._h), rect(e, mid, sd), rect(e, mid, -sd)];
+      if (pr(e) < 2) for (const k of [10, 22, 36]) c.push(rect(e, e._y0 + g + k), rect(e, e._y0 - g - e._h - k), rect(e, mid + k, sd + k / 2), rect(e, mid - k, -sd - k / 2), rect(e, mid + k, -sd - k / 2), rect(e, mid - k, sd + k / 2));
+      const a = c.find(q => !hit(q) && !onNode(q, e));
+      if (a) { e.style.top = a.t + 'px'; e.style.left = (a.l + 2 + e._w / 2) + 'px'; box.push(a); placed = true; }
+    }
+    if (!placed) e.style.display = 'none';
   }
   v.classList.toggle('far', s < fit * 1.1);
 }
