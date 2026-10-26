@@ -6638,7 +6638,7 @@ const SHADOW = false;   // LAS-49: the dark contact blob under swimmers: ~15% fp
 const RLOOK = {
   page: '#000', fog: '#000', fogDensity: 0.011,   // LAS-55: the dark is pure black
   hemiCol: '#8aa4bc', ground: '#080c10', hemi: 0.5, key: 1.9, keyCol: '#b8d6ff', keyPos: [-30, 24, 14],   // LAS-65: a dim cool fill; the key IS the beam (it turns with S.beam)
-  rimCol: '#4fc3c8', rim: 0, rimPos: [10, 14, 60], exposure: 1.15, shadow: 3072, shadowBox: 26,   // LAS-86: the shadow box covers the wave-50 city (wall 21.8 m); more texels to keep the density
+  rimCol: '#4fc3c8', rim: 0, rimPos: [10, 14, 60], exposure: 1.15, shadow: 3072, shadowBox: 40,   // LAS-86: the shadow box covers the wave-50 city (LAS-120: wall 34.1 m); more texels to keep the density
   amber: '#ffb36b', lamp: '#ffd08a', stone: '#6d6a66', stoneDark: '#45474a', roof: '#3a2f2c', rock: '#3b4446', rockDark: '#262d30',
   sea: '#0e3238', tide: '#7fb3aa', tideDeep: '#3e6863', eye: '#9ff5ea', boss: '#24413f', shot: '#ffc27a', spark: '#ffb36b', splash: '#7fe8dc',
   eyeH: '#cfc79a',   // LAS-109: the wave creatures' eyeshine (the beam caught in their eyes), not a cyan dot
@@ -6653,19 +6653,21 @@ const RLOOK = {
   // LAS-26: the camera orbits the lighthouse (world origin) at camPitch deg; its distance follows the mounts' reach
   // (reach x camK, clamped camMin..camMax, eased ~1 s). Fog thins as it pulls back so the island stays clear.
   // LAS-107 (Philippe): LAS-92's pitch 40 + beam-framed close camera reverted to the pre-LAS-92 camera below
-  camPitch: 50, camLookY: 2.2, camK: 1.1, camMin: 36, camOpen: 88, camMax: 150,   // LAS-73: opens wider (74 -> 88) so the island, its slot rings and the dark read at once; the late camera wider still
+  camPitch: 50, camLookY: 2.2, camK: 1.1, camMin: 36, camOpen: 110, camMax: 150,   // LAS-120 (Philippe, option A): camOpen 88 -> 110 (+25%, his cap) for the wider city rings
+    // LAS-73: opens wider (74 -> 88) so the island, its slot rings and the dark read at once; the late camera wider still
   camWide: 1.3, camWideWave: 30, camEase: 3, fogAt: 40,   // LAS-86: camWide 1.5 -> 1.3: the city is the hero of the late screen
   // LAS-27: the camera never pulls back so far that the citadel and its works (outer ring to the lighthouse's finial)
   // drop under fortMin of the screen height: per island step, share x distance ~ camFort (measured, checks/grow.js)
-  camFort: [17.9, 21.2, 26.9, 32.6, 38.3], fortMin: 0.27,   // LAS-86: the fortress city's steps (estimated from the old ones, ~1.3 x wall radius + 10)
+  camFort: [17.9, 25.9, 35.4, 44.8, 54.3], fortMin: 0.27,   // LAS-120: 1.3 x the new outerR + 10   // LAS-86: the fortress city's steps (estimated from the old ones, ~1.3 x wall radius + 10)
   lhH: 6.2, lhStone: ['#3a3b3d', '#2b2c2e', '#4b4a48', '#43302b'],   // LAS-103: shaft, buttress/dark patch, course/pale patch, the faded band
   sand: '#2f3a39', sandWet: '#263231',
   // the citadel grows with the run: wall stage by max HP (palisade, stone curtain, + a high inner wall), one wall gun
   // per gunPer Loaders levels, island steps by power (upgrade levels + extra mounts + keystones)
-  wallAt: [180, 600], gunPer: 2, isleAt: [10, 25, 45], isleR: [6.6, 11.2, 15.6, 20.0, 24.4],
+  wallAt: [180, 600], gunPer: 2, isleAt: [10, 25, 45], isleR: [6.6, 14.8, 22.1, 29.4, 36.7],
   // LAS-27: each island step is walled at its edge (outerR = the wall's sea face; 0 = no outer wall yet). The sim's
   // wall stays at T.citadel.r: render draws a creature at sim radius r at r + (outer wall - sim wall) (toView()).
-  outerR: [0, 8.6, 13.0, 17.4, 21.8], isleTop: 0.2,
+  // LAS-120 (Philippe chose A): each ring's free band 3.9 -> 6.8 m so the buildings stand at full size (fit 3.3 m; LAS-108 had them x0.33-0.72)
+  outerR: [0, 12.2, 19.5, 26.8, 34.1], isleTop: 0.2,
   // LAS-86: the fortress city: one walled step per town ring (4), its walls built x wallS (a wall must read at 88-200 m)
   wallS: 1.8,
   // LAS-35: the outer wall breaches below this HP share (its fires and cracks use the LAS-21 thresholds); smoke pool size
@@ -8361,10 +8363,11 @@ function guardsTick(S, t, dt, alpha) {
 // curtain's inner face; the parapet now stands just inside that line). r, hex (the tile's top circumradius, m) and fit (how far, m, a
 // building may reach from its slot below 5.3 m: wider ones are scaled down whole, LAS-108) all follow RLOOK.outerR, so wider terraces
 // (LAS-92) give the buildings their width back. Ring 1 sits higher, clear of the keep's rock.
-const TOWN = { r: [], n: [4, 6, 8, 10], step: [1, 2, 3, 4], y: [1.05, 0.7, 0.5, 0.32], hex: [], fit: [], fitHi: 2.1, keepR: 3.9, k: 2.2, rise: 1.7, lvl: 1.3, ember: '#ff6a20', pool: '#8fa6b6' };   // LAS-98: pool = the rise's light on its slot (cool, small)
+const TOWN = { r: [], n: [4, 6, 8, 10], step: [1, 2, 3, 4], y: [1.05, 0.7, 0.5, 0.32], hex: [], fit: [], fitHi: 0, keepR: 3.9, k: 2.2, rise: 1.7, lvl: 1.3, ember: '#ff6a20', pool: '#8fa6b6' };   // LAS-98: pool = the rise's light on its slot (cool, small)
 const wallFoot = k => RLOOK.outerR[k] - 0.85 * RLOOK.wallS, parapetB = k => wallFoot(k) + 0.4;   // the curtain's inner face; the city parapet's line (its cap reaches 0.4 in)
 for (let k = 1; k <= 4; k++) { const hi = wallFoot(k), lo = k === 1 ? TOWN.keepR : parapetB(k - 1) + 0.12, c = (lo + hi) / 2, h = (hi - lo) / 2;
-  TOWN.r[k - 1] = c; TOWN.fit[k - 1] = h - 0.1; TOWN.hex[k - 1] = (k === 1 ? hi - c - 0.05 : h - 0.1) / Math.cos(Math.PI / 6); }   // ring 1's tile may run under the keep's foot
+  TOWN.r[k - 1] = c; TOWN.fit[k - 1] = h - 0.1; TOWN.hex[k - 1] = (h - 0.1) / Math.cos(Math.PI / 6); }   // LAS-120: ring 1's tile like the others (its 0.05 m extra touched wall 1 once the band widened)
+TOWN.fitHi = (TOWN.r[1] - TOWN.r[0]) / 2 - 0.1;   // LAS-120: a building's whole reach clears the next ring's (was 2.1 m at the 4.4 m ring step)
 const TOWN_HOME = { brazier: 'in', rocket: 'in', watch: 'in', breakwater: 'in', bell: 'in', gun: 'out', boathouse: 'out', horn: 'out' };
 const TOWN_IDS = Object.keys(TOWN_HOME);
 const TOWN_ALIAS = { battery: 'gun', boat: 'boathouse' };   // LAS-61: the sim's ids (design/island-town.md) for the two the models named differently
