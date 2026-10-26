@@ -3752,7 +3752,10 @@ const TUNE = {
     arc: Math.PI,          // spawn arc (rad) at wave 1, centred on the sea side (+y)
     arcTo: 2 * Math.PI, arcBy: 20,          // LAS-24: the arc widens to arcTo by wave arcBy (the tide surrounds the citadel)
     spawnR: 45,            // spawn distance from the citadel
-    maxAlive: 2000,        // above this, fewer but tougher (HP scaled by count / cap)
+    maxAlive: 4000,        // above this, fewer but tougher (HP scaled by count / cap)
+    // LAS-52 horde: from wave `from` a wave's count grows x(1 + (max-1) * ramp) over `by` waves; HP, gold and wall hit per
+    // creature shrink by the same factor (as hard a wave, only more of them). max 1 = off.
+    horde: { from: 25, by: 35, max: 2, hpPow: 1, hitPow: 2 },
   },
   creature: { speed: 2.5, hitDmg: 1, hitGrowth: 1.06, hitEvery: 1 },   // Drowned: hits the wall 1 x 1.06^wave per s
   // Creature kinds: multipliers on the Drowned. A wave has (countBase + countPerWave x wave) slots; each slot is a kind
@@ -3762,15 +3765,15 @@ const TUNE = {
   kinds: {
     drowned: { hp: 1, speed: 1, hit: 1, gold: 1, rad: 0.5 },
     swarmer: { from: 6,  share: 0.30, per: 2, hp: 0.3, speed: 1.5, hit: 0.4, gold: 0.5, rad: 0.35 },
-    brute:   { from: 12, share: 0.10, hp: 3.5, speed: 0.6, hit: 3, gold: 3.5, rad: 0.9, armor: 0.5 },
+    brute:   { solo: 1, from: 12, share: 0.10, hp: 3.5, speed: 0.6, hit: 3, gold: 3.5, rad: 0.9, armor: 0.5 },
     flyer:   { from: 16, share: 0.15, hp: 0.7, speed: 1.3, hit: 1, gold: 1, rad: 0.45, fly: 1 },
     // LAS-32: creatures that play against the light.
     // Sounders: lit at sea, they dive react s later and stay under diveFor s (swimming x swimX): no gun, splash, chain or
     // Flare reaches them, only the Powder Keg, the Harpoon and the Flood Gate. At the wall (shallows) or under the Flare they can't dive.
-    diver:   { from: 18, share: 0.06, hp: 1.5, speed: 0.9, hit: 1, gold: 1.5, rad: 0.55, dive: { react: 1, diveFor: 2, swimX: 1.3 } },
+    diver:   { solo: 1, from: 18, share: 0.06, hp: 1.5, speed: 0.9, hit: 1, gold: 1.5, rad: 0.55, dive: { react: 1, diveFor: 2, swimX: 1.3 } },
     // Gloams: within murk m of a living Gloam (the Gloam too) the beam only lights creatures within near m of the wall
     // (bosses and the Flare still work; Whale Oil clears the murk).
-    dimmer:  { from: 3, ramp: 1, share: 0.10, hp: 3, speed: 1, hit: 1, gold: 3, rad: 0.8, murk: 10, near: 7 },   // LAS-32: the early press (full share at once)
+    dimmer:  { solo: 1, from: 3, ramp: 1, share: 0.10, hp: 3, speed: 1, hit: 1, gold: 3, rad: 0.8, murk: 10, near: 7 },   // LAS-32: the early press (full share at once)
     // Shadelings: rise on the far side of the beam (within fromDark rad of it), run x dark while unlit, x litSpeed while lit.
     shade:   { from: 24, share: 0.25, per: 3, hp: 0.6, speed: 1, hit: 1, gold: 0.4, rad: 0.35, dark: 2.5, litSpeed: 0.5, fromDark: 1.2 },
   },
@@ -3879,7 +3882,7 @@ const TUNE = {
   // eff keys ending in X multiply, 'unlock' adds a mount kind, all others add up (see forgeMods).
   // 80 nodes: the centre, 5 branches of 13 (two lanes each), 10 bridges; a full Forge holds 75 (5 forks).
   forge: {
-    costBase: 5, costGrowth: 1.12, costKnee: 34, costGrowth2: 1.061, emberPow: 1.6, emberBoss: 10, rowGate: 5,
+    costBase: 5, costGrowth: 1.14, costKnee: 34, costGrowth2: 1.075, emberPow: 1.8, emberBoss: 10, rowGate: 5,
     moatR: 8, spikesBoss: 0.25,
     // keystone numbers: Hammerfall +hammerPer per shot in a row, up to hammerMax shots; Unbroken: back up at unbrokenHp of
     // max HP, creatures pushed unbrokenPush m (bosses x unbrokenBoss); Lantern Eye: Beam x eyeBeamX; Spoils: an extra pick every spoilsEvery boss kills, boss gold x spoilsGold;
@@ -4327,7 +4330,7 @@ function newRun(opts) {
   const S = {
     T, seed: opts.seed | 0, rs: {}, t: 0, tick: 0, meta, fg, banked: false, tide,
     star: meta ? meta.starlight || 0 : 0, omen: omen(opts.seed).kind, seen: {}, born: [], loud: [],
-    wave: 0, nextWave: T.wave.first, spawnQ: [],        // spawnQ: pending creatures of the current wave
+    wave: 0, nextWave: T.wave.first, spawnQ: [], peak: {}, hordeMul: 1, hordeHit: 1,        // spawnQ: pending creatures of the current wave
     hp, maxHp: hp, over: false,
     gold: T.gold.start + (fg.startGold || 0), goldEarned: 0, goldSpent: 0, kills: 0, bossKills: 0, biggestHit: 0,
     lv, ab, mod: {}, pick: null, picks: [], pickedAt: 0,
@@ -4566,13 +4569,15 @@ function startWave(S) {
   for (const L of S.loud) if (L.after === null && S.wave >= L.wave + 3) L.after = S.biggestHit;
   const K = S.T.kinds;
   // slot shares this wave: kinds from their first wave, the omen x omenRise, the Drowned take the rest (>= 20%)
+  const H = W.horde, hm = H && S.wave >= H.from ? 1 + (H.max - 1) * Math.min(1, (S.wave - H.from + 1) / H.by) : 1;
   const sh = []; let tot = 0;
   for (const k of FOES) if (k !== 'drowned' && K[k].from <= S.wave) {
-    const v = K[k].share * (k === S.omen ? S.T.omenRise : 1) * Math.min(1, (S.wave - K[k].from + 1) / (K[k].ramp || S.T.kindRamp));
+    const v = K[k].share / (K[k].solo ? hm : 1) * (k === S.omen ? S.T.omenRise : 1) * Math.min(1, (S.wave - K[k].from + 1) / (K[k].ramp || S.T.kindRamp));
     sh.push([k, v]); tot += v;
   }
   if (tot > 0.8) { for (const p of sh) p[1] *= 0.8 / tot; tot = 0.8; }
-  let slots = W.countBase + W.countPerWave * S.wave, hp = W.hpBase * Math.pow(W.hpGrowth, S.wave);
+  let slots = Math.round((W.countBase + W.countPerWave * S.wave) * hm), hp = W.hpBase * Math.pow(W.hpGrowth, S.wave) / Math.pow(hm, H ? H.hpPow : 1);
+  const hpm = Math.pow(hm, H ? H.hpPow : 1); S.hordeMul = hm; S.hordeHit = H ? Math.pow(hm, H.hitPow) : 1;
   const kinds = [];
   for (let i = 0; i < slots; i++) {
     let r = rnd(S, 'kind'), k = 'drowned';
@@ -4586,11 +4591,12 @@ function startWave(S) {
   for (const k of kinds) {
     const at = S.t + W.arrive * rnd(S, 'arrive');
     const a = Math.PI / 2 + (rnd(S, 'angle') - 0.5) * arc;   // centred on +y (the sea)
-    S.spawnQ.push({ at, a, hp: hp * hpF * K[k].hp, gold: Math.ceil(gold * K[k].gold), kind: k });
+    const so = K[k].solo ? 1 : 0;   // solo kinds keep their own count and numbers
+    S.spawnQ.push({ at, a, hp: hp * hpF * K[k].hp * (so ? hpm : 1), gold: Math.ceil(gold * K[k].gold / (so ? 1 : hm)), kind: k, solo: so });
   }
   const boss = B.every > 0 && S.wave % B.every === 0, bk = boss ? bossKind(S.wave) : null;
   if (boss) S.spawnQ.push({ at: S.t + W.arrive / 2, a: Math.PI / 2 + (rnd(S, 'angle') - 0.5) * arc * 0.5,
-    hp: hp * B.hpMul * ((B[bk] && B[bk].hpX) || 1), gold: Math.ceil(gold) * B.goldMul, boss: bk, kind: bk });
+    hp: hp * Math.pow(hm, H ? H.hpPow : 1) * B.hpMul * ((B[bk] && B[bk].hpX) || 1), gold: Math.ceil(gold) * B.goldMul, boss: bk, kind: bk });
   S.spawnQ.sort((p, q) => q.at - p.at);   // pop() takes the earliest
   S.nextWave += W.every;
   if (S.ev) S.ev.push({ k: 'waveStart', wave: S.wave, n, boss, bossKind: bk });
@@ -4608,12 +4614,15 @@ function spawn(S, p) {
     due: 0, litT: -1, gold: p.gold, atWall: false, hitCd: 0, dead: false, slowT: 0, boss: !!p.boss, rad: p.boss ? 1.5 : kd.rad,
     speed: p.boss ? S.T.boss.speedMul : kd.speed, hit: p.boss ? S.T.boss.hitDmg : kd.hit,
     armor: p.boss ? 0 : kd.armor || 0, fly: p.boss ? 0 : kd.fly || 0, sumCd: S.T.boss.siren.every,
-    hitMul: Math.pow(S.T.creature.hitGrowth, S.wave) };
+    hitMul: Math.pow(S.T.creature.hitGrowth, S.wave) / (p.boss || p.solo ? 1 : S.hordeHit || 1),
+    // one hidden class for every creature (LAS-52: thousands alive, megamorphic property loads were the CPU cost)
+    dive: null, under: 0, diveAt: -1, dimR: 0, dark: 0, litSp: 0, glowT: 0, eclOn: false, shine: 0, eclT: 0 };
   if (!p.boss && kd.dive) { e.dive = kd.dive; e.under = 0; e.diveAt = -1; }   // Sounders
   if (!p.boss && kd.murk) e.dimR = kd.murk;                                  // Gloams
   if (!p.boss && kd.dark) { e.dark = kd.dark; e.litSp = kd.litSpeed; }        // Shadelings
   if (e.kind === 'mirror') { e.eclOn = true; e.shine = 1; e.eclT = S.T.boss.mirror.on; }   // the Mirror Warden starts dark
   S.enemies.push(e);
+  if (S.enemies.length > (S.peak[S.wave] || 0)) S.peak[S.wave] = S.enemies.length;
   if (e.boss && S.ev) S.ev.push({ k: 'boss', id: e.id, wave: S.wave, hp: e.hp, x: e.x, y: e.y, kind: e.kind, name: FOE[e.kind].name });
   if (!S.seen[e.kind]) {   // the first of a kind this run: a banner with its line
     S.seen[e.kind] = true;
@@ -4990,7 +4999,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = TWSim;
 // screen) on ONE 2D overlay canvas; the hurt flash on the same canvas; milestone banners (biggest hit past 1K, 1M,
 // 1B...), wave / boss / fall banners in one DOM element; screen shake (bosses, big crits, milestones, heavy wall hits
 // only: docs/plan-game-feel.md); Lighthouse Beam and Flood Gate in 3D (a handful of meshes, made once); synth sounds
-// (Tropebrawl's SYN pattern: oscillators + a fixed noise buffer, no files), throttled per voice, with a volume.
+// (Tropebrawl's SYN pattern: oscillators + noise, no files), throttled per voice, with a volume, over the night beds
+// (sea, wind, drone, lamp, heartbeat; silence before boss waves) and far calls from the dark (LAS-68).
 // API: TWFx.init({ T3, scene, cam, R, RLOOK }) once after the scene exists; TWFx.reset(S) per run;
 //      TWFx.frame(S, t, dt) before the 3D render (events, beam/flood, shake -> TWFx.shake {x, y, z});
 //      TWFx.draw(S) after the 3D render (numbers + flash); TWFx.fmt(n) short number ("12.3K", "4.56B");
@@ -5105,6 +5115,7 @@ function frame(S, t, dt) {
   for (const n of F.nums) n.age += dt;
   // beam / flood
   beam3d(dt); flood3d(dt); keg3d(dt); harp3d(dt);
+  amb(S, dt);   // the night beds, calls, heartbeat, lamp (sound)
   // the boss intro: in over 0.6 s, hold, out over the last 0.9 s
   if (intro.age < FX.intro) {
     intro.age += dt; const a = intro.age, L = FX.intro;
@@ -5336,16 +5347,29 @@ function flood3d(dt) {
   Fl.sea.material.opacity = 0.14 * fade; Fl.front.material.opacity = 0.8 * fade;
 }
 
-// ---------- sound: SYN voices (Tropebrawl v20.117 pattern), one master gain, per-voice throttle, fixed noise buffer
+// ---------- sound (LAS-68 horror night): all synth, no files. One master gain (the Settings volume) over three groups:
+// beds (sea, wind, drone, lamp mechanism, quiet; dropped to near silence before a boss wave, dipped before every wave,
+// ducked by the heartbeat), sfx (the SYN one-shots, hits muffled, big moments loud) and calls from the dark (far,
+// sparse, panned toward a creature that is out there and unlit, mostly reverb). A synthetic hall reverb (a decaying
+// noise impulse) gives the distance. Spec: art/look-target.md section 4.
 const A = { ctx: null, bus: null, last: {}, nz: null, n: 0 };
+const MIX = { bed: 0.55, sfx: 0.85, call: 0.5, verb: 0.7 };   // group levels under the master volume
 try { const v = root.localStorage && root.localStorage.getItem('tidewall.vol'); if (v !== null && v !== undefined && v !== '') FX.vol = Math.max(0, Math.min(1, +v)); } catch (e) {}
 function audio(wake) {
   if (!A.ctx) {
     if (!wake) return null;   // browsers need a click or key first
     const AC = root.AudioContext || root.webkitAudioContext; if (!AC) return null;
     try { A.ctx = new AC(); } catch (e) { return null; }
-    const comp = A.ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.connect(A.ctx.destination);
-    A.bus = A.ctx.createGain(); A.bus.gain.value = FX.vol; A.bus.connect(comp);
+    const C = A.ctx, comp = C.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.connect(C.destination);
+    A.comp = comp; A.bus = C.createGain(); A.bus.gain.value = FX.vol; A.bus.connect(comp);
+    const g = v => { const n = C.createGain(); n.gain.value = v; n.connect(A.bus); return n; };
+    A.sfx = g(MIX.sfx); A.bed = g(MIX.bed); A.call = g(MIX.call);
+    // the hall: convolver (stereo IR, 3.4 s) -> lowpass (wet stone, not a bright plate) -> bus
+    const ir = C.createBuffer(2, (C.sampleRate * 3.4) | 0, C.sampleRate); let q = 24681357;
+    for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c), n = d.length, pre = (C.sampleRate * 0.03) | 0;
+      for (let i = pre; i < n; i++) { q = (q * 1103515245 + 12345) & 0x7fffffff; d[i] = (q / 1073741824 - 1) * Math.pow(1 - i / n, 3.4); } }
+    const cv = C.createConvolver(), lp = C.createBiquadFilter(); cv.buffer = ir; lp.type = 'lowpass'; lp.frequency.value = 2400;
+    A.verb = C.createGain(); A.verb.gain.value = 1; A.verb.connect(cv); cv.connect(lp); lp.connect(g(MIX.verb));
   }
   if (A.ctx.state === 'suspended') A.ctx.resume();
   return A.ctx;
@@ -5355,11 +5379,23 @@ function setVolume(v) {
   try { root.localStorage && root.localStorage.setItem('tidewall.vol', String(FX.vol)); } catch (e) {}
   if (A.bus) A.bus.gain.value = FX.vol;
 }
+// checks only (checks/sound.js records the mix): a MediaStream of everything the player hears
+function tap() { const C = audio(true); if (!C || !C.createMediaStreamDestination) return null; const d = C.createMediaStreamDestination(); A.comp.connect(d); return d.stream; }
 function noise(C) {
   if (A.nz) return A.nz;
   const n = C.sampleRate | 0, b = C.createBuffer(1, n, C.sampleRate), d = b.getChannelData(0); let q = 987654321;
   for (let i = 0; i < n; i++) { q = (q * 1103515245 + 12345) & 0x7fffffff; d[i] = q / 1073741824 - 1; }
   return A.nz = b;
+}
+// long stereo beds: brown (the sea: integrated white noise, the loop seam ramped shut) or white (the wind), 6 s
+function bedBuf(C, brown, seed) {
+  const n = (C.sampleRate * 6) | 0, b = C.createBuffer(2, n, C.sampleRate); let q = seed;
+  for (let c = 0; c < 2; c++) {
+    const d = b.getChannelData(c); let y = 0;
+    for (let i = 0; i < n; i++) { q = (q * 1103515245 + 12345) & 0x7fffffff; const w = q / 1073741824 - 1; d[i] = brown ? (y = (y + 0.02 * w) / 1.02) * 3.5 : w * 0.5; }
+    if (brown) { const k = d[n - 1] - d[0]; for (let i = 0; i < n; i++) d[i] -= k * i / (n - 1); }
+  }
+  return b;
 }
 function synT(C, o, t, f0, f1, d, ty, v, att) {
   const s = C.createOscillator(), g = C.createGain(); s.type = ty || 'sine'; s.frequency.setValueAtTime(f0, t);
@@ -5373,41 +5409,200 @@ function synN(C, o, t, d, ty, f0, f1, q, v, att) {
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + (att || 0.004)); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
   s.connect(f); f.connect(g); g.connect(o); s.start(t, (A.n % 7) * 0.1); s.stop(t + d + 0.03);
 }
+const lowp = (C, o, f) => { const l = C.createBiquadFilter(); l.type = 'lowpass'; l.frequency.value = f; l.connect(o); return l; };
+// a cast-iron bell: inharmonic partials (hum, prime, minor third, fifth, nominal), each its own decay; f = the prime
+function bellT(C, o, t, f, v, d) { [[0.5, 1, 1], [1, 0.8, 0.8], [1.19, 0.5, 0.6], [1.5, 0.3, 0.45], [2, 0.35, 0.35], [2.74, 0.12, 0.2]]
+  .forEach(([m, a, k]) => synT(C, o, t, f * m, f * m * 0.998, d * k, 'sine', v * a, 0.003)); }
 const P = [1, 1.08, 0.93, 1.03, 0.97];
 const SYN = {
-  shot: (C, o, t, p) => { synT(C, o, t, 150 * p, 48, 0.16, 'sine', 0.55, 0.003); synN(C, o, t, 0.08, 'lowpass', 1800, 300, 0.8, 0.35, 0.002); },
-  hit: (C, o, t, p) => { synN(C, o, t, 0.05, 'bandpass', 1300 * p, 500, 1.4, 0.25); },
-  crit: (C, o, t, p) => { synN(C, o, t, 0.09, 'lowpass', 6000 * p, 900, 0.8, 0.5, 0.001); synT(C, o, t, 900 * p, 1400 * p, 0.09, 'triangle', 0.18); },
-  kill: (C, o, t, p) => { synN(C, o, t, 0.22, 'bandpass', 700 * p, 220, 0.9, 0.35, 0.01); synT(C, o, t, 220 * p, 90, 0.16, 'sine', 0.18); },
-  wall: (C, o, t, p) => { synT(C, o, t, 110 * p, 60, 0.12, 'triangle', 0.35); synN(C, o, t, 0.07, 'lowpass', 900, 200, 1, 0.3); },
+  // the guns, heard through rain and fog: a low thump and a smothered burst, no bright crack
+  shot: (C, o, t, p) => { synT(C, o, t, 64 * p, 36, 0.24, 'sine', 0.7, 0.004); synN(C, o, t, 0.16, 'lowpass', 560 * p, 140, 0.7, 0.42, 0.003); synN(C, o, t, 0.035, 'lowpass', 1300, 600, 0.7, 0.07, 0.001); },
+  hit: (C, o, t, p) => { synN(C, o, t, 0.07, 'lowpass', 700 * p, 240, 1, 0.32, 0.003); synT(C, o, t, 140 * p, 80, 0.06, 'sine', 0.12, 0.003); },
+  crit: (C, o, t, p) => { synN(C, o, t, 0.12, 'lowpass', 1500 * p, 280, 0.8, 0.5, 0.002); synT(C, o, t, 96 * p, 48, 0.14, 'sine', 0.45, 0.003); },
+  kill: (C, o, t, p) => { synN(C, o, t, 0.32, 'bandpass', 380 * p, 110, 1.2, 0.38, 0.015); synT(C, o, t, 120 * p, 52, 0.24, 'sine', 0.2, 0.01); },
+  wall: (C, o, t, p) => { synT(C, o, t, 86 * p, 44, 0.18, 'triangle', 0.4); synN(C, o, t, 0.13, 'lowpass', 620, 120, 1, 0.36); },
   wallboss: (C, o, t, p) => { synT(C, o, t, 70 * p, 30, 0.5, 'sine', 0.9, 0.004); synN(C, o, t, 0.35, 'lowpass', 400, 70, 1, 0.6); },
-  bell: (C, o, t, p) => { [392, 588].forEach((f, i) => synT(C, o, t + i * 0.02, f, f, 1.3, 'triangle', 0.16, 0.004)); synT(C, o, t, 1176, 1176, 0.6, 'sine', 0.05); },
-  horn: (C, o, t, p) => { synT(C, o, t, 73, 73, 1.6, 'sawtooth', 0.16, 0.25); synT(C, o, t, 110, 104, 1.6, 'sawtooth', 0.1, 0.3); synN(C, o, t, 1.4, 'lowpass', 300, 90, 1, 0.3, 0.3); },
-  boss: (C, o, t, p) => { synT(C, o, t, 55, 32, 1.1, 'sine', 0.8, 0.05); synN(C, o, t, 1, 'lowpass', 220, 60, 1, 0.45, 0.08); },
-  bossdie: (C, o, t, p) => { synT(C, o, t, 90, 25, 1.4, 'sine', 0.9, 0.004); synN(C, o, t, 1.2, 'bandpass', 900, 120, 0.7, 0.6, 0.01); [523, 659, 784].forEach((f, i) => synT(C, o, t + 0.25 + i * 0.09, f, f, 0.5, 'triangle', 0.15)); },
-  beam: (C, o, t, p) => { synN(C, o, t, 0.6, 'highpass', 2500, 7000, 0.9, 0.35, 0.02); synT(C, o, t, 440, 880, 0.5, 'sawtooth', 0.12, 0.02); synT(C, o, t, 1320, 1320, 0.7, 'sine', 0.1); },
+  // wave: a buoy bell somewhere out in the fog
+  bell: (C, o, t, p) => { bellT(C, lowp(C, o, 1500), t, 233, 0.22, 3); },
+  // boss wave: the foghorn, two-tone diaphone ("bee-oh"), long and LOUD
+  horn: (C, o, t, p) => { const l = lowp(C, o, 560), g = C.createGain(); g.connect(l);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(1, t + 0.35); g.gain.setValueAtTime(1, t + 2.3); g.gain.exponentialRampToValueAtTime(0.0001, t + 3.1);
+    [[66, 0.5], [66.6, 0.4], [132.4, 0.15]].forEach(([f, v]) => { const s = C.createOscillator(), a = C.createGain(); s.type = 'sawtooth'; a.gain.value = v;
+      s.frequency.setValueAtTime(f, t); s.frequency.setValueAtTime(f, t + 1.35); s.frequency.exponentialRampToValueAtTime(f * 0.8, t + 1.5);   // bee ... oh
+      s.connect(a); a.connect(g); s.start(t); s.stop(t + 3.2); });
+    synN(C, o, t, 3, 'lowpass', 260, 80, 1, 0.25, 0.4); },
+  boss: (C, o, t, p) => { synT(C, o, t, 55, 32, 1.4, 'sine', 0.8, 0.08); synT(C, o, t + 0.1, 41, 30, 1.6, 'sawtooth', 0.12, 0.3); synN(C, o, t, 1.3, 'lowpass', 220, 60, 1, 0.45, 0.1); },
+  // a boss sinks: the collapse, then one deep toll (no bright fanfare: horror, LAS-58)
+  bossdie: (C, o, t, p) => { synT(C, o, t, 90, 25, 1.6, 'sine', 0.9, 0.004); synN(C, o, t, 1.4, 'bandpass', 600, 90, 0.7, 0.6, 0.01); bellT(C, lowp(C, o, 1800), t + 0.45, 147, 0.3, 4); },
+  // the Flare: a magnesium flare igniting: a roaring rise, a low push, a long hiss
+  beam: (C, o, t, p) => { synN(C, o, t, 0.9, 'bandpass', 300, 2600, 0.8, 0.55, 0.05); synT(C, o, t, 72, 38, 0.9, 'sine', 0.6, 0.01); synN(C, o, t + 0.35, 1.8, 'highpass', 3500, 1800, 0.7, 0.16, 0.2); },
   flood: (C, o, t, p) => { synN(C, o, t, 1.1, 'bandpass', 250, 1200, 0.8, 0.7, 0.12); synT(C, o, t, 80, 45, 0.9, 'sine', 0.4, 0.05); },
-  omen: (C, o, t, p) => { [196, 233, 277].forEach((f, i) => synT(C, o, t + i * 0.12, f, f * 0.98, 1.4, 'triangle', 0.14, 0.08)); synN(C, o, t, 1.2, 'bandpass', 500, 180, 2, 0.15, 0.2); },
-  keg: (C, o, t, p) => { synT(C, o, t, 90 * p, 30, 0.6, 'sine', 0.9, 0.003); synN(C, o, t, 0.5, 'lowpass', 2400, 120, 0.8, 0.8, 0.002); },
-  harpoon: (C, o, t, p) => { synN(C, o, t, 0.12, 'highpass', 3000, 800, 1, 0.4, 0.002); synT(C, o, t + 0.08, 160 * p, 90, 0.25, 'sawtooth', 0.25, 0.002); },
-  mile: (C, o, t, p) => { [523, 659, 784, 1047].forEach((f, i) => synT(C, o, t + i * 0.09, f, f, 0.6, 'triangle', 0.28)); synT(C, o, t + 0.36, 1568, 1568, 0.8, 'sine', 0.2); },
-  fall: (C, o, t, p) => { synT(C, o, t, 220, 220, 0.5, 'sawtooth', 0.12); synT(C, o, t + 0.5, 207, 207, 0.5, 'sawtooth', 0.12); synT(C, o, t + 1, 196, 98, 1.4, 'sawtooth', 0.14, 0.02); synT(C, o, t, 50, 28, 2, 'sine', 0.6, 0.05); },
+  omen: (C, o, t, p) => { [196, 208, 277].forEach((f, i) => synT(C, o, t + i * 0.14, f, f * 0.97, 1.8, 'triangle', 0.12, 0.12)); synN(C, o, t, 1.4, 'bandpass', 500, 180, 2, 0.15, 0.25); },
+  keg: (C, o, t, p) => { synT(C, o, t, 90 * p, 30, 0.6, 'sine', 0.9, 0.003); synN(C, o, t, 0.6, 'lowpass', 1500, 100, 0.8, 0.8, 0.002); },
+  harpoon: (C, o, t, p) => { synN(C, o, t, 0.12, 'bandpass', 2200, 700, 1, 0.4, 0.002); synT(C, o, t + 0.08, 160 * p, 90, 0.25, 'sawtooth', 0.22, 0.002); },
+  mile: (C, o, t, p) => { bellT(C, lowp(C, o, 2200), t, 196, 0.26, 3.2); bellT(C, lowp(C, o, 2200), t + 0.7, 147, 0.3, 4); },
+  fall: (C, o, t, p) => { synT(C, o, t, 110, 110, 0.6, 'sawtooth', 0.12); synT(C, o, t + 0.6, 104, 104, 0.6, 'sawtooth', 0.12); synT(C, o, t + 1.2, 98, 49, 1.8, 'sawtooth', 0.14, 0.02); synT(C, o, t, 50, 28, 2.4, 'sine', 0.6, 0.05); },
+  // the Deep One (later): a vast call from under the sea, loud
+  deep: (C, o, t, p) => { call(C, o, t, 'groan', 1.6); synT(C, o, t, 31, 24, 4, 'sine', 0.9, 0.8); synN(C, o, t, 4, 'lowpass', 140, 50, 1, 0.5, 1); },
+  // the lamp mechanism: one iron clank per turn (quiet, a bed sound)
+  clank: (C, o, t, p) => { [[310, 1], [847, 0.5], [1590, 0.25]].forEach(([f, v]) => synT(C, o, t, f * p, f * p * 0.99, 0.35 * (1.2 - v * 0.4), 'sine', 0.12 * v, 0.002)); synN(C, o, t, 0.05, 'bandpass', 1800, 900, 2, 0.14, 0.001); },
   click: (C, o, t, p) => { synT(C, o, t, 900 * p, 700, 0.04, 'triangle', 0.25, 0.002); },
 };
-const VOL = { shot: 0.32, hit: 0.22, crit: 0.4, kill: 0.3, wall: 0.4, wallboss: 0.8, bell: 0.7, horn: 0.8, boss: 0.8, bossdie: 0.9, omen: 0.7, keg: 0.9, harpoon: 0.7, beam: 0.8, flood: 0.8, mile: 0.7, fall: 0.8, click: 0.5 };
-function play(k, gap) {
+const VOL = { shot: 0.26, hit: 0.15, crit: 0.28, kill: 0.22, wall: 0.34, wallboss: 0.8, bell: 0.55, horn: 1, boss: 0.9, bossdie: 0.95, omen: 0.6,
+  keg: 0.85, harpoon: 0.6, beam: 0.95, flood: 0.8, mile: 0.6, fall: 0.85, deep: 1, clank: 0.35, click: 0.5 };
+const VERB = { bell: 0.6, horn: 0.45, boss: 0.35, bossdie: 0.4, omen: 0.5, mile: 0.4, fall: 0.4, beam: 0.25, deep: 0.6, clank: 0.3, keg: 0.15, wallboss: 0.15 };
+function play(k, gap, to) {
   const C = audio(false); if (!C || !FX.vol || C.state !== "running") return;
   const now = C.currentTime;
   if (gap && A.last[k] && now - A.last[k] < gap) return;   // throttle: a hail of 200 shots is still ~14 thumps a second
   A.last[k] = now; A.n++;
-  const o = C.createGain(); o.gain.value = VOL[k] || 0.5; o.connect(A.bus);
+  const o = C.createGain(); o.gain.value = VOL[k] || 0.5; o.connect(to || A.sfx);
+  let s = null; if (VERB[k]) { s = C.createGain(); s.gain.value = VERB[k]; o.connect(s); s.connect(A.verb); }
   try { SYN[k](C, o, now + 0.005, P[A.n % P.length]); } catch (e) {}
-  setTimeout(() => o.disconnect(), 3000);
+  setTimeout(() => { o.disconnect(); if (s) s.disconnect(); }, 7000);
+}
+
+// ---------- the night beds: started once the audio is awake, driven each frame from the sim state (read only)
+const AMB = {
+  seaF: 520, seaSwell: 0.09,            // sea low-pass Hz, swell Hz (gain and cutoff)
+  wind: 0.16, gust: [2, 6],             // wind level, seconds between gust changes
+  drone: [0.015, 0.11],                 // drone level from calm to full threat
+  silence: 2.6, dip: 1.1,               // s of near silence before a boss wave; s of dip before every other wave
+  heart: 0.3, bpm: [62, 104],           // heartbeat under 30% HP, BPM from 30% down to 0
+  callGap: [18, 50], callFirst: [7, 14], // s between calls from the dark (spec 20-90 s; our waves are 20 s)
+};
+const B = { on: false, nextGust: 0, nextCall: 0, nextHeart: 0, nextWash: 0, lastSimT: -1, simAt: 0, cnt: { beats: 0, clanks: 0, washes: 0 }, a: null, dir: 0, turn: 0, th: 0, thT: 0, lvl: 1 };
+function bedsOn(C) {
+  const t = C.currentTime, src = (buf, rate) => { const s = C.createBufferSource(); s.buffer = buf; s.loop = true; s.playbackRate.value = rate || 1; s.start(t); return s; };
+  const lfo = (hz, depth, param) => { const o = C.createOscillator(), g = C.createGain(); o.frequency.value = hz; g.gain.value = depth; o.connect(g); g.connect(param); o.start(t); return o; };
+  const filt = (ty, f, q) => { const n = C.createBiquadFilter(); n.type = ty; n.frequency.value = f; n.Q.value = q || 0.7; return n; };
+  const gain = v => { const n = C.createGain(); n.gain.value = v; return n; };
+  // sea: brown noise, low-passed, a slow swell on gain and cutoff (two LFOs a little apart so it never loops plainly)
+  const brown = bedBuf(C, true, 13579), white = bedBuf(C, false, 97531);
+  const sf = filt('lowpass', AMB.seaF, 0.5), sg = gain(0.5); src(brown).connect(sf); sf.connect(sg); sg.connect(A.bed);
+  lfo(AMB.seaSwell, 180, sf.frequency); lfo(AMB.seaSwell * 0.61, 0.18, sg.gain);
+  // wind: white noise, band-passed, gusts move its level and centre (frame())
+  const wf = filt('bandpass', 700, 0.8), wg = gain(AMB.wind); src(white, 0.97).connect(wf); wf.connect(wg); wg.connect(A.bed);
+  // drone: detuned low saws (a slow beat) + a tritone above, low-passed; level and cutoff follow the threat
+  const df = filt('lowpass', 140, 1.2), dg = gain(AMB.drone[0]); df.connect(dg); dg.connect(A.bed);
+  [[41.2, 'sawtooth', 0.5], [41.42, 'sawtooth', 0.5], [58.3, 'triangle', 0.35], [29.1, 'sine', 0.8]].forEach(([f, ty, v]) => {
+    const o = C.createOscillator(), g = gain(v); o.type = ty; o.frequency.value = f; o.connect(g); g.connect(df); o.start(t); });
+  lfo(0.13, 25, df.frequency);
+  // lamp: the gear rumble under the lamp room, its level follows the turn speed
+  const lf = filt('lowpass', 120, 3), lg = gain(0); src(brown, 1.7).connect(lf); lf.connect(lg); lg.connect(A.bed);
+  Object.assign(B, { on: true, sea: sg, wind: wg, windF: wf, drone: dg, droneF: df, lamp: lg,
+    nextGust: t + 1, nextCall: t + rr(AMB.callFirst), nextWash: t + 4 });
+}
+const rr = ([a, b]) => a + Math.random() * (b - a);   // audio only: Math.random never touches the sim
+function amb(S, dt) {
+  const C = A.ctx; if (!C || C.state !== 'running' || !S) return;
+  if (!B.on) bedsOn(C);
+  const now = C.currentTime, wall = root.performance ? root.performance.now() / 1000 : now;
+  // is the sim running? (title, pause, picks: it isn't, and then nothing dips or calls)
+  if (S.t !== B.lastSimT) { B.lastSimT = S.t; B.simAt = wall; }
+  const live = wall - B.simAt < 0.3 && !S.over;
+  // threat (4x a second): how many are out there and how close the nearest is
+  if (wall - B.thT > 0.25) {
+    B.thT = wall; let n = 0, near = 1e9; const E = S.enemies || [];
+    for (let i = 0; i < E.length; i++) { const e = E[i]; if (e.dead) continue; n++; const d = Math.hypot(e.x, e.y); if (d < near) near = d; }
+    const R = (S.T && S.T.wave && S.T.wave.spawnR) || 45;
+    B.th = live ? Math.min(1, 0.55 * Math.min(1, n / 120) + 0.45 * Math.max(0, 1 - near / R)) : 0;
+    B.dg = AMB.drone[0] + (AMB.drone[1] - AMB.drone[0]) * B.th * B.th;
+    B.drone.gain.setTargetAtTime(B.dg, now, 1.5); B.droneF.frequency.setTargetAtTime(110 + 260 * B.th, now, 1.5);
+  }
+  // silence before surges: near silence before a boss wave, a dip before the others
+  const to = S.nextWave - S.t, bossNext = S.T && S.T.boss && S.T.boss.every > 0 && (S.wave + 1) % S.T.boss.every === 0;
+  const hpF = S.maxHp ? S.hp / S.maxHp : 1, heart = live && hpF < AMB.heart && hpF > 0;
+  let L = 1;
+  if (live && to > 0 && bossNext && to < AMB.silence) L = 0.03;
+  else if (live && to > 0 && S.wave > 0 && to < AMB.dip) L = 0.45;
+  if (heart) L *= 0.7;
+  if (S.over) L = 0.6;
+  if (Math.abs(L - B.lvl) > 0.01) { A.bed.gain.setTargetAtTime(MIX.bed * L, now, L < B.lvl ? 0.25 : 1.1); B.lvl = L; }
+  // wind gusts
+  if (now >= B.nextGust) { B.nextGust = now + rr(AMB.gust); const k = Math.random();
+    B.wind.gain.setTargetAtTime(AMB.wind * (0.45 + 1.1 * k), now, 1.2); B.windF.frequency.setTargetAtTime(480 + 700 * k, now, 1.6); }
+  // a wave breaks on the rocks somewhere left or right (beds group)
+  if (now >= B.nextWash && L > 0.3) { B.nextWash = now + rr([5, 11]); B.cnt.washes++; wash(C, now, Math.random() * 1.6 - 0.8); }
+  // the lamp: rumble by turn speed, one clank per turn (each sweep reversal, or each full turn)
+  const b = S.beam;
+  if (b && live) {
+    if (B.a !== null && dt > 0) {
+      let da = b.a - B.a; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI;
+      const w = Math.abs(da) / Math.max(1e-3, dt); B.lamp.gain.setTargetAtTime(0.06 * Math.min(1.5, w / 1.25), now, 0.3);
+      B.turn += Math.abs(da);
+      if ((B.dir && b.dir && b.dir !== B.dir) || B.turn >= 2 * Math.PI) { B.turn = 0; play('clank', 0.8, A.bed); B.cnt.clanks++; }
+    }
+    B.a = b.a; B.dir = b.dir;
+  } else if (B.lamp) { B.lamp.gain.setTargetAtTime(0, now, 0.4); B.a = null; }
+  // the heartbeat: lub-dub under 30% HP, faster as it falls
+  if (heart && now >= B.nextHeart - 0.05) { B.cnt.beats++;
+    const k = 1 - hpF / AMB.heart, bpm = AMB.bpm[0] + (AMB.bpm[1] - AMB.bpm[0]) * k, t0 = Math.max(now + 0.02, B.nextHeart);
+    const o = C.createGain(); o.gain.value = 0.55 + 0.4 * k; o.connect(A.sfx);
+    synT(C, o, t0, 62, 44, 0.16, 'sine', 0.9, 0.012); synT(C, o, t0 + 0.27, 54, 40, 0.2, 'sine', 0.65, 0.015);
+    setTimeout(() => o.disconnect(), 1500); B.nextHeart = t0 + 60 / bpm;
+  }
+  // calls from the dark: far, sparse, panned toward an unlit creature out there (with slop: a hint, never a locator)
+  if (now >= B.nextCall) {   // not now (paused, the silence, a clank just rang): try again soon, not a whole gap later
+    if (!live || L <= 0.3 || (A.last.clank && now - A.last.clank < 0.6)) B.nextCall = now + 0.4;
+    else { B.nextCall = now + rr(AMB.callGap); darkCall(C, S, now); }
+  }
+}
+function wash(C, t, pan) {
+  const p = C.createStereoPanner(), g = C.createGain(); p.pan.value = pan; g.gain.value = 0.5; p.connect(g); g.connect(A.bed);
+  const d = 2 + Math.random() * 2; synN(C, p, t, d, 'bandpass', 320, 900, 0.6, 0.35, d * 0.45);
+  setTimeout(() => p.disconnect(), (d + 1) * 1000);
+}
+function darkCall(C, S, t) {
+  const E = S.enemies || [], R = (S.T && S.T.wave && S.T.wave.spawnR) || 45, pool = [];
+  for (let i = 0; i < E.length; i++) { const e = E[i]; if (!e.dead && !(e.litT >= S.t) && Math.hypot(e.x, e.y) > R * 0.45) pool.push(e); }
+  if (!pool.length) { B.nextCall = t + 4; return; }
+  const e = pool[(Math.random() * pool.length) | 0], dist = Math.min(1, Math.hypot(e.x, e.y) / R);
+  let pan = 0;
+  if (F.cam && F.T3) { const [x, z] = V(e.x, e.y), v = (B.pv || (B.pv = new F.T3.Vector3())).set(x, 0, z).project(F.cam); pan = isFinite(v.x) ? v.x : 0; }
+  pan = Math.max(-0.85, Math.min(0.85, pan * 0.8 + (Math.random() - 0.5) * 0.3));
+  const kind = e.boss ? 'groan' : e.fly ? 'keen' : e.dive ? 'clicks' : e.kind === 'brute' ? 'groan' : 'moan';
+  const p = C.createStereoPanner(), dry = C.createGain(), wet = C.createGain(), lp = C.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 2200 - 1500 * dist; p.pan.value = pan;
+  dry.gain.value = 0.55 - 0.35 * dist; wet.gain.value = 0.5 + 0.4 * dist;
+  lp.connect(p); p.connect(dry); dry.connect(A.call); p.connect(wet); wet.connect(A.verb);
+  const d = call(C, lp, t + 0.01, kind, 1);
+  B.lastCall = { t, kind, pan: +pan.toFixed(2), dist: +dist.toFixed(2) };
+  setTimeout(() => { lp.disconnect(); p.disconnect(); dry.disconnect(); wet.disconnect(); }, (d + 1) * 1000);
+}
+// the voices out there: moan (the Drowned: a half-human 'oh' through two formants, a wail in the middle), groan (big
+// things: a low growl with a rough flutter), keen (flyers: two thin detuned whistles), clicks (Sounders: echolocation)
+function call(C, o, t, kind, size) {
+  const gain = (v, to) => { const g = C.createGain(); g.gain.value = v; g.connect(to); return g; };
+  const env = (g, a, s, d, v) => { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + a); g.gain.setValueAtTime(v, t + a + s); g.gain.exponentialRampToValueAtTime(0.0001, t + d); };
+  const osc = (ty, f) => { const s = C.createOscillator(); s.type = ty; s.frequency.setValueAtTime(f, t); return s; };
+  const vib = (s, hz, depth, d) => { const l = osc('sine', hz), g = C.createGain(); g.gain.value = depth; l.connect(g); g.connect(s.frequency); l.start(t); l.stop(t + d); };
+  if (kind === 'moan') {
+    const d = 2.4 + Math.random() * 1.4, f0 = 120 + Math.random() * 50, s = osc('sawtooth', f0), out = gain(1, o);
+    s.frequency.linearRampToValueAtTime(f0 * 1.22, t + d * 0.4); s.frequency.exponentialRampToValueAtTime(f0 * 0.7, t + d);
+    vib(s, 4.6, f0 * 0.025, d); env(out, d * 0.3, d * 0.2, d, 0.5);
+    [[380, 6, 1], [820, 8, 0.45]].forEach(([f, q, v]) => { const b = C.createBiquadFilter(); b.type = 'bandpass'; b.frequency.value = f; b.Q.value = q; s.connect(b); b.connect(gain(v, out)); });
+    s.start(t); s.stop(t + d + 0.05); return d;
+  }
+  if (kind === 'groan') {
+    const d = (2.8 + Math.random()) * size, f0 = 46 / size, s = osc('sawtooth', f0), am = osc('sine', 23), amg = C.createGain(), out = gain(1, o), lp = C.createBiquadFilter();
+    s.frequency.exponentialRampToValueAtTime(f0 * 0.75, t + d); lp.type = 'lowpass'; lp.frequency.value = 320; s.connect(lp);
+    const flutter = gain(0.5, out); lp.connect(flutter); amg.gain.value = 0.45; am.connect(amg); amg.connect(flutter.gain);
+    env(out, d * 0.35, d * 0.15, d, 0.9); s.start(t); s.stop(t + d + 0.05); am.start(t); am.stop(t + d + 0.05); return d;
+  }
+  if (kind === 'keen') {
+    const d = 1.6 + Math.random() * 0.8, out = gain(1, o);
+    [[1150, 1], [1157, 0.7]].forEach(([f, v]) => { const s = osc('sine', f); s.frequency.exponentialRampToValueAtTime(f * 0.62, t + d); vib(s, 7, 9, d); s.connect(gain(v * 0.25, out)); s.start(t); s.stop(t + d + 0.05); });
+    env(out, d * 0.4, d * 0.1, d, 0.6); return d;
+  }
+  const n = 5 + ((Math.random() * 5) | 0); let at = 0, gap = 0.2;   // clicks
+  for (let i = 0; i < n; i++) { synN(C, o, t + at, 0.025, 'bandpass', 2600, 1800, 3, 0.5, 0.001); at += gap; gap *= 0.82; }
+  return at + 0.3;
 }
 
 // ui.js adds its UI voices (hover, buy, deny, deal, count tick...) here: voice(key, (C, o, t, p, synT, synN) => ..., vol)
 function voice(k, fn, vol) { SYN[k] = (C, o, t, p) => fn(C, o, t, p, synT, synN); VOL[k] = vol || 0.5; }
-root.TWFx = { init, reset, hideBanner, frame, draw, fmt, setVolume, sound: k => play(k, 0.03), voice, shake, kick, intro, held, FX, F,
+root.TWFx = { init, reset, hideBanner, frame, draw, fmt, setVolume, sound: k => play(k, 0.03), voice, tap, AMB, B, A, shake, kick, intro, held, FX, F,
   get volume() { return FX.vol; } };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
@@ -5878,7 +6073,7 @@ function buildScene() {
   bakeStatic(scene, [rocks, cit, lh]);
   for (const g of D.stages) g.baked = bakeStatic(scene, [g]);
   for (const g of R.isle) g.baked = bakeStatic(scene, [g]);
-  for (const o of R.outer) o.baked = bakeStatic(scene, [o.g]);
+  for (const o of R.outer) { o.baked = bakeStatic(scene, [o.g]); o.houses = bakeStatic(scene, [o.hz]); }
 
   // the Tide: per creature kind one InstancedMesh for the body (vertex colours x instance colour) and one for the eyes,
   // each with that kind's walk/swim shader; the Nightgaunts add two wing meshes (they flap) and a soft shadow on the water
@@ -6174,6 +6369,7 @@ function buildOuter(scene, i) {
   mk(g, new T3.BoxGeometry(2.0, 0.5, 0.9), sd, { p: [0, y0 + OH + 0.1, -Ro + 0.3], cast: true });
   // the outer bailey: cobbles inside the wall, then houses in rings between the rock of the keep and the wall
   mk(g, new T3.CylinderGeometry(Ro - 0.5, Ro - 0.5, 0.06, 40), '#34352f', { p: [0, y0 + 0.02, 0] });
+  const hz = new T3.Group(); scene.add(hz);   // LAS-62: the houses are their own group: the island town (R.townStep) replaces them
   const rings = []; for (let r = 8.25; r < Ro - 1.0; r += 1.75) rings.push(r);
   rings.forEach((r, ri) => {
     const n = Math.floor(Math.PI * 2 * r / 1.55);
@@ -6182,11 +6378,11 @@ function buildOuter(scene, i) {
       if (isGate(a) || Math.abs(Math.atan2(Math.sin(a - GA), Math.cos(a - GA))) < 0.75 / r * 2 || near(a, MA, 0.9 / r) || jr() < 0.12) continue;   // the gate road, gun towers
       const w = 0.95 + jr() * 0.4, h = 0.6 + jr() * 0.45, dd = 0.75, x = Math.cos(a) * r, z = Math.sin(a) * r, ry = Math.PI / 2 - a;
       const wall = jr() < 0.35 ? '#6b5a48' : jr() < 0.5 ? '#7a7068' : '#68615a';
-      mk(g, new T3.BoxGeometry(w, h, dd), wall, { p: [x, y0 + h / 2, z], r: [0, ry, 0], cast: true });
+      mk(hz, new T3.BoxGeometry(w, h, dd), wall, { p: [x, y0 + h / 2, z], r: [0, ry, 0], cast: true });
       const roof = new T3.ConeGeometry(0.72, 0.55, 4); roof.rotateY(Math.PI / 4); roof.scale(w / 1.0, 1, dd / 1.0);
-      mk(g, roof, jr() < 0.4 ? '#5a3b2c' : RLOOK.roof, { p: [x, y0 + h + 0.27, z], r: [0, ry, 0], cast: true });
-      if (jr() < 0.75) mk(g, new T3.BoxGeometry(0.14, 0.2, 0.04), RLOOK.lamp, { glow: 1, p: [x - Math.cos(a) * (dd / 2 + 0.02), y0 + h * 0.5, z - Math.sin(a) * (dd / 2 + 0.02)], r: [0, ry, 0] });
-      if (jr() < 0.3) mk(g, new T3.BoxGeometry(0.12, 0.35, 0.12), '#3d3833', { p: [x + Math.cos(a) * 0.15, y0 + h + 0.45, z + Math.sin(a) * 0.15] });   // a chimney
+      mk(hz, roof, jr() < 0.4 ? '#5a3b2c' : RLOOK.roof, { p: [x, y0 + h + 0.27, z], r: [0, ry, 0], cast: true });
+      if (jr() < 0.75) mk(hz, new T3.BoxGeometry(0.14, 0.2, 0.04), RLOOK.lamp, { glow: 1, p: [x - Math.cos(a) * (dd / 2 + 0.02), y0 + h * 0.5, z - Math.sin(a) * (dd / 2 + 0.02)], r: [0, ry, 0] });
+      if (jr() < 0.3) mk(hz, new T3.BoxGeometry(0.12, 0.35, 0.12), '#3d3833', { p: [x + Math.cos(a) * 0.15, y0 + h + 0.45, z + Math.sin(a) * 0.15] });   // a chimney
     }
   });
   // lanterns on the wall-walk, every few metres (warm dots that trace the ring at the far camera)
@@ -6229,7 +6425,7 @@ function buildOuter(scene, i) {
     f.halo = new T3.Mesh(new T3.PlaneGeometry(1, 1), new T3.MeshBasicMaterial({ color: RLOOK.fire, map: haloTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, opacity: 0.55, fog: false }));
     f.halo.position.set(...f.p); f.halo.renderOrder = 5; dyn.add(f.halo); f.ph = jr() * 6.28; f.puff = 0;
   }
-  return { g, fires, Ro, walkY: y0 + OH, tA, dyn, W };
+  return { g, hz, fires, Ro, walkY: y0 + OH, tA, dyn, W };
 }
 
 // ---------- the citadel (warm stone, amber windows). Static stone is baked; what can break or move lives in `dyn`:
@@ -6709,6 +6905,285 @@ function guardsTick(S, t, dt, alpha) {
   }
   if (R.glow) R.glow.distance = Math.max(14, ringV + 3);
 }
+// ---------- LAS-62: the island town. Buildings the cards raise in the ring slots round the lighthouse (design/island-town.md).
+// Input (the sim core, work-list item 1, will fill it; until then the #town= dev hook does): S.town = { rings: 1..4, slots: [{ ring: 1..4,
+// i: fill order inside the ring, id, lv: 1..3, t: S.t it was raised or levelled }] }. Ids: gun brazier rocket watch breakwater bell boathouse
+// horn. Render only reads it. Slot i of a ring: sea side first (+z), then alternately to one side and the other. A building is a Polygon-kit
+// model (vertex colours, one solid + one glow draw) per id and level, shared by every copy; flames, lanterns and the bell are the only parts
+// that move. A new building rises (0.6 s: stone up out of the rock, ember-hot, dust); a level-up pulses (0.5 s) and swaps the look.
+// R.townStep: the island needs its outer wall for the rings to stand inside (growth() reads it); the sim's rim (item 1) replaces this.
+const TOWN = { r: [4.9, 6.8, 8.7, 10.6], n: [4, 6, 8, 10], step: [1, 2, 2, 3], y: [0.9, 0.28, 0.28, 0.28], rise: 0.6, lvl: 0.5, ember: '#ff6a20' };
+const TOWN_HOME = { brazier: 'in', rocket: 'in', watch: 'in', breakwater: 'in', bell: 'in', gun: 'out', boathouse: 'out', horn: 'out' };
+const TOWN_IDS = Object.keys(TOWN_HOME);
+const TC = { stone: '#5a5651', stoneD: '#38393b', stoneL: '#77716a', iron: '#26292c', rust: '#7a3f26', rustD: '#4d2a1e', wood: '#4d3b2c', woodD: '#33281f', bone: '#cdc3a4', boneD: '#9a917a', brass: '#8f6a35', ember: '#ff8a3a', coal: '#a8431a', lamp: '#ffc27a', black: '#0b0b0c', cloth: '#141112' };
+const hj = i => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const TOWNC = {}, TQ = new T3.Quaternion();
+// the builder's pen. p = [x, y, z], r = [rx, ry, rz] (radians); all models face +z (the sea) and stand on y = 0 (the plinth's top)
+function townPen(S, G) {
+  const H = { gn: 0 };
+  H.box = (w, h, d, c, p, r) => { S.add(new T3.BoxGeometry(w, h, d), c, p, r); return H; };
+  H.cyl = (rt, rb, h, n, c, p, r) => { S.add(new T3.CylinderGeometry(rt, rb, h, n), c, p, r); return H; };
+  H.cone = (r0, h, n, c, p, r) => { S.add(new T3.ConeGeometry(r0, h, n), c, p, r); return H; };
+  H.ball = (rad, c, p, sc) => { S.add(ico(1), c, p, [0, 0, 0], sc || [rad, rad, rad]); return H; };
+  H.limb = (a, b, r0, r1, c) => { S.limb(a, b, r0, r1, c); return H; };
+  H.ring = (n, rad, fn) => { for (let k = 0; k < n; k++) { const a = (k + 0.5) / n * Math.PI * 2; fn(Math.cos(a) * rad, Math.sin(a) * rad, Math.PI / 2 - a, k); } return H; };
+  H.gbox = (w, h, d, c, p, r) => { G.add(new T3.BoxGeometry(w, h, d), c, p, r); H.gn++; return H; };
+  H.gcyl = (rt, rb, h, n, c, p, r) => { G.add(new T3.CylinderGeometry(rt, rb, h, n), c, p, r); H.gn++; return H; };
+  H.gball = (rad, c, p) => { G.add(ico(1), c, p, [0, 0, 0], [rad, rad, rad]); H.gn++; return H; };
+  return H;
+}
+function bellGeo(s) {   // hangs from its pivot: crown at y 0, lip at -0.55 s
+  const M = model();
+  M.add(new T3.CylinderGeometry(0.1 * s, 0.4 * s, 0.5 * s, 8), TC.brass, [0, -0.3 * s, 0]);
+  M.add(new T3.CylinderGeometry(0.42 * s, 0.42 * s, 0.07 * s, 8), TC.rustD, [0, -0.56 * s, 0]);
+  M.add(ico(0.09 * s), TC.iron, [0, -0.5 * s, 0]); M.add(new T3.BoxGeometry(0.06 * s, 0.1 * s, 0.06 * s), TC.iron, [0, -0.04 * s, 0]);
+  return M.geo();
+}
+// every builder: (lv, H) -> { h: height (the rise's depth), fires: [[x, y, z, size]], lamps: [[x, y, z, size]], bell: { y, geo, amp } }
+const TOWN_BUILD = {
+  gun(lv, H) {   // a drum tower with a cannon on top; the second battery of the island
+    const h = [1.5, 2.0, 2.5][lv - 1], sp = { h: h + 1.2, fires: [], lamps: [] };
+    H.cyl(0.8, 0.96, h, 8, TC.stone, [0, h / 2, -0.1]).cyl(0.94, 0.84, 0.22, 8, TC.stoneD, [0, h + 0.11, -0.1]);
+    H.ring(8, 0.88, (x, z, ry) => H.box(0.26, 0.26, 0.18, TC.stone, [x, h + 0.35, z - 0.1], [0, ry, 0]));
+    if (lv >= 2) H.cyl(1, 1, 0.08, 8, TC.iron, [0, h * 0.28, -0.1]).cyl(0.9, 0.9, 0.08, 8, TC.iron, [0, h * 0.72, -0.1]);
+    H.gbox(0.1, 0.32, 0.06, TC.lamp, [0, h * 0.5, 0.78]);
+    const bar = x => H.box(0.46, 0.2, 0.9, TC.woodD, [x, h + 0.34, -0.05]).cyl(0.16, 0.22, 1.2 + 0.15 * lv, 8, TC.iron, [x, h + 0.64, 0.5 + 0.06 * lv], [Math.PI / 2, 0, 0])
+      .cyl(0.23, 0.23, 0.08, 8, TC.brass, [x, h + 0.64, 0.1], [Math.PI / 2, 0, 0]).cyl(0.2, 0.2, 0.07, 8, TC.brass, [x, h + 0.64, 1.1 + 0.12 * lv], [Math.PI / 2, 0, 0]);
+    if (lv === 3) { bar(-0.27); bar(0.27); } else bar(0);
+    H.ball(0.17, TC.iron, [1.0, 0.17, 0.6]).ball(0.17, TC.iron, [1.25, 0.17, 0.35]).ball(0.17, TC.iron, [1.1, 0.4, 0.5]);
+    if (lv === 3) { H.limb([-0.7, h + 0.1, -0.3], [-0.7, h + 1.3, -0.3], 0.04, 0.03, TC.iron).box(0.55, 0.38, 0.03, TC.rust, [-0.43, h + 1.08, -0.3]);
+      H.cyl(0.2, 0.14, 0.22, 6, TC.iron, [0.55, h + 0.4, -0.55]); sp.fires.push([0.55, h + 0.58, -0.55, 0.55]); }
+    return sp;
+  },
+  brazier(lv, H) {   // fire bowls on iron tripods; the lit ring grows
+    const sp = { h: 3, fires: [], lamps: [] };
+    const bowl = (x, z, s, y) => {
+      for (let k = 0; k < 3; k++) { const a = k * 2.094 + 0.6; H.limb([x + Math.cos(a) * 0.5 * s, 0, z + Math.sin(a) * 0.5 * s], [x + Math.cos(a) * 0.12 * s, y, z + Math.sin(a) * 0.12 * s], 0.05 * s, 0.04 * s, TC.iron); }
+      H.cyl(0.52 * s, 0.26 * s, 0.32 * s, 8, TC.iron, [x, y + 0.12 * s, z]).cyl(0.56 * s, 0.56 * s, 0.05 * s, 8, TC.rustD, [x, y + 0.28 * s, z]).gcyl(0.44 * s, 0.44 * s, 0.03, 8, TC.coal, [x, y + 0.29 * s, z]);
+      sp.fires.push([x, y + 0.5 * s, z, s]);
+    };
+    if (lv === 1) bowl(0, 0, 1, 0.95);
+    else if (lv === 2) { bowl(-0.78, 0.1, 0.85, 0.8); bowl(0.78, 0.1, 0.85, 0.8); bowl(0, -0.35, 1.1, 1.1); }
+    else {
+      H.cyl(0.13, 0.22, 2.5, 6, TC.iron, [0, 1.25, 0]).cyl(0.28, 0.28, 0.3, 6, TC.rustD, [0, 0.15, 0]);
+      H.cyl(0.85, 0.3, 0.5, 8, TC.iron, [0, 2.6, 0]).cyl(0.9, 0.9, 0.06, 8, TC.rust, [0, 2.86, 0]).gcyl(0.74, 0.74, 0.03, 8, TC.coal, [0, 2.87, 0]);
+      for (let k = 0; k < 6; k++) { const a = k * 1.047; H.limb([Math.cos(a) * 0.3, 2.35, Math.sin(a) * 0.3], [Math.cos(a) * 0.88, 3.05, Math.sin(a) * 0.88], 0.03, 0.03, TC.iron); }   // the cage
+      sp.fires.push([0, 3.0, 0, 1.9]); bowl(-0.95, 0.15, 0.8, 0.75); bowl(0.95, 0.15, 0.8, 0.75);
+      H.limb([0, 2.0, 0], [-0.95, 1.0, 0.15], 0.025, 0.025, TC.rust).limb([0, 2.0, 0], [0.95, 1.0, 0.15], 0.025, 0.025, TC.rust);
+      sp.h = 4.4;
+    }
+    return sp;
+  },
+  rocket(lv, H) {   // a rack of signal rockets leaning at the sea
+    const n = [3, 5, 8][lv - 1], sp = { h: 3, fires: [], lamps: [] }, th = 0.9, d = [0, Math.cos(th), Math.sin(th)];
+    H.box(2.0, 0.16, 1.5, TC.wood, [0, 0.24, 0]).box(1.9, 0.12, 0.55, TC.woodD, [0, 0.95, 0.12], [0.9, 0, 0]);
+    H.limb([-0.85, 0.1, -0.55], [-0.85, 1.15, -0.1], 0.07, 0.06, TC.woodD).limb([0.85, 0.1, -0.55], [0.85, 1.15, -0.1], 0.07, 0.06, TC.woodD);
+    H.limb([-0.85, 0.1, 0.5], [-0.85, 0.7, 0.2], 0.06, 0.05, TC.woodD).limb([0.85, 0.1, 0.5], [0.85, 0.7, 0.2], 0.06, 0.05, TC.woodD);
+    const rows = lv === 3 ? 2 : 1, per = Math.ceil(n / rows);
+    for (let j = 0; j < n; j++) {
+      const row = j % rows, k = Math.floor(j / rows), x = (k - (per - 1) / 2) * (1.55 / Math.max(2, per - 0.4)) + (row ? 0.1 : 0), y0 = 0.82 + row * 0.38, z0 = -0.05 - row * 0.3;
+      H.cyl(0.075, 0.075, 1.3, 6, TC.bone, [x + d[0] * 0.65, y0 + d[1] * 0.65, z0 + d[2] * 0.65], [th, 0, 0])
+        .cone(0.09, 0.3, 6, TC.rust, [x + d[0] * 1.45, y0 + d[1] * 1.45, z0 + d[2] * 1.45], [th, 0, 0]).gball(0.05, TC.ember, [x - d[0] * 0.02, y0 - d[1] * 0.02, z0 - d[2] * 0.02]);
+    }
+    if (lv >= 2) H.box(0.55, 0.42, 0.5, TC.wood, [-1.15, 0.45, -0.45]).box(0.5, 0.36, 0.45, TC.woodD, [-1.1, 0.84, -0.4], [0, 0.4, 0]);
+    if (lv === 3) { H.cyl(0.26, 0.28, 0.6, 7, TC.iron, [1.2, 0.5, -0.4]); H.limb([1.15, 0.2, 0.6], [1.15, 2.1, 0.6], 0.04, 0.03, TC.woodD).gbox(0.18, 0.26, 0.18, TC.lamp, [1.15, 1.9, 0.6]); sp.lamps.push([1.15, 1.9, 0.6, 1.4]); sp.h = 3.2; }
+    return sp;
+  },
+  watch(lv, H) {   // a lantern post with a swivel gun; at III a watchtower with a skull on a pike
+    const sp = { h: 3, fires: [], lamps: [] }, gun = (x, y, z, ry) => H.cyl(0.07, 0.09, 0.36, 6, TC.iron, [x, y + 0.2, z]).cyl(0.045, 0.06, 0.8, 6, TC.iron, [x + Math.sin(ry) * 0.36, y + 0.4, z + Math.cos(ry) * 0.36], [Math.PI / 2, ry, 0]).box(0.22, 0.06, 0.3, TC.brass, [x, y + 0.38, z], [0, ry, 0]);
+    if (lv < 3) {
+      H.box(0.2, 2.5, 0.2, TC.woodD, [-0.6, 1.25, -0.2]).box(1.0, 0.1, 0.1, TC.woodD, [-0.15, 2.35, -0.2]).limb([-0.6, 1.9, -0.2], [-0.25, 2.3, -0.2], 0.04, 0.04, TC.woodD);
+      H.limb([0.05, 2.33, -0.2], [0.05, 2.1, -0.2], 0.012, 0.012, TC.iron).gbox(0.2, 0.28, 0.2, TC.lamp, [0.05, 1.95, -0.2]); sp.lamps.push([0.05, 1.95, -0.2, 1.5]);
+      H.box(1.3, 0.1, 1.0, TC.wood, [0.35, 0.8, 0.15]).limb([0, 0.05, 0.55], [0, 0.78, 0.5], 0.06, 0.06, TC.woodD).limb([0.7, 0.05, 0.55], [0.7, 0.78, 0.5], 0.06, 0.06, TC.woodD);
+      gun(0.15, 0.85, 0.2, 0.1);
+      if (lv === 2) { H.box(0.18, 2.1, 0.18, TC.woodD, [1.15, 1.05, -0.2]).box(0.9, 0.1, 0.1, TC.woodD, [0.7, 2.0, -0.2]).box(0.7, 0.06, 0.06, TC.woodD, [0.85, 1.25, 0.15]).box(0.9, 0.1, 1.0, TC.wood, [1.0, 0.8, 0.15]);
+        gun(0.85, 0.85, 0.25, -0.15); H.gbox(0.2, 0.28, 0.2, TC.lamp, [0.6, 1.62, -0.2]); sp.lamps.push([0.6, 1.62, -0.2, 1.4]); }
+    } else {
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) H.limb([sx * 0.85, 0, sz * 0.65], [sx * 0.6, 2.7, sz * 0.45], 0.09, 0.07, TC.woodD);
+      H.box(1.7, 0.12, 1.4, TC.wood, [0, 2.2, 0]).box(1.5, 0.06, 0.06, TC.woodD, [0, 1.2, 0.62]).box(1.5, 0.06, 0.06, TC.woodD, [0, 1.2, -0.62]);
+      H.box(1.7, 0.07, 0.06, TC.woodD, [0, 2.75, 0.7]).box(0.06, 0.07, 1.4, TC.woodD, [0.85, 2.75, 0]).box(0.06, 0.07, 1.4, TC.woodD, [-0.85, 2.75, 0]).box(1.7, 0.07, 0.06, TC.woodD, [0, 2.75, -0.7]);
+      H.cone(1.35, 0.8, 4, TC.rustD, [0, 3.55, 0], [0, Math.PI / 4, 0]); for (const sx of [-1, 1]) for (const sz of [-1, 1]) H.limb([sx * 0.6, 2.7, sz * 0.45], [sx * 0.62, 3.2, sz * 0.46], 0.06, 0.06, TC.woodD);
+      gun(0, 2.25, 0.5, 0); gun(-0.7, 2.25, 0.05, -1.4); gun(0.7, 2.25, 0.05, 1.4);
+      H.gbox(0.24, 0.34, 0.24, TC.lamp, [0, 3.0, 0.5]).gbox(0.2, 0.28, 0.2, TC.lamp, [0.55, 1.5, 0.75]); sp.lamps.push([0, 3.0, 0.5, 1.8], [0.55, 1.5, 0.75, 1.2]);
+      H.limb([1.15, 0, 0.4], [1.15, 2.0, 0.4], 0.035, 0.03, TC.iron).ball(0.15, TC.bone, [1.15, 2.1, 0.4], [0.14, 0.17, 0.15]).box(0.1, 0.07, 0.1, TC.boneD, [1.15, 1.97, 0.46]);
+      sp.h = 4.2;
+    }
+    return sp;
+  },
+  breakwater(lv, H) {   // stone segments closing the ring; at III spiked and buttressed
+    const n = [5, 5, 7][lv - 1], sp = { h: 2.4, fires: [], lamps: [] }, hw = 1.12;
+    for (let i = 0; i < n; i++) { const x = (i / (n - 1) - 0.5) * 2 * hw, h = [0.95, 1.25, 1.6][lv - 1] + hj(i + lv) * 0.3, z = 0.2 + 0.3 * (1 - (x / 1.3) * (x / 1.3));
+      H.box(2.4 * hw / n + 0.12, h, 0.85, i % 2 ? TC.stone : TC.stoneL, [x, h / 2, z], [0, -x * 0.22, 0]);
+      if (lv === 3) H.cone(0.1, 0.4, 4, TC.iron, [x, h + 0.2, z + 0.05]); }
+    if (lv >= 2) { for (let i = 0; i < 4; i++) { const x = (i / 3 - 0.5) * 2 * hw * 0.92, h = lv === 3 ? 2.5 : 1.9 + hj(i + 3) * 0.2; H.box(0.62, h, 0.55, i % 2 ? TC.stoneD : TC.stone, [x, h / 2, -0.5], [0, -x * 0.2, 0]); }
+      for (const x of [-0.18, -0.06, 0.06, 0.18]) H.box(0.03, 1.0, 0.03, TC.rust, [x, 0.6, 0.78]); H.box(0.5, 0.04, 0.04, TC.rust, [0, 1.05, 0.78]).box(0.5, 0.04, 0.04, TC.rust, [0, 0.25, 0.78]); }
+    if (lv === 3) { H.gbox(0.8, 0.05, 0.04, TC.coal, [-0.5, 1.5, 0.21]).gbox(0.8, 0.05, 0.04, TC.coal, [0.55, 1.5, 0.21]);
+      for (const s of [-1, 1]) H.limb([s * 1.35, 0, -0.4], [s * 0.95, 1.8, -0.35], 0.12, 0.08, TC.stoneD);
+      H.ball(0.17, TC.bone, [0, 1.78, 0.45], [0.16, 0.19, 0.17]); }
+    return sp;
+  },
+  bell(lv, H) {   // a belfry: the bell is the only thing that swings; the shockwave comes from the sim
+    const sp = { h: [2.6, 3.5, 5.6][lv - 1], fires: [], lamps: [] };
+    if (lv === 1) {
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) H.limb([sx * 0.55, 0, sz * 0.45], [sx * 0.5, 1.95, sz * 0.4], 0.08, 0.07, TC.woodD);
+      H.box(1.2, 0.12, 0.12, TC.woodD, [0, 1.85, 0]).box(1.2, 0.08, 0.9, TC.wood, [0, 0.12, 0]).cone(1.0, 0.75, 4, TC.rustD, [0, 2.3, 0], [0, Math.PI / 4, 0]);
+      sp.bell = { y: 1.78, geo: bellGeo(0.9), amp: 0.5 };
+    } else if (lv === 2) {
+      H.box(1.5, 1.1, 1.3, TC.stone, [0, 0.55, 0]).box(1.6, 0.14, 1.4, TC.stoneD, [0, 1.17, 0]).gbox(0.12, 0.42, 0.06, TC.lamp, [0, 0.65, 0.66]);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) H.box(0.2, 1.15, 0.2, TC.stoneL, [sx * 0.6, 1.8, sz * 0.5]);
+      H.box(1.6, 0.14, 1.4, TC.stoneD, [0, 2.45, 0]).cone(1.25, 1.0, 4, TC.stoneD, [0, 3.05, 0], [0, Math.PI / 4, 0]);
+      sp.bell = { y: 2.33, geo: bellGeo(1.1), amp: 0.5 };
+    } else {
+      H.box(1.7, 1.5, 1.4, TC.stone, [0, 0.75, 0]).box(1.3, 1.3, 1.1, TC.stoneL, [0, 2.15, 0]).box(1.5, 0.14, 1.3, TC.stoneD, [0, 2.85, 0]).gbox(0.12, 0.5, 0.06, TC.lamp, [0, 0.9, 0.72]);
+      for (const sx of [-1, 1]) H.limb([sx * 1.0, 0, 0.45], [sx * 0.72, 2.7, 0.35], 0.16, 0.1, TC.stoneD);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) H.box(0.2, 1.3, 0.2, TC.stoneL, [sx * 0.62, 3.55, sz * 0.5]);
+      H.gbox(0.9, 0.9, 0.6, '#6a2a10', [0, 3.45, 0]).box(1.6, 0.14, 1.4, TC.stoneD, [0, 4.25, 0]).cone(1.15, 2.0, 4, TC.iron, [0, 5.3, 0], [0, Math.PI / 4, 0]).limb([0, 6.2, 0], [0, 6.75, 0], 0.04, 0.02, TC.rust);
+      H.ball(0.17, TC.bone, [0, 1.65, 0.75], [0.15, 0.19, 0.12]); H.gbox(0.05, 0.12, 0.02, TC.black, [-0.06, 1.68, 0.86]).gbox(0.05, 0.12, 0.02, TC.black, [0.06, 1.68, 0.86]);
+      sp.bell = { y: 3.9, geo: bellGeo(1.3), amp: 0.55 }; sp.h = 6.4;
+    }
+    return sp;
+  },
+  boathouse(lv, H) {   // a shed on stilts at the back of the plinth, the boats at the sea edge
+    const sp = { h: 3, fires: [], lamps: [] }, w = [1.5, 1.8, 2.0][lv - 1], zs = -0.45;
+    const boat = (x, z, s) => H.ball(1, TC.wood, [x, 0.3 * s, z], [0.4 * s, 0.26 * s, 0.95 * s]).box(0.46 * s, 0.05, 0.1, TC.woodD, [x, 0.5 * s, z + 0.1]).limb([x - 0.2 * s, 0.35 * s, z - 0.1], [x - 0.65 * s, 0.7 * s, z + 0.15], 0.025, 0.02, TC.woodD).limb([x + 0.2 * s, 0.35 * s, z - 0.1], [x + 0.65 * s, 0.7 * s, z + 0.15], 0.025, 0.02, TC.woodD);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) H.limb([sx * w * 0.5, 0, sz * 0.5 + zs], [sx * w * 0.5, 0.65, sz * 0.5 + zs], 0.07, 0.07, TC.woodD);
+    H.box(w + 0.2, 0.12, 1.3, TC.wood, [0, 0.62, zs]).box(w, 0.95, 1.1, TC.woodD, [0, 1.14, zs]);
+    H.box(0.55, 0.78, 0.04, TC.black, [0, 1.06, zs + 0.56]);   // the door, open on the dark
+    if (lv < 3) { for (const s of [-1, 1]) H.box(w * 0.62, 0.07, 1.4, TC.rustD, [s * w * 0.28, 1.9, zs], [0, 0, -s * 0.45]); }
+    else { H.box(w * 0.65, 0.07, 1.4, TC.rustD, [-w * 0.28, 2.0, zs], [0, 0, 0.5]).box(w * 0.65, 0.07, 1.4, TC.rustD, [w * 0.28, 2.0, zs], [0, 0, -0.5]); H.box(w * 0.5, 0.45, 0.04, TC.woodD, [0, 1.8, zs + 0.56]); }
+    boat(lv === 1 ? 0 : 0.5, 0.62, 1);
+    if (lv >= 2) { boat(-w * 0.5 - 0.35, 0.05, 0.8); H.limb([w * 0.5 + 0.3, 0, 0.5], [w * 0.5 + 0.3, 1.9, 0.5], 0.035, 0.03, TC.woodD).gbox(0.18, 0.26, 0.18, TC.lamp, [w * 0.5 + 0.3, 1.75, 0.5]); sp.lamps.push([w * 0.5 + 0.3, 1.75, 0.5, 1.5]); }
+    if (lv === 3) { H.limb([-0.5, 0.7, -0.6], [-0.5, 4.2, -0.6], 0.06, 0.04, TC.woodD).box(0.04, 1.5, 1.0, TC.cloth, [-0.5, 3.3, -0.2], [0, 0.25, 0]).box(0.03, 0.06, 1.2, TC.woodD, [-0.5, 4.0, -0.2], [0, 0.25, 0]);
+      H.gbox(0.16, 0.22, 0.16, TC.lamp, [-w * 0.5 - 0.1, 1.4, 0.2]).cyl(0.22, 0.24, 0.3, 6, TC.rustD, [-0.8, 0.9, 0.35]); sp.lamps.push([-w * 0.5 - 0.1, 1.4, 0.2, 1.3]); sp.h = 4.6; }
+    return sp;
+  },
+  horn(lv, H) {   // a huge brass horn on a stone seat, mouth at the sea
+    const sp = { h: 3.2, fires: [], lamps: [] };
+    H.cyl(0.85, 1.0, 0.7, 8, TC.stone, [0, 0.35, -0.1]).cyl(0.9, 0.9, 0.1, 8, TC.stoneD, [0, 0.72, -0.1]);
+    const horn = (len, mouth, yaw, pit, x, y) => {   // the axis leans at the sea by `pit` radians from vertical
+      const dx = Math.sin(pit) * Math.sin(yaw), dy = Math.cos(pit), dz = Math.sin(pit) * Math.cos(yaw), at = f => [x + dx * len * f, y + dy * len * f, 0.2 + dz * len * f], r = [pit, yaw, 0];
+      H.cyl(mouth, 0.12, len, 10, TC.brass, at(0.5), r).cyl(mouth + 0.04, mouth + 0.04, 0.1, 10, TC.rustD, at(0.97), r).cyl(mouth * 0.88, mouth * 0.88, 0.04, 10, TC.black, at(1), r).cyl(0.2, 0.2, 0.1, 10, TC.rustD, at(0.3), r);
+    };
+    if (lv === 1) horn(1.7, 0.62, 0, 0.95, 0, 0.9);
+    else if (lv === 2) { horn(2.1, 0.78, 0, 0.95, 0, 0.9); H.cyl(0.4, 0.4, 0.9, 8, TC.iron, [-0.85, 0.3, -0.5], [0, 0, Math.PI / 2]).cyl(0.07, 0.07, 1.4, 6, TC.brass, [-0.5, 1.2, -0.5]).cyl(0.07, 0.07, 1.2, 6, TC.brass, [-0.3, 1.1, -0.55]); sp.h = 3.6; }
+    else {
+      horn(2.4, 0.8, 0, 0.85, 0, 0.9); horn(1.9, 0.6, 0.55, 1.0, 0.2, 0.9); horn(1.9, 0.6, -0.55, 1.0, -0.2, 0.9);
+      H.cyl(0.5, 0.5, 1.4, 8, TC.iron, [-1.0, 0.45, -0.55], [0, 0, Math.PI / 2]).cyl(0.52, 0.52, 0.1, 8, TC.rust, [-1.4, 0.45, -0.55], [0, 0, Math.PI / 2]).cyl(0.52, 0.52, 0.1, 8, TC.rust, [-0.6, 0.45, -0.55], [0, 0, Math.PI / 2]);
+      H.ball(0.17, TC.bone, [0.95, 0.95, 0.05], [0.15, 0.19, 0.16]); H.limb([0.95, 0.2, 0.05], [0.95, 0.82, 0.05], 0.04, 0.04, TC.iron); sp.h = 4.2;
+    }
+    return sp;
+  },
+};
+function townLook(id, lv) {   // the cached geometry for (id, lv)
+  const k = id + lv; let C = TOWNC[k]; if (C) return C;
+  const S = model(), G = model(), H = townPen(S, G);
+  H.box(2.5, 1.2, 1.9, TC.stoneD, [0, -0.58, 0]).box(2.4, 0.14, 1.8, TC.stone, [0, 0.04, 0]);   // the plinth, sunk into the rock below its top
+  const sp = TOWN_BUILD[id](lv, H);
+  return (TOWNC[k] = { solid: S.geo(), glow: H.gn ? G.geo() : null, sp });
+}
+function townPos(ring, i) {   // [x, y, z] of slot i of ring (1..4); i = fill order: 0 = the sea side, then alternately left and right
+  const n = TOWN.n[ring - 1], o = i === 0 ? 0 : (i % 2 ? (i + 1) / 2 : -i / 2), a = Math.PI / 2 + o * Math.PI * 2 / n;
+  return [Math.cos(a) * TOWN.r[ring - 1], TOWN.y[ring - 1], Math.sin(a) * TOWN.r[ring - 1]];
+}
+function townInit() {
+  if (R.town) return R.town;
+  const tm = new T3.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.05, flatShading: true });
+  const gm = new T3.MeshBasicMaterial({ vertexColors: true });
+  const fm = mat('#ffb04a', { glow: 1 });
+  const hm = new T3.MeshBasicMaterial({ color: '#ff9a4a', map: haloTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false });
+  const grp = new T3.Group(); R.scene.add(grp);
+  return (R.town = { tm, gm, fm, hm, root: grp, recs: new Map(), flame: new T3.ConeGeometry(0.2, 0.55, 5), plane: new T3.PlaneGeometry(1, 1), dev: null });
+}
+function townRec(TW, key, sl, fresh, t) {
+  const g = new T3.Group(), pv = new T3.Group(), pos = TW.dev && TW.dev.line ? [400 + (sl.i - 1) * 4.6, 0.9, 0] : townPos(sl.ring, sl.i);
+  g.position.set(pos[0], pos[1], pos[2]); g.rotation.y = TW.dev && TW.dev.line ? 0 : Math.atan2(pos[0], pos[2]); g.add(pv); TW.root.add(g);
+  const rec = { key, g, pv, id: sl.id, lv: sl.lv, fires: [], lamps: [], bell: null, mode: null, a0: 0, hot: null, q: g.quaternion.clone().invert(), ph: hj(sl.ring * 17 + sl.i) * 6.28 };
+  townBuild(TW, rec); if (fresh) townAnim(TW, rec, 'rise', t);
+  return rec;
+}
+function townBuild(TW, rec) {   // (re)fills rec.pv with the look of (id, lv)
+  for (const c of rec.pv.children.slice()) rec.pv.remove(c);
+  const C = townLook(rec.id, rec.lv), sp = C.sp; rec.sp = sp; rec.fires = []; rec.lamps = []; rec.bell = null;
+  const sm = new T3.Mesh(C.solid, TW.tm); sm.castShadow = sm.receiveShadow = true; rec.pv.add(sm); rec.solid = sm;
+  if (C.glow) rec.pv.add(new T3.Mesh(C.glow, TW.gm));
+  for (const f of sp.fires) { const m = new T3.Mesh(TW.flame, TW.fm), h = new T3.Mesh(TW.plane, TW.hm); m.position.set(f[0], f[1], f[2]); h.position.set(f[0], f[1] + 0.05, f[2]); h.renderOrder = 5; rec.pv.add(m, h); rec.fires.push({ m, h, s: f[3] }); }
+  for (const l of sp.lamps) { const h = new T3.Mesh(TW.plane, TW.hm); h.position.set(l[0], l[1], l[2]); h.renderOrder = 5; rec.pv.add(h); rec.lamps.push({ h, s: l[3] }); }
+  if (sp.bell) { const b = new T3.Group(); b.position.set(0, sp.bell.y, 0); b.add(new T3.Mesh(sp.bell.geo, TW.tm)); rec.pv.add(b); rec.bell = { g: b, amp: sp.bell.amp }; }
+}
+function townAnim(TW, rec, mode, t) {
+  rec.mode = mode; rec.a0 = t; rec.dust = 0; rec.swapped = mode === 'rise';
+  if (!rec.hot) { rec.hot = TW.tm.clone(); rec.hot.emissive = new T3.Color(TOWN.ember); }
+  rec.solid.material = rec.hot;
+  if (!rec.glowPlane) { rec.glowPlane = new T3.Mesh(TW.plane, new T3.MeshBasicMaterial({ color: TOWN.ember, map: haloTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false })); rec.g.add(rec.glowPlane); }
+  rec.glowPlane.rotation.x = -Math.PI / 2; rec.glowPlane.position.set(0, 0.12, 0); rec.glowPlane.renderOrder = 4;
+}
+function townDust(rec, n, big) {   // grey stone dust thrown off the plinth edge
+  const g = rec.g.position;
+  for (let k = 0; k < n; k++) { const a = k / n * 6.283 + hj(k + rec.ph), r = 1.2 + hj(k * 3 + rec.ph) * 0.5; puff(g.x + Math.cos(a) * r, g.y + 0.15, g.z + Math.sin(a) * r, 0.3 + hj(k) * 0.2, 0.8 + hj(k + 9) * 0.5, 0.6 + hj(k + 4) * 0.5, big ? 1.6 : 1.1); }
+}
+function townTick(S, t, dt) {
+  const src = S.town && S.town.slots ? S.town : (R.town && R.town.dev), TW = R.town || (src ? townInit() : null);
+  R.townStep = src ? TOWN.step[Math.max(0, Math.min(3, (src.rings || 1) - 1))] : 0;
+  if (!TW) return;
+  const slots = src ? src.slots : [], seen = new Set();
+  for (const sl of slots) {
+    const key = sl.ring * 16 + sl.i; seen.add(key);
+    let rec = TW.recs.get(key);
+    if (rec && rec.id !== sl.id) { TW.root.remove(rec.g); TW.recs.delete(key); rec = null; }
+    if (!rec) { rec = townRec(TW, key, sl, sl.fresh || (sl.t != null && S.t >= sl.t && S.t - sl.t < 1), t); TW.recs.set(key, rec); sl.fresh = false; }
+    else if (rec.lv !== sl.lv && !(rec.mode === 'lvl' && rec.want === sl.lv)) { rec.want = sl.lv; if (sl.lv > rec.lv) townAnim(TW, rec, 'lvl', t); else { rec.lv = sl.lv; townBuild(TW, rec); } }
+  }
+  for (const [key, rec] of TW.recs) if (!seen.has(key)) { TW.root.remove(rec.g); TW.recs.delete(key); }
+  const cs = Math.max(1, Math.min(1.3, 1 + 0.3 * ((R.camD || 74) - 74) / 40));   // a little larger as the camera pulls back, so the town reads at the late camera
+  for (const rec of TW.recs.values()) {
+    let sy = 1, sxz = 1, lift = 0, heat = 0, gl = 0;
+    if (rec.mode === 'rise') {
+      const k = (t - rec.a0) / TOWN.rise;
+      if (k >= 1) { rec.mode = null; townDust(rec, 9, true); } else {
+        const e = 1 - Math.pow(1 - k, 3);
+        lift = -(rec.sp.h + 1.4) * (1 - e); sy = 1 + 0.05 * Math.sin(k * Math.PI); heat = Math.pow(1 - k, 1.4); gl = Math.sin(Math.min(1, k * 1.2) * Math.PI) * 0.9;
+        if (!rec.dust) { rec.dust = 1; townDust(rec, 8, false); }
+      }
+    } else if (rec.mode === 'lvl') {
+      const k = (t - rec.a0) / TOWN.lvl;
+      if (k >= 1) rec.mode = null; else {
+        if (k >= 0.3 && !rec.swapped) { rec.swapped = true; rec.lv = rec.want; townBuild(TW, rec); townDust(rec, 6, false); }
+        const pk = k < 0.3 ? Math.sin(k / 0.3 * Math.PI / 2) : 1 - (k - 0.3) / 0.7; sxz = 1 + 0.1 * pk; sy = 1 + 0.14 * pk; heat = 0.9 * pk; gl = pk * 0.8;
+      }
+    }
+    if (!rec.mode) { if (rec.hot) { rec.solid.material = TW.tm; rec.hot.dispose(); rec.hot = null; rec.g.remove(rec.glowPlane); rec.glowPlane.material.dispose(); rec.glowPlane = null; } }
+    else { rec.hot.emissiveIntensity = heat * 0.75; rec.solid.material = rec.hot; rec.glowPlane.material.opacity = gl; rec.glowPlane.scale.setScalar(6.5 * (0.5 + gl)); }
+    rec.pv.position.y = lift; rec.pv.scale.set(sxz * cs, sy * cs, sxz * cs);
+    // life: flames flicker, lanterns breathe, the bell sways and rings now and then
+    TQ.copy(rec.q).multiply(R.cam.quaternion); const ph = rec.ph;
+    rec.fires.forEach((f, j) => { const k = 0.8 + 0.2 * Math.sin(t * 11 + j * 2.7 + ph) * Math.sin(t * 5.3 + j + ph) + 0.08 * Math.sin(t * 23 + j * 5);
+      f.m.scale.set(f.s * k, f.s * (0.8 + 0.5 * k), f.s * k); f.h.quaternion.copy(TQ); f.h.scale.setScalar(2.4 * f.s * k * cs); });
+    rec.lamps.forEach((l, j) => { l.h.quaternion.copy(TQ); l.h.scale.setScalar(cs * l.s * (0.9 + 0.1 * Math.sin(t * 3.1 + j + ph))); });
+    if (rec.bell) { const c = (t + ph) % 9, ring = c < 3 ? Math.exp(-c * 0.9) * Math.sin(c * 9) : 0; rec.bell.g.rotation.z = rec.bell.amp * ring + 0.04 * Math.sin(t * 1.3 + ph); }
+  }
+}
+// auto-fill (no placing): inner buildings take the innermost free slot, outer ones the outermost (dev only until the sim core)
+function townAdd(TW, id, lv, fresh) {
+  const D = TW.dev, taken = new Set(D.slots.map(s => s.ring * 16 + s.i)), nSl = D.slots.length + 1;
+  for (let r = 2, cap = TOWN.n[0]; r <= 4; r++, cap += TOWN.n[r - 2]) if (nSl > cap && D.rings < r) D.rings = r;
+  const rings = []; for (let r = 1; r <= D.rings; r++) rings.push(r); if (TOWN_HOME[id] === 'out') rings.reverse();
+  for (const r of rings) for (let i = 0; i < TOWN.n[r - 1]; i++) if (!taken.has(r * 16 + i)) { const sl = { ring: r, i, id, lv, fresh: !!fresh }; D.slots.push(sl); return sl; }
+  return null;
+}
+// #town=gun2,brazier1,... (id + level) or #town=all2; &rings=N (default: the fewest that hold them). TWRender.R.townApi: add / up / reset.
+function townDevInit() {
+  const qs = root.location.search + '&' + root.location.hash, q = qs.match(/[?&#]town=([a-z0-9,]+)/); if (!q) return;
+  const list = /^all\d?$/.test(q[1]) ? TOWN_IDS.map(id => id + (q[1][3] || 1)) : q[1].split(','), rg = qs.match(/[?&#]rings=(\d)/);
+  const TW = townInit(); TW.dev = { rings: 1, slots: [] };
+  list.forEach(s => { const m = s.match(/^([a-z]+?)(\d)?$/); if (m && TOWN_HOME[m[1]]) townAdd(TW, m[1], +m[2] || 1, false); });
+  if (rg) TW.dev.rings = Math.max(TW.dev.rings, Math.min(4, +rg[1]));
+  R.townApi = {
+    add: (id, lv) => townAdd(TW, id, lv || 1, true), reset: () => { TW.dev.slots.length = 0; TW.dev.rings = 1; },
+    line: on => { TW.dev.line = !!on; TW.recs.forEach(r => TW.root.remove(r.g)); TW.recs.clear(); },
+    up: i => { const s = TW.dev.slots[i]; if (s && s.lv < 3) s.lv++; return s; }, rings: n => { TW.dev.rings = n; }, slots: () => TW.dev.slots,
+  };
+}
+
 const TV = new T3.Vector3(), MSCALE = 1.5;
 const i0 = g => g.root.position.x * 3.1;
 
@@ -6790,7 +7265,7 @@ function resize() {
 // ---------- per-run state (render-owned: WeakMaps keyed by sim objects, never fields on them)
 function setRun(S) {
   R.S = S; R.camD = 0; R.prev = new WeakMap(); R.shotT0 = new WeakMap(); R.bossT0 = new Map(); if (R.D) R.D.k = -1;
-  R.spark = []; R.ripples = []; if (R.X) { R.X.sink.clear(); R.X.mf.clear(); } devInit(); R.lastNow = 0; R.fpsT = 0; R.fpsN = 0; R.fps = 0; R.worst = 0; R.worstShown = 0;
+  R.spark = []; R.ripples = []; if (R.X) { R.X.sink.clear(); R.X.mf.clear(); } devInit(); townDevInit(); R.lastNow = 0; R.fpsT = 0; R.fpsN = 0; R.fps = 0; R.worst = 0; R.worstShown = 0;
   if (root.TWFx) root.TWFx.reset(S);
 }
 
@@ -6882,7 +7357,7 @@ function growth(S, dt, t) {
   // island steps: upgrade levels + 6 per extra mount + 5 per keystone. Each step brings its outer wall (LAS-27): the gun
   // towers move onto it and the Tide is drawn breaking on it (R.off eases, so creatures slide out with the new wall)
   let pw = 6 * Math.max(0, (S.mounts || []).length - 1) + 5 * nk; for (const k in lv) pw += lv[k] || 0;
-  const step = RLOOK.isleAt.filter(x => pw >= x).length, O = step ? R.outer[step - 1] : null;
+  const step = Math.max(RLOOK.isleAt.filter(x => pw >= x).length, R.townStep || 0), O = step ? R.outer[step - 1] : null;
   if (step !== R.isleStep) {
     R.isleStep = step; R.isle.forEach((g, i) => g.baked.forEach(m => { m.visible = i < step; }));
     R.outer.forEach((o, i) => { const on = i === step - 1; o.baked.forEach(m => { m.visible = on; }); o.fires.visible = o.dyn.visible = on; if (on) o.W.fresh = true; });
@@ -6890,6 +7365,7 @@ function growth(S, dt, t) {
     R.towers.forEach((g, i) => { if (g) { const p = mountPos(i); g.position.set(p[0], RLOOK.plateau, p[2]); } });
     R.slots.forEach(g => { if (g) g.m = null; });   // mountsTick puts the guns back on their towers
   }
+  R.outer.forEach((o, i) => o.houses.forEach(m => { m.visible = i === step - 1 && !R.townStep; }));   // the bailey houses give way to the island town
   const offT = O ? O.Ro + 0.25 - SIMW : 0;
   R.off = R.off === undefined ? offT : R.off + (offT - R.off) * Math.min(1, dt * 2);
   U.shore.value += (RLOOK.isleR[step] - 0.2 - U.shore.value) * Math.min(1, dt * 2);
@@ -7139,7 +7615,7 @@ function frame(S, alpha, now) {
   }
 
   // the mounts turn, fire and recoil; the citadel shows its damage; smoke drifts
-  flankTick(t); mountsTick(S, t, dtR, alpha); guardsTick(S, t, dtR, alpha); growth(S, dtR, t); damage(S, t, dtR); smokeTick(dtR); ringsTick(t);
+  flankTick(t); mountsTick(S, t, dtR, alpha); guardsTick(S, t, dtR, alpha); townTick(S, t, dtR); growth(S, dtR, t); damage(S, t, dtR); smokeTick(dtR); ringsTick(t);
   const dT0 = Math.max(RLOOK.camOpen, RLOOK.camMin, Math.min(RLOOK.camMax, RLOOK.camFort[R.isleStep || 0] / RLOOK.fortMin, (reach(S) + (R.off || 0)) * RLOOK.camK));   // the reach is drawn R.off further out
   // LAS-51: the late game shows its horde: the view widens up to x1.5 (77 m -> ~115 m) with the island steps / the wave, eased
   const lg = Math.min(1, Math.max((R.isleStep || 0) / 3, (S.wave || 0) / RLOOK.camWideWave)), dT = dT0 * (1 + (RLOOK.camWide - 1) * lg * lg * (3 - 2 * lg));
@@ -7281,6 +7757,170 @@ Object.assign(R, { toView, toSim, hAt });   // fx.js and the aim overlay draw si
 root.TWRender = { init, pre, frame, resize, RLOOK, R, toView, toSim };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
+<script>/* cardart.js */
+// LAS-67 card art: a painted night scene for every building, upgrade and evolution (SVG, one shared <defs>, no images).
+// Each art window is 300x180 (viewBox): sky, cold haze, a dark sea, a black foreground rock, the hero object lit from one side
+// (pale lantern light, dull coal-red fire), fog banks that drift, and a vignette. TWArt.building(id) / .relic(glyph, branch) /
+// .evo(a, b) / .rep(old, new) / .tile(glyph, colour) return an <svg> string. Palette: no bright gold (tarnished brass), embers
+// = dull coal red, lantern = pale cool white.
+const TWArt = (() => {
+  let uid = 0;
+  const G = (id, t, stops, a = '') => `<${t}Gradient id="${id}" ${a}>${stops.map(s => `<stop offset="${s[0]}" stop-color="${s[1]}"${s[2] != null ? ` stop-opacity="${s[2]}"` : ''}/>`).join('')}</${t}Gradient>`;
+  const H = 'x1="0" y1="0" x2="1" y2="0"', V = 'x1="0" y1="0" x2="0" y2="1"';
+  const DEFS = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    ${G('m-stone', 'linear', [[0, '#14120e'], [.55, '#4a4234'], [1, '#9a8e72']], H)}${G('m-iron', 'linear', [[0, '#070707'], [.55, '#33312d'], [1, '#76726a']], H)}
+    ${G('m-cyl', 'linear', [[0, '#060606'], [.32, '#2b2926'], [.66, '#6a665b'], [1, '#121110']], H)}${G('m-wood', 'linear', [[0, '#130b06'], [.6, '#4a331f'], [1, '#85633f']], H)}
+    ${G('m-brass', 'linear', [[0, '#18130a'], [.45, '#463c1f'], [.8, '#807045'], [1, '#2e2715']], H)}${G('m-rust', 'linear', [[0, '#170a05'], [.6, '#5a2b15'], [1, '#9c5a36']], H)}
+    ${G('m-bone', 'linear', [[0, '#26221b'], [.55, '#8d8470'], [1, '#ddd4bd']], H)}${G('m-cloth', 'linear', [[0, '#050607'], [.6, '#161a1c'], [1, '#2c3336']], H)}
+    ${G('g-sky', 'linear', [[0, '#14171a'], [.7, '#080a0b'], [1, '#040505']], V)}${G('g-sea', 'linear', [[0, '#0c1012'], [1, '#020303']], V)}
+    ${G('g-beam', 'linear', [[0, '#e2f0f6', .5], [.5, '#c8dce4', .16], [1, '#c8dce4', 0]], H)}
+    ${G('g-lamp', 'radial', [[0, '#f6fcff', .95], [.18, '#d6e8ef', .55], [.5, '#9fc0cc', .14], [1, '#9fc0cc', 0]])}
+    ${G('g-fire', 'radial', [[0, '#e4632a', .6], [.35, '#a8301a', .3], [1, '#7a1a0e', 0]])}${G('g-fog', 'radial', [[0, '#b4c0c4', .2], [1, '#b4c0c4', 0]])}
+    ${G('g-vig', 'radial', [[.45, '#000', 0], [1, '#000', .86]])}${G('g-sph', 'radial', [[0, '#7a766c'], [.5, '#2a2926'], [1, '#050505']], 'cx=".35" cy=".3" r=".8"')}
+    ${G('g-coin', 'radial', [[0, '#a8965a'], [.6, '#5e5026'], [1, '#1c1608']], 'cx=".35" cy=".3" r=".8"')}
+    <filter id="f-b3" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter><filter id="f-sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="1.5" dy="2.5" stdDeviation="1.6" flood-color="#000" flood-opacity=".85"/></filter>
+  </defs></svg>`;
+  const f = n => 'url(#' + n + ')';
+  const r = (x, y, w, h, m, x2 = '') => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${f('m-' + m)}" ${x2}/>`;
+  const p = (d, m, x2 = '') => `<path d="${d}" fill="${f('m-' + m)}" ${x2}/>`;
+  const ln = (d, c, w = 1, o = 1, x2 = '') => `<path d="${d}" fill="none" stroke="${c}" stroke-width="${w}" opacity="${o}" stroke-linecap="round" ${x2}/>`;
+  const rim = (d, o = .3) => ln(d, '#e6f0f4', 1, o);
+  const sh = (cx, cy, rx) => `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${rx / 7}" fill="#000" opacity=".7"/>`;
+  const fire = (x, y, s = 1, d = 0) => `<g transform="translate(${x} ${y}) scale(${s})"><ellipse rx="40" ry="34" cy="-14" fill="${f('g-fire')}"/><g class="flk" style="animation-delay:${d}s">
+    <path d="M0 0C-10-6-11-17-4-26-3-19 0-18 1-23 3-30 9-36 8-43 17-34 15-17 9-6 6-2 3 0 0 0z" fill="#6a1a0e"/><path d="M0 0C-7-4-7-13-1-20 1-14 3-13 4-17 8-11 7-4 3-1z" fill="#a8452a"/><path d="M0 0C-2-3-2-8 0-11 2-8 2-3 0 0z" fill="#d6a888"/></g></g>`;
+  const lamp = (x, y, s = 1) => `<g transform="translate(${x} ${y}) scale(${s})"><circle r="30" fill="${f('g-lamp')}"/><rect x="-4.5" y="-7" width="9" height="14" rx="2" fill="#eef8fc"/><path d="M-6-8h12M-6 8h12M-5-8v16M5-8v16" stroke="#1a1a19" stroke-width="1.4" fill="none"/></g>`;
+  const beam = (d, x2 = '') => `<path d="${d}" fill="${f('g-beam')}" ${x2}/>`;
+  const dots = (pts, c, rr = 1.2) => pts.map(q => `<circle cx="${q[0]}" cy="${q[1]}" r="${q[2] || rr}" fill="${c}" opacity="${q[3] || .8}"/>`).join('');
+
+  // ---- the backdrop every building stands in. c = accent (role colour), gx = where the glow sits
+  function bg(c, gx = 150, gy = 112, o = {}) {
+    const a = 'a' + (++uid);
+    return `<defs><radialGradient id="${a}"><stop offset="0" stop-color="${c}" stop-opacity=".42"/><stop offset="1" stop-color="${c}" stop-opacity="0"/></radialGradient></defs>
+    <rect width="300" height="180" fill="${f('g-sky')}"/><ellipse cx="${gx}" cy="${gy}" rx="190" ry="100" fill="url(#${a})"/>
+    ${o.moon === 0 ? '' : '<circle cx="246" cy="30" r="14" fill="#cfdde2" opacity=".07"/><circle cx="246" cy="30" r="40" fill="url(#g-lamp)" opacity=".16"/>'}
+    <rect y="126" width="300" height="54" fill="${f('g-sea')}"/><path d="M0 126H300" stroke="#b9ccd4" stroke-opacity=".22"/>
+    ${[[18, 134, .1], [92, 141, .08], [210, 136, .1], [250, 145, .07], [150, 147, .06]].map(w => ln(`M${w[0]} ${w[1]}q9-3 18 0t18 0t18 0`, '#cfe0e6', 1, w[2])).join('')}
+    <g class="fgA"><ellipse cx="60" cy="128" rx="120" ry="12" fill="${f('g-fog')}"/><ellipse cx="260" cy="120" rx="90" ry="9" fill="${f('g-fog')}"/></g>`;
+  }
+  const rock = `<path d="M0 180V156q30-10 66-6t80 4q50 3 96-5t58 4V180z" fill="#040404"/><path d="M0 156q30-10 66-6t80 4q50 3 96-5t58 4" fill="none" stroke="#c8d8de" stroke-opacity=".16"/>`;
+  const fogF = `<g class="fgB"><ellipse cx="120" cy="150" rx="150" ry="13" fill="${f('g-fog')}"/><ellipse cx="270" cy="156" rx="80" ry="9" fill="${f('g-fog')}"/></g>`;
+  const frame = (c, inner, o) => `<svg viewBox="0 0 300 180" preserveAspectRatio="xMidYMid slice" class="art">${bg(c, o && o.gx, o && o.gy, o)}${inner}${o && o.norock ? '' : rock}${fogF}${(o && o.top) || ''}<rect width="300" height="180" fill="${f('g-vig')}"/></svg>`;
+
+  // ---- the 21 buildings. Ground is y = 152, centre x = 150; each returns the object and its own light.
+  const tri = (x, s, d) => `<g transform="translate(${x} 152) scale(${s})">${sh(0, 1, 30)}${ln('M-13-34L-24 0M13-34L24 0M0-34V0', '#2a2825', 3.2)}${ln('M13-34L24 0', '#9aa4a6', 1, .35)}${ln('M-19-14H19', '#1c1b19', 2)}
+    ${p('M-24-46H24L18-32Q0-26-18-32z', 'cyl')}<ellipse cy="-46" rx="24" ry="5" fill="#1b0905" stroke="#4a4640"/><ellipse cy="-46" rx="19" ry="3.2" fill="#a8452a"/></g>${fire(x, 152 - 46 * s, s * 1.15, d)}`;
+  const B = {
+    brazier: () => tri(86, .78, .3) + tri(214, .78, .9) + tri(150, 1.12, 0),
+    lamp2: () => `${beam('M158 46L300 14V86z')}${beam('M158 46L300 14V86z', 'transform="translate(300 0) scale(-.8 1) translate(-60 0)"')}
+      ${p('M125 152L136 62H164L175 152z', 'stone')}<path d="M130.6 86h38.8l-1.4 12h-36z" fill="#4a1410" opacity=".85"/><path d="M127.5 120h45l-1.5 14h-42z" fill="#4a1410" opacity=".85"/>
+      ${rim('M164 62L175 152')}${r(128, 54, 44, 8, 'iron')}${ln('M130 54v-9M140 54v-9M150 54v-9M160 54v-9M170 54v-9M130 46H170', '#1c1b19', 1.4)}
+      ${r(138, 30, 24, 16, 'iron')}<rect x="141" y="32" width="18" height="12" fill="#dcecf2"/>${lamp(150, 38, 1.5)}${p('M133 30L150 12L167 30z', 'iron')}${rim('M150 12L167 30', .4)}${sh(150, 152, 38)}`,
+    rocket: () => `${ln('M168 96Q190 60 214 36', '#aab6b9', 5, .12, 'filter="url(#f-b3)"')}<g transform="translate(214 54)">${ln('M-18-14Q0-30 18-14', '#8a8472', 1.4)}${ln('M-18-14L0 8M18-14L0 8M0-14L0 8', '#6c6858', .8)}<path d="M-20-14Q0-34 20-14z" fill="#3a3630"/>${lamp(0, 14, 1.6)}</g>
+      ${ln('M104 152L130 98M196 152L170 98', '#5a432a', 6)}${ln('M104 152L130 98', '#a4825a', 1, .4)}${r(98, 124, 104, 6, 'wood')}${r(112, 100, 76, 5, 'wood')}
+      ${[[128, -14], [150, 0], [172, 14]].map(q => `<g transform="translate(${q[0]} 118) rotate(${q[1]})">${r(-5, -36, 10, 38, 'cyl')}${p('M-5-36L0-50L5-36z', 'rust')}${p('M-5-4L-11 6L-5 2z', 'iron')}${p('M5-4L11 6L5 2z', 'iron')}<rect x="-5" y="-28" width="10" height="3" fill="#7c2a1a"/></g>`).join('')}
+      ${dots([[176, 88, 1.3], [182, 78, 1], [190, 66, 1.1], [200, 54, 1]], '#d9835a')}${sh(150, 152, 56)}`,
+    beacon: () => `${p('M108 152L122 96L134 74L146 66L160 78L172 100L190 152z', 'stone')}${rim('M146 66L160 78L172 100L190 152')}${ln('M122 120l16 6M134 100l12 4M150 134l20-4M130 144l22 2', '#000', 1.4, .6)}
+      ${r(130, 62, 36, 5, 'wood')}${ln('M134 62L150 52L164 62', '#3a2616', 3)}${fire(150, 62, 1.7, .1)}${[[140, 130], [152, 132], [162, 128]].map(q => `<rect x="${q[0]}" y="${q[1]}" width="2" height="18" fill="#a8452a" opacity=".22"/>`).join('')}
+      ${dots([[160, 28], [170, 20, 1], [142, 22, 1.1], [176, 36, 1.4]], '#e0703a')}${sh(150, 152, 48)}`,
+    battery: () => `${r(104, 104, 72, 48, 'stone')}${rim('M176 104V152')}${[[104, 94], [124, 94], [144, 94], [164, 94]].map(q => r(q[0], q[1], 12, 12, 'stone')).join('')}${ln('M104 120H176M104 136H176M120 104V120M146 120V136M130 136V152M160 104V120', '#000', 1.2, .55)}
+      <g transform="translate(150 96) rotate(-14)">${r(-4, -9, 78, 18, 'cyl')}${r(64, -11.5, 9, 23, 'iron')}${r(-12, -7, 10, 14, 'iron')}<circle cx="-14" cy="0" r="4.5" fill="#1b1a18"/><rect x="26" y="-9" width="3" height="18" fill="#000" opacity=".4"/></g>
+      <g transform="translate(136 114)"><circle r="11" fill="${f('m-wood')}"/><circle r="11" fill="none" stroke="#25190f" stroke-width="2"/>${ln('M-11 0H11M0-11V11M-8-8L8 8M8-8L-8 8', '#25190f', 1.4)}</g>
+      <circle cx="232" cy="68" r="9" fill="#b4bcbe" opacity=".18" filter="url(#f-b3)"/><circle cx="244" cy="56" r="14" fill="#b4bcbe" opacity=".12" filter="url(#f-b3)"/><circle cx="224" cy="76" r="5" fill="#e4662c" opacity=".55" filter="url(#f-b3)"/>${sh(140, 152, 50)}`,
+    ballista: () => `${ln('M150 100L110 152M150 100L190 152M150 100V152', '#3a2a1a', 6)}${r(144, 52, 12, 52, 'wood')}${ln('M70 54Q150 94 230 54', '#4d3722', 8)}${ln('M70 54Q150 90 230 54', '#a6845e', 1.2, .5)}
+      ${ln('M70 54L150 104L230 54', '#c9bfa5', 1.3, .85)}${r(142, 98, 16, 10, 'iron')}${ln('M150 100V18', '#2a2825', 3.4)}${p('M145 26L150 8L155 26z', 'iron')}<path d="M147 26l-5 8h16l-5-8z" fill="#1a1a19"/>${ln('M150 100V20', '#cfd8da', 1, .3)}
+      <circle cx="70" cy="54" r="5" fill="${f('m-iron')}"/><circle cx="230" cy="54" r="5" fill="${f('m-iron')}"/>${sh(150, 152, 46)}`,
+    mortar: () => `<ellipse cx="150" cy="146" rx="78" ry="16" fill="#0d0a07"/>${Array.from({ length: 13 }, (_, i) => { const a = Math.PI * (1 + i / 12); return `<ellipse cx="${150 + Math.cos(a) * 74}" cy="${146 + Math.sin(a) * 15}" rx="11" ry="6" fill="${f('m-wood')}" stroke="#1a1109" stroke-width="1"/>`; }).join('')}
+      <ellipse cx="150" cy="148" rx="30" ry="6" fill="#0b0b0a"/><g transform="translate(150 146) rotate(-20)">${r(-14, -58, 28, 58, 'cyl')}${r(-18, -63, 36, 9, 'iron')}${r(-17, -22, 34, 4, 'iron')}</g>
+      ${ln('M162 82Q196 6 232 58', '#cbd8dc', 1, .25, 'stroke-dasharray="3 5"')}<circle cx="206" cy="30" r="12" fill="url(#g-fire)"/><circle cx="206" cy="30" r="6" fill="${f('g-sph')}"/><circle cx="170" cy="76" r="9" fill="#b4bcbe" opacity=".2" filter="url(#f-b3)"/>
+      ${Array.from({ length: 4 }, (_, i) => `<ellipse cx="${108 + i * 28}" cy="132" rx="12" ry="6" fill="${f('m-wood')}" stroke="#1a1109"/>`).join('')}`,
+    tesla: () => `${r(132, 120, 36, 32, 'iron')}${r(138, 74, 24, 48, 'cyl')}${[84, 98, 112].map(y => r(134, y, 32, 5, 'brass')).join('')}${ln('M132 152L142 120M168 152L158 120', '#000', 1.5, .5)}
+      <circle cx="150" cy="60" r="26" fill="url(#g-lamp)" opacity=".8"/><circle cx="150" cy="60" r="13" fill="${f('g-sph')}"/><circle cx="146" cy="55" r="3.4" fill="#e8f4f8" opacity=".8"/>
+      ${ln('M163 56L186 44L180 36L212 26L204 14', '#e8f6fc', 2.2, .95)}${ln('M163 56L186 44L180 36L212 26L204 14', '#9fd0e4', 5, .3, 'filter="url(#f-b3)"')}${ln('M137 62L112 74L120 82L92 96', '#e8f6fc', 1.8, .85)}${ln('M150 46L146 28L156 20L152 4', '#e8f6fc', 1.6, .7)}${sh(150, 152, 40)}`,
+    winch: () => `${r(104, 54, 12, 98, 'wood')}${rim('M116 54V152', .25)}${ln('M110 62L236 34', '#4d3722', 8)}${ln('M110 60L236 32', '#a6845e', 1, .4)}${ln('M114 100L152 70', '#3a2a1a', 4)}
+      ${ln('M232 36Q242 90 214 132', '#a2967a', 1.8)}${ln('M214 132L196 152', '#9a8f74', 1.2, .0)}
+      ${r(118, 116, 52, 30, 'cyl')}${Array.from({ length: 6 }, (_, i) => ln(`M${124 + i * 8} 116V146`, '#7a6d4a', 1.6, .7)).join('')}<circle cx="170" cy="131" r="6" fill="${f('m-iron')}"/>${ln('M170 131L190 114', '#26241f', 4)}<circle cx="192" cy="112" r="5" fill="${f('m-rust')}"/>
+      <g transform="translate(206 150) rotate(-52)">${r(-2, -50, 4, 50, 'iron')}${p('M-5-50L0-64L5-50L2-47L-2-47z', 'iron')}${p('M2-56l8 5-8 1z', 'iron')}</g>${sh(140, 152, 62)}`,
+    mines: () => [[88, 118, .85], [150, 96, 1.2], [216, 124, .75]].map(m => `<g transform="translate(${m[0]} ${m[1]}) scale(${m[2]})">${ln('M0 0V90', '#3a3830', 2, .8)}${Array.from({ length: 10 }, (_, i) => { const a = i * Math.PI / 5; return `<path d="M${Math.cos(a) * 15} ${Math.sin(a) * 15}L${Math.cos(a) * 24} ${Math.sin(a) * 24}" stroke="#5a2a16" stroke-width="5" stroke-linecap="round"/><circle cx="${Math.cos(a) * 24}" cy="${Math.sin(a) * 24}" r="2.4" fill="#9a928a"/>`; }).join('')}
+        <circle r="17" fill="${f('g-sph')}"/><circle r="17" fill="none" stroke="#000" stroke-width="1.5"/><circle cx="0" cy="0" r="3.6" fill="#8e1b1b"/><circle r="12" fill="url(#g-fire)" opacity="${m[2] > 1 ? .9 : .3}"/></g>`).join('') +
+      `<rect y="132" width="300" height="48" fill="#020303" opacity=".55"/>${[[30, 140], [120, 148], [196, 142], [240, 152]].map(w => ln(`M${w[0]} ${w[1]}q10-4 20 0t20 0`, '#cfe0e6', 1, .16)).join('')}`,
+    watch: () => `${r(144, 56, 10, 96, 'wood')}${rim('M154 56V152', .25)}${ln('M154 64L194 64', '#33261a', 4)}${ln('M190 64V74', '#1a1a19', 1.5)}${lamp(190, 84, 1.3)}
+      ${r(112, 112, 74, 6, 'wood')}${ln('M122 118L132 152M176 118L166 152', '#33261a', 4)}<g transform="translate(176 106) rotate(-8)">${r(-30, -4, 44, 8, 'cyl')}<rect x="8" y="-6" width="6" height="12" fill="#1b1a18"/></g><circle cx="168" cy="110" r="4" fill="${f('m-iron')}"/>
+      <path d="M116 112L116 84Q121 70 130 84L130 112z" fill="#0a0b0c"/><circle cx="123" cy="76" r="7" fill="${f('m-bone')}"/><path d="M114 74q9-12 18 0z" fill="#0a0b0c"/>${ln('M116 84Q121 70 130 84', '#cfe0e6', 1, .3)}${sh(145, 152, 46)}`,
+    breakwater: () => `<path d="M30 152L70 120H232L274 152z" fill="${f('m-stone')}"/>${Array.from({ length: 3 }, (_, i) => r(78 + i * 52, 104, 46, 18, 'stone')).join('')}${r(88, 88, 40, 16, 'stone')}${r(170, 88, 40, 16, 'stone')}
+      ${ln('M70 136H240M92 120V136M140 120V136M188 120V136M116 136V152M164 136V152M212 136V152', '#000', 1.2, .55)}${rim('M70 120H232', .35)}${rim('M88 88H128M170 88H210', .3)}
+      ${[[40, 126, 26], [58, 118, 18], [30, 110, 14], [66, 104, 10]].map(q => `<ellipse cx="${q[0]}" cy="${q[1]}" rx="${q[2]}" ry="${q[2] / 2.4}" fill="#dce8ec" opacity=".28" filter="url(#f-b3)"/>`).join('')}${dots([[30, 96, 1.4], [44, 90, 1.1], [24, 104, 1.2], [52, 84, 1]], '#e6f0f4', 1.2)}`,
+    bell: () => `${r(104, 66, 20, 86, 'stone')}${r(176, 66, 20, 86, 'stone')}${p('M104 70Q150 22 196 70L196 80Q150 40 104 80z', 'stone')}${rim('M104 70Q150 22 196 70', .35)}${ln('M124 66H176', '#1c1b19', 5)}${ln('M104 100H124M104 128H124M176 100H196M176 128H196', '#000', 1.2, .55)}
+      ${p('M150 56C134 60 132 88 124 108H176C168 88 166 60 150 56z', 'brass')}${r(121, 106, 58, 7, 'brass')}<circle cx="150" cy="120" r="5.5" fill="${f('m-iron')}"/>${ln('M150 112V150', '#6a5238', 2.2)}${rim('M150 56C166 60 168 88 176 108', .3)}
+      ${ln('M196 84Q212 96 196 108M206 76Q232 96 206 116', '#dce8ec', 1.4, .28)}${ln('M104 84Q88 96 104 108M94 76Q68 96 94 116', '#dce8ec', 1.4, .2)}${sh(150, 152, 56)}`,
+    pitch: () => `${r(50, 98, 200, 54, 'stone')}${[50, 86, 122, 158, 194, 230].map(x => r(x, 86, 20, 14, 'stone')).join('')}${rim('M50 98H250', .3)}${ln('M50 118H250M50 136H250M80 98V118M130 118V136M180 98V118M220 118V136', '#000', 1.2, .5)}
+      ${[[104, -34], [196, 34]].map((q, i) => `<g transform="translate(${q[0]} 94) rotate(${q[1]})">${p('M-18-6H18Q16 18 0 20Q-16 18-18-6z', 'iron')}${r(-19, -9, 38, 5, 'iron')}<ellipse cy="-6" rx="17" ry="3.4" fill="#070605"/></g>`).join('')}
+      ${ln('M96 100C90 120 104 132 98 152', '#050403', 7)}${ln('M96 100C90 120 104 132 98 152', '#5a4a3a', 1, .5)}${ln('M206 100C212 120 198 132 204 152', '#050403', 7)}${fire(98, 152, .8, .2)}${fire(204, 152, .8, .7)}${sh(150, 153, 100)}`,
+    wrecker: () => `<path d="M96 152L116 112L140 98L168 108L196 152z" fill="${f('m-stone')}"/>${rim('M140 98L168 108L196 152', .3)}${ln('M150 100V60', '#1c1a18', 3)}${r(140, 98, 20, 5, 'iron')}${lamp(150, 52, 1.9)}
+      ${ln('M206 152Q204 118 232 106M222 152Q222 126 246 118M240 152Q244 134 262 130', '#0c0c0b', 4.5)}${ln('M206 152Q204 118 232 106', '#7d8a8d', 1, .35)}${beam('M146 54L0 96V130z')}<path d="M0 126L128 128L44 152L0 152z" fill="#cfe0e6" opacity=".07"/>${sh(150, 152, 46)}`,
+    boat: () => `${r(84, 98, 94, 54, 'wood')}${Array.from({ length: 9 }, (_, i) => ln(`M${94 + i * 10} 98V152`, '#000', 1, .5)).join('')}${p('M74 100L131 62L188 100z', 'rust')}${ln('M88 92L131 68L174 92M100 98L131 78L162 98', '#000', 1.2, .5)}${rim('M131 62L188 100', .35)}
+      <path d="M110 116H152V152H110z" fill="#030303"/>${lamp(100, 112, .7)}${ln('M100 100V108', '#222', 1.4)}
+      <path d="M176 140Q214 154 266 132L254 150Q216 160 182 152z" fill="${f('m-wood')}"/>${ln('M176 140Q214 154 266 132', '#c0b090', 1, .4)}${ln('M236 142V92', '#2e2216', 2.4)}${lamp(236, 100, 1.1)}${sh(130, 153, 54)}`,
+    cave: () => `<path d="M30 152L44 84Q84 34 150 30Q216 34 256 88L270 152z" fill="${f('m-stone')}"/>${rim('M44 84Q84 34 150 30Q216 34 256 88', .3)}<path d="M100 152L104 108Q150 74 196 108L200 152z" fill="#020202"/>
+      ${[[112, 104], [128, 94], [150, 90], [172, 94], [188, 104]].map(q => `<path d="M${q[0] - 7} ${q[1]}L${q[0]} ${q[1] + 17}L${q[0] + 7} ${q[1]}z" fill="${f('m-stone')}"/>`).join('')}
+      ${r(138, 128, 36, 22, 'wood')}${r(138, 128, 36, 5, 'brass')}${r(153, 128, 6, 22, 'brass')}${Array.from({ length: 8 }, (_, i) => `<circle cx="${116 + i * 5}" cy="${148 - (i % 3) * 3}" r="4.6" fill="${f('g-coin')}" stroke="#1c1608"/>`).join('')}${Array.from({ length: 5 }, (_, i) => `<circle cx="${184 - i * 5}" cy="${148 - (i % 2) * 3}" r="4.6" fill="${f('g-coin')}" stroke="#1c1608"/>`).join('')}${lamp(186, 120, .7)}${dots([[150, 120, 1, .9]], '#d9c58a')}`,
+    horn: () => `${ln('M122 96L110 152M150 82L160 152', '#1c1b19', 5)}${p('M80 86L102 80L196 38Q214 74 196 112L102 94L80 94z', 'brass')}<ellipse cx="198" cy="75" rx="10" ry="37" fill="#0a0805" stroke="#6a5a2c" stroke-width="2"/>${r(100, 82, 8, 14, 'iron')}${r(150, 62, 7, 38, 'iron')}${rim('M102 80L196 38', .35)}
+      ${[[222, .6], [240, .38], [258, .2]].map((q, i) => ln(`M${q[0]} ${54 - i * 6}Q${q[0] + 16} 75 ${q[0]} ${96 + i * 6}`, '#dce8ec', 2, q[1])).join('')}${sh(140, 152, 40)}`,
+    well: () => `<ellipse cx="150" cy="110" rx="58" ry="15" fill="#010101"/><path d="M92 110L92 148Q150 168 208 148L208 110Q150 128 92 110z" fill="${f('m-stone')}"/>${ln('M92 124Q150 142 208 124M92 138Q150 156 208 138M120 118V158M156 126V164M186 122V156', '#000', 1.2, .5)}<ellipse cx="150" cy="110" rx="58" ry="15" fill="none" stroke="#a49a7e" stroke-opacity=".5" stroke-width="2"/>
+      ${ln('M110 112Q150 126 190 112', '#cfe0e6', 1, .25)}<ellipse cx="150" cy="111" rx="30" ry="6" fill="none" stroke="#cfe0e6" stroke-opacity=".3"/>
+      <path d="M142 112L146 66Q150 60 154 66L158 112z" fill="${f('m-bone')}"/>${[[-8, 66, 52, -5], [-3, 63, 46, -2], [2, 63, 46, 2], [7, 66, 50, 6]].map(q => `<path d="M${149 + q[0] * .8} 68L${149 + q[0] * 1.5 + q[3] * 2} ${q[2]}" stroke="#d8cfb8" stroke-width="4" stroke-linecap="round" opacity=".92"/>`).join('')}<path d="M139 80L128 66" stroke="#d8cfb8" stroke-width="4" stroke-linecap="round" opacity=".9"/>${ln('M146 66L145 110', '#000', 1, .4)}
+      ${ln('M70 106l8-3M222 100l8 3', '#5a2a16', 1, 0)}${dots([[112, 96, 1], [196, 92, 1.1], [170, 84, .9]], '#cfe0e6', 1)}`,
+    spire: () => `<rect width="300" height="180" fill="#cfe6f0" opacity=".1"/><path d="M110 152L130 124L170 124L192 152z" fill="${f('m-stone')}"/>${p('M138 124L148 30L150 6L152 30L162 124z', 'iron')}${rim('M152 30L162 124', .4)}${ln('M141 100H159M143 76H157', '#000', 1.4, .6)}
+      ${ln('M196 0L166 22L178 28L152 48L160 50L150 8', '#eef8ff', 2.6, .95)}${ln('M196 0L166 22L178 28L152 48', '#9fd0e4', 7, .35, 'filter="url(#f-b3)"')}<circle cx="150" cy="8" r="20" fill="url(#g-lamp)"/>
+      ${ln('M40 24Q90 8 130 20M180 14Q230 2 270 26', '#050607', 14, .7, 'filter="url(#f-b3)"')}${sh(150, 152, 44)}`,
+    choir: () => [[104, .95], [150, 1.15], [198, .95]].map((q, i) => `<g transform="translate(${q[0]} 150) scale(${q[1]})"><path d="M-17 4Q-13-38-7-54L7-54Q13-38 17 4z" fill="${f('m-cloth')}"/>${rim('M7-54Q13-38 17 4', .35)}<ellipse cy="-62" rx="8.4" ry="10.4" fill="${f('m-bone')}"/><ellipse cx="-3.2" cy="-64" rx="1.8" ry="2.4" fill="#050505"/><ellipse cx="3.2" cy="-64" rx="1.8" ry="2.4" fill="#050505"/><ellipse cy="-57" rx="2.6" ry="4.6" fill="#050505"/>
+        <path d="M-9-70Q0-80 9-70L10-64Q0-72-10-64z" fill="#0a0b0c"/>${ln('M-8-44Q0-40 8-44', '#050505', 1.4, .6)}</g>`).join('') +
+      `<rect y="136" width="300" height="44" fill="#020303" opacity=".6"/>${[[70, 140], [128, 146], [186, 142], [230, 148]].map(w => ln(`M${w[0]} ${w[1]}q10-4 20 0t20 0`, '#cfe0e6', 1, .2)).join('')}${lamp(150, 28, .9)}`,
+  };
+  const ACC = { light: '#9fb4bc', kill: '#8a3a22', hold: '#7a8a8e', greed: '#8a7a42', strange: '#5a4a78' };
+  const ROLEOF = { brazier: 'light', lamp2: 'light', rocket: 'light', beacon: 'light', battery: 'kill', ballista: 'kill', mortar: 'kill', tesla: 'kill', winch: 'kill', mines: 'kill', watch: 'hold', breakwater: 'hold', bell: 'hold', pitch: 'hold', wrecker: 'greed', boat: 'greed', cave: 'greed', horn: 'strange', well: 'strange', spire: 'strange', choir: 'strange' };
+  const GLOW = { brazier: [150, 120], pitch: [150, 130], beacon: [150, 80], cave: [150, 130], rocket: [214, 60], lamp2: [150, 40], wrecker: [150, 60] };
+
+  // ---- relics: the stat cards. A glyph (the 64x64 icon paths) cast in dull brass on a rune plate, over a branch scene.
+  const SCENE = {
+    gun: () => `<g transform="translate(34 128) rotate(-10)">${r(0, -9, 120, 18, 'cyl')}${r(104, -11.5, 10, 23, 'iron')}</g>${ln('M150 120Q190 100 236 112', '#000', 14, .5)}<circle cx="236" cy="104" r="16" fill="#b4bcbe" opacity=".14" filter="url(#f-b3)"/><circle cx="256" cy="86" r="22" fill="#b4bcbe" opacity=".1" filter="url(#f-b3)"/>${dots([[228, 110, 1.6], [240, 100, 1.2], [214, 118, 1.1], [250, 112, 1]], '#d9663a')}`,
+    light: () => `${beam('M30 36L300 4V120z')}${lamp(30, 36, 1.5)}`,
+    sea: () => `<path d="M0 118Q40 98 80 118T160 118T240 118T300 108V180H0z" fill="#0a1012"/><path d="M0 138Q40 120 80 138T160 138T240 138T300 130V180H0z" fill="#06090a"/>${ln('M0 118Q40 98 80 118T160 118T240 118T300 108', '#cfe0e6', 1.2, .3)}${ln('M0 138Q40 120 80 138T160 138T240 138T300 130', '#cfe0e6', 1, .18)}`,
+    wall: () => `${Array.from({ length: 5 }, (_, j) => Array.from({ length: 6 }, (_, i) => `<rect x="${i * 54 - (j % 2) * 27 - 6}" y="${60 + j * 24}" width="52" height="22" fill="${f('m-stone')}" stroke="#000" stroke-opacity=".6"/>`).join('')).join('')}<rect y="52" width="300" height="130" fill="#000" opacity=".5"/>`,
+    gold: () => Array.from({ length: 22 }, (_, i) => `<ellipse cx="${26 + (i * 41) % 250}" cy="${150 - ((i * 7) % 5) * 5}" rx="14" ry="5.5" fill="${f('g-coin')}" stroke="#14100a"/>`).join('') + `<rect y="120" width="300" height="60" fill="#000" opacity=".35"/>`,
+    loud: () => `${ln('M150 0L142 40L158 66L140 104L156 140L150 180', '#8e1b1b', 3)}${ln('M150 0L142 40L158 66L140 104L156 140L150 180', '#e0502e', 9, .28, 'filter="url(#f-b3)"')}${ln('M142 40L110 52M158 66L200 74M140 104L96 118', '#8e1b1b', 2)}`,
+  };
+  function glyph(paths, col, sc) {
+    const metal = paths.replace(/class="f"/g, `fill="${f('m-brass')}"`);
+    return `<g transform="translate(150 68) scale(${sc}) translate(-32 -32)"><g fill="none" stroke="#000" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" opacity=".7" transform="translate(1.6 2.4)">${paths}</g>
+      <g fill="none" stroke="${col}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${metal}</g></g>`;
+  }
+  const HERO = { gun: 'battery', light: 'lamp2', sea: 'breakwater', wall: 'pitch', gold: 'cave', loud: 'mines' };
+  const relic = (paths, br, col) => {
+    const a = 'a' + (++uid), cx = 212, cy = 62, R = 40, ticks = Array.from({ length: 24 }, (_, i) => { const t = i * Math.PI / 12; return `M${cx + Math.cos(t) * (R - 2)} ${cy + Math.sin(t) * (R - 2)}L${cx + Math.cos(t) * (i % 3 ? R + 1 : R + 5)} ${cy + Math.sin(t) * (i % 3 ? R + 1 : R + 5)}`; }).join('');
+    const hero = HERO[br] || 'battery', sc = hero === 'lamp2' ? .85 : 1.05;
+    return frame(col || ACC.light, `<g transform="translate(${hero === 'lamp2' ? -18 : -34} ${hero === 'lamp2' ? -14 : -34}) scale(${sc})" opacity=".95">${B[hero]()}</g>${br === 'loud' ? SCENE.loud() : ''}
+      <defs><radialGradient id="${a}"><stop offset="0" stop-color="#2c2822"/><stop offset=".8" stop-color="#0c0b0a"/><stop offset="1" stop-color="#050505"/></radialGradient></defs>
+      <circle cx="${cx}" cy="${cy + 3}" r="${R + 3}" fill="#000" opacity=".5" filter="url(#f-b3)"/><circle cx="${cx}" cy="${cy}" r="${R}" fill="url(#${a})" stroke="#5a4c32" stroke-width="2.5"/><circle cx="${cx}" cy="${cy}" r="${R - 6}" fill="none" stroke="#6a3a1e" stroke-width="1" stroke-dasharray="2 4.5"/>${ln(ticks, '#8a7850', 1, .75)}
+      ${glyph(paths, '#d8cfb8', .9).replace('translate(150 68)', `translate(${cx} ${cy})`)}`, { gx: 200, gy: 80, norock: 0 });
+  };
+  // a small tile (the upgrade plaque): the same cast glyph on a dark plate in the branch colour
+  const SC = { lamp2: 1, spire: 1, ballista: 1.08, rocket: 1.1, horn: 1.1 };
+  const tile = (paths, col, hero) => {
+    const a = 'a' + (++uid), cx = 208, cy = 138, R = 27;
+    return frame(col, `<g transform="translate(0 -4) scale(1)" opacity=".95">${B[hero] ? B[hero]() : ''}</g><defs><radialGradient id="${a}"><stop offset="0" stop-color="#2c2822"/><stop offset="1" stop-color="#060606"/></radialGradient></defs>
+      <circle cx="${cx}" cy="${cy + 2}" r="${R + 3}" fill="#000" opacity=".6" filter="url(#f-b3)"/><circle cx="${cx}" cy="${cy}" r="${R}" fill="url(#${a})" stroke="#6a5a38" stroke-width="3"/>
+      ${glyph(paths, '#d8cfb8', .62).replace('translate(150 68)', `translate(${cx} ${cy})`)}`, { moon: 0 }).replace('viewBox="0 0 300 180"', 'viewBox="62 0 180 180"').replace('class="art"', 'class="art tile"');
+  };
+  const building = id => B[id] ? frame(ACC[ROLEOF[id]], `<g transform="translate(150 158) scale(${SC[id] || 1.2}) translate(-150 -154)">${B[id]()}</g>`, { gx: (GLOW[id] || [150, 110])[0], gy: (GLOW[id] || [150, 110])[1] }) : '';
+  const half = (id, x, s, extra = '') => `<g transform="translate(${x} ${152 - 152 * s}) scale(${s})" ${extra}>${B[id]()}</g>`;
+  // evolution: both parents side by side under one chain, the new thing is the sum
+  const evo = (a, b, col) => frame(col || '#9a8e72', `${half(a, -32, .78)}${half(b, 98, .78)}
+    <path d="M150 0V180" stroke="#000" stroke-width="2" opacity=".6"/>${ln('M130 92q-12 0-12 12t12 12h22q12 0 12-12t-12-12z', '#a8582a', 5)}${ln('M156 92q12 0 12 12t-12 12h-22', '#7a3a1c', 5)}${ln('M126 96h28M126 112h28', '#e0a070', 1, .4)}`, { top: '' });
+  const rep = (a, b, col) => frame(col || '#8a7a42', `<g opacity=".5" style="filter:grayscale(.7) brightness(.7)">${half(a, -47, .78)}</g>${ln('M20 24L120 150M120 24L20 150', '#8e1b1b', 5, .8)}${half(b, 91, .86)}${ln('M126 90h30', '#d8cfb8', 2.4, .9)}${ln('M148 82l10 8-10 8', '#d8cfb8', 2.4, .9)}`, {});
+  return { DEFS, building, relic, tile, evo, rep, has: id => !!B[id] };
+})();
+if (typeof window !== 'undefined') window.TWArt = TWArt;
+</script>
 <script>/* ui.js */
 // Tidewall HUD (browser only): a DOM layer over the 3D canvas. Reads the sim state S each frame; the only writes go
 // through the sim API (buy, choosePick, useAbility). Screens: title (Start), run HUD (top bar: wave, citadel HP,
@@ -7303,7 +7943,7 @@ root.TWRender = { init, pre, frame, resize, RLOOK, R, toView, toSim };
 if (typeof document === 'undefined' || !root.TWSim) return;
 const Sim = root.TWSim, T3 = root.TW3;
 
-const AMBER = '#ffb36b', TEAL = '#cdc4ab';   // TEAL is the bone colour now (LAS-60 horror skin)
+const AMBER = '#c9dde5', TEAL = '#cdc4ab';   // TEAL is the bone colour now (LAS-60 horror skin)
 const chainURI = (x1, y1, x2, y2, n, w, h, col) => {   // a chain of n links along a line, as a CSS data-URI background
   let s = '';
   for (let k = 0; k < n; k++) {
@@ -7324,8 +7964,8 @@ const TOWNCSS = `
 .card .tp{display:flex;gap:9px;margin:7px 0 2px}
 .card .tp i{width:13px;height:13px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#2a2620,#070606 70%);box-shadow:inset 0 0 0 2px #3d3226,0 1px 2px #000}
 .card .tp i.on{background:radial-gradient(circle at 35% 30%,#e8dcc0,#8a7a66 60%,#3a3028);box-shadow:inset 0 0 0 2px #6a5a44,0 1px 2px #000}
-.card .tp i.nx{background:radial-gradient(circle at 40% 35%,#ffb36b,#c4622d 55%,#4a1c0a);box-shadow:inset 0 0 0 2px #7a3a18,0 0 10px #c4622d;animation:twEmber 1.6s ease-in-out infinite}
-@keyframes twEmber{0%,100%{box-shadow:inset 0 0 0 2px #7a3a18,0 0 5px #c4622d}50%{box-shadow:inset 0 0 0 2px #7a3a18,0 0 14px 2px #ff8a40}}
+.card .tp i.nx{background:radial-gradient(circle at 40% 35%,#c9dde5,#c4622d 55%,#4a1c0a);box-shadow:inset 0 0 0 2px #7a3a18,0 0 10px #c4622d;animation:twEmber 1.6s ease-in-out infinite}
+@keyframes twEmber{0%,100%{box-shadow:inset 0 0 0 2px #7a3a18,0 0 5px #c4622d}50%{box-shadow:inset 0 0 0 2px #7a3a18,0 0 14px 2px #b8502c}}
 .card.bld .mid,.card.evo .mid,.card.rep .mid{justify-content:flex-start;margin-top:10px}
 .card.bld p,.card.evo p,.card.rep p{margin:8px 0 0;font-size:18px;line-height:1.3;color:var(--bone);font-weight:500}
 .card p b.num{color:#fff1d6;font-weight:700;white-space:nowrap}
@@ -7369,6 +8009,54 @@ const TOWNCSS = `
 .jtag s{flex:none;width:22px;height:22px;background:${chainURI(3, 19, 19, 3, 3, 22, 22, '#a8582a')} center/contain no-repeat}
 .jtag b{color:#fff1d6}
 .fn.bld::after{content:'';position:absolute;right:-3px;top:-3px;width:11px;height:11px;background:${chainURI(1, 10, 10, 1, 2, 11, 11, '#c4784a')} center/contain no-repeat;filter:drop-shadow(0 0 3px #000)}
+`;
+// LAS-67: cards with real art. Each card opens with a sunk painted window (the SVG scene from cardart.js) in a worn iron mat; chips sit on the art
+// (the big number, the role, the level studs, the chain badge); the text comes below. The upgrade plaques get a small window of the same craft.
+const CARTCSS = `
+.card{height:428px;padding:12px}.card:not(.bld):not(.evo):not(.rep) .md{height:196px}.card .md{flex:none}.card h3{font-size:24px}
+.card.bld,.card.evo,.card.rep{height:462px}
+.card .md,.card .md.evo,.card .md.rep,.card .md.bld{position:relative;display:block;width:100%;min-width:0;height:176px;margin:0;padding:0;border-radius:2px;overflow:hidden;animation:none;
+  background:#050505;box-shadow:0 0 0 1px #000,0 0 0 3px #3a3226,0 0 0 4px #0a0908,0 8px 16px rgba(0,0,0,.65);transition:box-shadow .2s}
+.card:hover .md,.card.hot .md{box-shadow:0 0 0 1px #000,0 0 0 3px color-mix(in srgb,var(--c) 55%,#3a3226),0 0 0 4px #0a0908,0 8px 16px rgba(0,0,0,.65)}
+.card .md svg.art,.up .md svg.art{position:absolute;inset:0;width:100%;height:100%;stroke:none;stroke-width:1;fill:none;filter:none;transition:filter .25s}
+.card:hover .md svg.art,.card.hot .md svg.art{filter:brightness(1.22) contrast(1.04)}
+.card .md::before{content:'';position:absolute;inset:0;z-index:2;pointer-events:none;background:var(--grain);opacity:.55;mix-blend-mode:overlay}
+.card .md::after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;z-index:2;background:linear-gradient(90deg,transparent,var(--c) 28%,var(--c) 72%,transparent);opacity:.7}
+.art .fgA{animation:twDrift 14s ease-in-out infinite alternate}.art .fgB{animation:twDrift 19s ease-in-out -6s infinite alternate-reverse}
+@keyframes twDrift{from{translate:-16px 0}to{translate:16px 0}}
+.art .flk{animation:twFlick 3.1s linear infinite}
+.card .chip{position:absolute;left:8px;bottom:11px;z-index:3;display:flex;align-items:center;gap:9px;max-width:calc(100% - 16px);padding:3px 13px 4px 9px;
+  background:linear-gradient(180deg,rgba(16,14,11,.9),rgba(0,0,0,.93));border:1px solid #4a4030;border-left:3px solid var(--c);border-radius:2px;box-shadow:0 3px 8px rgba(0,0,0,.75);filter:none}
+.card .chip .bn{font-size:34px;margin:0;line-height:1.05;filter:none;text-shadow:0 0 14px color-mix(in srgb,var(--c) 40%,transparent)}
+.card .chip .lb{font:600 12px/1.15 Cinzel,Georgia,serif;letter-spacing:.12em;text-transform:uppercase;color:var(--bone2);max-width:160px}
+.card .rt{top:21px;left:21px;translate:none;z-index:3;padding:4px 11px;box-shadow:0 2px 6px rgba(0,0,0,.8)}
+.card .md .tp{position:absolute;right:8px;top:8px;z-index:3;margin:0;gap:6px;padding:5px 8px;background:rgba(6,5,4,.8);border:1px solid #3a3226;border-radius:2px}
+.card .md .tp i{width:11px;height:11px}
+.card .cb{top:146px;right:20px;z-index:3}
+.card .tg{display:flex;gap:6px;justify-content:center;margin-top:8px}
+.card .tg .br,.card .tg .sl{margin:0;padding:3px 9px;font:600 10.5px/1.2 Cinzel,Georgia,serif;letter-spacing:.18em;text-transform:uppercase;border-radius:2px;white-space:nowrap}
+.card .tg .br{color:var(--c);background:rgba(0,0,0,.5);border:1px solid color-mix(in srgb,var(--c) 38%,#2c2822)}
+.card .tg .sl{color:var(--bone2);background:rgba(0,0,0,.35);border:1px solid #2c2822}
+.card h3{font-size:25px;margin:11px 0 0}
+.card .mid,.card.bld .mid,.card.evo .mid,.card.rep .mid{justify-content:flex-start;margin-top:8px}
+.card.bld p,.card.evo p,.card.rep p{font-size:17px;margin:3px 0 0}.card.bld .md,.card.evo .md,.card.rep .md{height:166px}.card .cb{top:136px}
+.card .ft{border-top:1px solid #2c2822;padding-top:9px;margin-top:10px}
+.card:not(.bld):not(.evo):not(.rep) .mid{flex:none}.card:not(.bld):not(.evo):not(.rep) .ft{margin-top:auto}
+.card.bld .ft,.card.evo .ft,.card.rep .ft{margin-top:14px}.card .pl{margin-bottom:2px}
+.card.evo .md{box-shadow:0 0 0 1px #000,0 0 0 3px #a69d86,0 0 0 4px #0a0908,0 8px 16px rgba(0,0,0,.65)}
+.card.rep .md{filter:sepia(.25)}
+/* the upgrade plaques: a small painted window, a level, a coin */
+#tw-ups{padding:5px 7px}
+.up{width:max(158px,14.6vh);height:max(64px,6.1vh);padding:5px 8px 5px 6px;column-gap:9px;background:var(--grain),linear-gradient(180deg,#201c17,#0e0c0a);border-color:#2c2822;border-radius:2px}
+.up .md{grid-row:1 / 3;position:relative;overflow:hidden;width:max(52px,4.9vh);height:max(52px,4.9vh);border-radius:2px;background:#050505;
+  box-shadow:0 0 0 1px #000,0 0 0 2px #4a3f2c,0 0 0 3px #0a0908,0 3px 8px rgba(0,0,0,.7);animation:none}
+.up .md svg.art{stroke:none}
+.up.can .md svg.art,.up:hover .md svg.art{stroke:none;animation:none}
+.up:not(.can):not(.max) .md{filter:brightness(.62) saturate(.5)}
+.up.can .md{box-shadow:0 0 0 1px #000,0 0 0 2px #9fb2ba,0 0 0 3px #0a0908,0 0 12px rgba(200,220,230,.4)}
+.up:hover .md svg.art{filter:brightness(1.25)}
+.up .lv{font-size:max(14px,1.3vh)}
+.up .cost{font-size:max(17px,1.6vh)}
 `;
 const CSS = `
 #twui{position:fixed;inset:0;z-index:30;pointer-events:none;font:16px/1.3 Barlow,"Segoe UI",system-ui,sans-serif;color:#d8cfb8;
@@ -7418,7 +8106,7 @@ const CSS = `
 #tw-wbar i{display:block;height:100%;background:${TEAL};width:0}
 #tw-hp{width:min(30vw,520px)}
 #tw-hpbar{position:relative;height:22px;border-radius:5px;background:rgba(0,0,0,.45);overflow:hidden;
-  border:1px solid rgba(255,179,107,.3);margin-top:3px}
+  border:1px solid rgba(200,220,230,.3);margin-top:3px}
 #tw-hpbar i{position:absolute;inset:0 auto 0 0;background:linear-gradient(180deg,#ffc98f,#d9822f);width:100%;transition:width .15s}
 #tw-hpbar u{position:absolute;inset:0 auto 0 0;background:rgba(255,236,214,.7);width:100%}
 #tw-hpbar.hit{animation:twHit .3s ease-out}
@@ -7426,10 +8114,10 @@ const CSS = `
 #tw-hpbar b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;
   color:#1c0f05;text-shadow:0 0 4px rgba(255,220,180,.6)}
 #tw-hpbar.low i{background:linear-gradient(180deg,#ff8a6b,#b0321c)}
-#tw-gold .big{color:${AMBER}}
-#tw-emb .big{color:#ff7a4d}
+#tw-gold .big{color:#b59a62}
+#tw-emb .big{color:#c4622d}
 .coin{display:inline-block;width:.8em;height:.8em;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ffe2a8,#e09a3e 60%,#9c5d1c);
-  margin-right:.3em;vertical-align:-.05em;box-shadow:0 0 6px rgba(255,179,107,.5)}
+  margin-right:.3em;vertical-align:-.05em;box-shadow:0 0 6px rgba(200,220,230,.5)}
 .emb{display:inline-block;width:.7em;height:.9em;margin-right:.3em;vertical-align:-.08em;border-radius:50% 50% 50% 50%/60% 60% 40% 40%;
   background:radial-gradient(circle at 50% 70%,#ffd27a,#ff6a2a 55%,#8a1e0c);box-shadow:0 0 8px rgba(255,106,42,.6)}
 /* bottom dock */
@@ -7438,8 +8126,8 @@ const CSS = `
 .up{position:relative;width:142px;padding:9px 10px 8px;text-align:left;border-radius:8px;background:rgba(150,125,95,.05);
   border:1px solid rgba(150,125,95,.16);transition:transform .07s,translate .12s,background .1s,border-color .1s}
 .up:hover{background:rgba(150,125,95,.1);translate:0 -3px}
-.up.can{border-color:rgba(255,179,107,.55);background:rgba(255,179,107,.08)}
-.up.can:hover{background:rgba(255,179,107,.16)}
+.up.can{border-color:rgba(200,220,230,.55);background:rgba(200,220,230,.08)}
+.up.can:hover{background:rgba(200,220,230,.16)}
 .up:active,.up.press{transform:translateY(2px) scale(.95)}
 .up::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;
   background:linear-gradient(105deg,transparent 35%,rgba(255,226,180,.3) 50%,transparent 65%) no-repeat;background-size:250% 100%}
@@ -7457,7 +8145,7 @@ const CSS = `
 .up.can .cost{color:${AMBER}}
 .up.max .cost{color:#8c8470;font-size:12px;letter-spacing:.1em}
 .up.flash{animation:twflash .35s}
-@keyframes twflash{0%{box-shadow:0 0 0 0 rgba(255,179,107,.9)}100%{box-shadow:0 0 0 10px rgba(255,179,107,0)}}
+@keyframes twflash{0%{box-shadow:0 0 0 0 rgba(200,220,230,.9)}100%{box-shadow:0 0 0 10px rgba(200,220,230,0)}}
 #tw-abs{display:flex;gap:12px;padding:8px 12px}
 .ab{position:relative;width:86px;height:86px;border-radius:50%;border:none;background:none;padding:0}
 .ab svg{position:absolute;inset:0}
@@ -7470,7 +8158,7 @@ const CSS = `
 .ab{transition:translate .12s}.ab:hover{translate:0 -3px}.ab:active{scale:.95}
 .ab.pop{animation:twReady .45s cubic-bezier(.2,1.6,.4,1)}
 .ab.cool .ic{filter:saturate(.3) brightness(.65)}
-.ab.armed .ic{box-shadow:0 0 0 3px ${AMBER},0 0 24px rgba(255,179,107,.7)}
+.ab.armed .ic{box-shadow:0 0 0 3px ${AMBER},0 0 24px rgba(200,220,230,.7)}
 .ab .cdn{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#e2d9c0;
   text-shadow:0 1px 4px #000}
 /* tooltip */
@@ -7489,22 +8177,22 @@ const CSS = `
 #tw-goal.new b{display:inline-block;animation:twCnt .45s cubic-bezier(.2,1.6,.4,1)}
 #tw-teach{position:absolute;display:none;pointer-events:auto;cursor:pointer;padding:7px 13px 8px;font-size:14px;white-space:nowrap;
   transform:translate(-50%,calc(-100% - 26px));border-color:rgba(255,226,138,.45)!important;animation:twPop .3s cubic-bezier(.2,1.4,.4,1)}
-#tw-teach b{color:#ffe28a}#tw-teach small{display:block;font-size:11px;color:#8c8470;margin-top:2px}
+#tw-teach b{color:#dcecf2}#tw-teach small{display:block;font-size:11px;color:#8c8470;margin-top:2px}
 #tw-teach::after{content:'';position:absolute;left:50%;top:100%;width:1px;height:22px;background:linear-gradient(rgba(255,226,138,.7),transparent)}
 #tw-teach.lit{border-color:rgba(150,125,95,.6)!important}#tw-teach.lit b{color:${TEAL}}
-.up.teach.can{border-color:#ffe28a;animation:twLamp 1.6s ease-in-out infinite}
+.up.teach.can{border-color:#dcecf2;animation:twLamp 1.6s ease-in-out infinite}
 .up.teach.can::before{content:attr(data-teach);position:absolute;left:50%;bottom:calc(100% + 10px);translate:-50% 0;white-space:nowrap;
-  font-size:12px;font-weight:600;color:#ffe28a;text-shadow:0 1px 3px #000,0 0 8px rgba(0,0,0,.9);pointer-events:none}
+  font-size:12px;font-weight:600;color:#dcecf2;text-shadow:0 1px 3px #000,0 0 8px rgba(0,0,0,.9);pointer-events:none}
 @keyframes twLamp{50%{box-shadow:0 0 0 2px rgba(255,226,138,.35),0 0 26px rgba(255,226,138,.55)}}
 #twui.aiming #tw-aim{pointer-events:auto;cursor:crosshair}
 /* modal screens */
 .scr{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;pointer-events:auto}
 .scr.on{display:flex}
 .dim{background:radial-gradient(ellipse at 50% 45%,rgba(3,12,14,.55),rgba(2,8,10,.86))}
-.btn{min-width:220px;padding:13px 28px;font-size:18px;font-weight:600;border-radius:8px;border:1px solid rgba(255,179,107,.7);
-  background:linear-gradient(180deg,rgba(255,179,107,.25),rgba(255,179,107,.08));color:#ffe2c2;margin:6px;letter-spacing:.04em;
+.btn{min-width:220px;padding:13px 28px;font-size:18px;font-weight:600;border-radius:8px;border:1px solid rgba(200,220,230,.7);
+  background:linear-gradient(180deg,rgba(200,220,230,.25),rgba(200,220,230,.08));color:#ffe2c2;margin:6px;letter-spacing:.04em;
   transition:transform .08s,translate .12s,box-shadow .15s,background .12s}
-.btn:hover,.btn.sel{background:linear-gradient(180deg,rgba(255,179,107,.4),rgba(255,179,107,.15));translate:0 -2px;
+.btn:hover,.btn.sel{background:linear-gradient(180deg,rgba(200,220,230,.4),rgba(200,220,230,.15));translate:0 -2px;
   box-shadow:0 6px 24px rgba(255,150,60,.25)}
 .btn:active{transform:scale(.96)}
 .btn.sec{border-color:rgba(150,125,95,.35);background:rgba(150,125,95,.06);color:#cdc4ab;font-size:15px;min-width:160px}
@@ -7525,7 +8213,7 @@ const CSS = `
   transition:color .12s,transform .16s cubic-bezier(.2,.9,.3,1.2);animation:twRise .55s cubic-bezier(.2,.9,.3,1.1) backwards;
   animation-delay:calc(.22s + var(--i,0) * .07s)}
 #tw-menu .mi::before{content:'';position:absolute;left:-22px;top:.9vh;height:clamp(22px,3.4vh,40px);width:4px;border-radius:2px;background:${AMBER};
-  transform:scaleY(0);transition:transform .16s;box-shadow:0 0 14px rgba(255,160,70,.8)}
+  transform:scaleY(0);transition:transform .16s;box-shadow:0 0 14px rgba(200,220,230,.8)}
 #tw-menu .mi:hover,#tw-menu .mi.sel{color:#fff1d6;transform:translateX(10px)}
 #tw-menu .mi:hover::before,#tw-menu .mi.sel::before{transform:scaleY(1)}
 #tw-menu .mi.pri{font-size:clamp(34px,5.6vh,62px);color:#ffc583;text-shadow:0 0 28px rgba(255,150,60,.35),0 3px 0 rgba(0,0,0,.5)}
@@ -7544,7 +8232,7 @@ const CSS = `
 #tw-cards{display:flex;gap:30px;perspective:1100px;align-items:flex-start}
 /* LAS-39: a card is a small piece of the wall: stone-dark body, a brass frame lit in its branch colour (--c), rivets, a medallion with the icon,
    the number that changes in big type, the rule underneath, the key cap and take pips at the foot */
-.card{--c:#ff9a5c;position:relative;width:300px;height:420px;padding:20px 22px 18px;text-align:center;display:flex;flex-direction:column;align-items:center;border-radius:16px;
+.card{--c:#b8532c;position:relative;width:300px;height:420px;padding:20px 22px 18px;text-align:center;display:flex;flex-direction:column;align-items:center;border-radius:16px;
   border:0;color:inherit;font:inherit;cursor:pointer;
   background:radial-gradient(120% 60% at 50% 0%,color-mix(in srgb,var(--c) 22%,transparent),transparent 70%),
     repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 2px,transparent 2px 5px),
@@ -7613,19 +8301,19 @@ const CSS = `
 #tw-stats{grid-template-columns:repeat(2,1fr);width:100%;margin-bottom:14px}
 #tw-stats>div{animation:twRise .5s cubic-bezier(.2,.9,.3,1.1) backwards;animation-delay:calc(.12s + var(--i,0) * .12s)}
 #tw-stats .v{font-size:34px;display:inline-block}
-#tw-stats .emb-t .v{color:#ff8a55}
+#tw-stats .emb-t .v{color:#c4622d}
 #tw-rec{display:flex;flex-direction:column;gap:10px;margin-bottom:6px;align-items:stretch;width:100%}
 #tw-rec>*{padding:9px 16px;font-size:15px;color:#a69d86;text-align:left;line-height:1.35}
 #tw-rec b{color:#f3e6c8;font-weight:600}#tw-rec .k{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#8c8470}
-#tw-rec .best.new{border-color:rgba(255,179,107,.6)}#tw-rec .best.new b{color:${AMBER}}
+#tw-rec .best.new{border-color:rgba(200,220,230,.6)}#tw-rec .best.new b{color:${AMBER}}
 #tw-rec button.panel{cursor:pointer;font:inherit;font-size:15px;color:#a69d86}
-#tw-rec button.can{border-color:rgba(255,179,107,.6)}#tw-rec button.can:hover{background:rgba(255,179,107,.14)}
+#tw-rec button.can{border-color:rgba(200,220,230,.6)}#tw-rec button.can:hover{background:rgba(200,220,230,.14)}
 #tw-rec .go{color:${AMBER};font-weight:600}
 #tw-again{min-width:340px;padding:16px 40px;font-size:24px;margin-top:16px}
 /* the Forge (end screen + Forge screen) */
 .fg-head{display:flex;align-items:baseline;justify-content:center;gap:18px;margin-bottom:10px;font-size:15px;color:#a69d86}
 .fg-head .t{font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:#8c8470}
-.fg-head .e{font-size:22px;font-weight:600;color:#ff8a55}
+.fg-head .e{font-size:22px;font-weight:600;color:#c4622d}
 .fg-head .nx{color:#ffe2c2}
 .fg-head .nx.go{color:${AMBER};font-weight:600}
 .fg-head .dw{display:flex;align-items:center;gap:8px;padding:5px 12px;border-radius:7px;font-size:13px;color:#cfc6b2;
@@ -7633,7 +8321,7 @@ const CSS = `
 .fg-head .dw b{font-family:Cinzel,serif;font-weight:600;color:#f1ead9}
 .fg-head .dw .bar{width:70px;height:4px;border-radius:2px;background:rgba(241,234,217,.12);overflow:hidden}
 .fg-head .dw .bar i{display:block;height:100%;background:#f1ead9}
-.fg-head button.dw{border-color:${AMBER};color:#ffe2c2;box-shadow:0 0 16px rgba(255,179,107,.25);cursor:pointer}
+.fg-head button.dw{border-color:${AMBER};color:#ffe2c2;box-shadow:0 0 16px rgba(200,220,230,.25);cursor:pointer}
 /* Forge v2 (LAS-22): the tree from TUNE x/y. Links in one SVG (world units), nodes and labels as DOM placed by fgLayout,
    so text stays sharp at any zoom. Drag pans, the wheel zooms around the cursor. */
 .fgbox{width:min(calc(100vw - 96px),2300px)}
@@ -7647,18 +8335,18 @@ const CSS = `
 .fg-links *{vector-effect:non-scaling-stroke}
 .fg-links line{stroke:rgba(127,160,158,.22);stroke-width:1.4}
 .fg-links line.alt{stroke-dasharray:5 4}
-.fg-links line.go{stroke:rgba(255,179,107,.75);stroke-width:2}
+.fg-links line.go{stroke:rgba(200,220,230,.75);stroke-width:2}
 .fg-links line.on{stroke:rgba(150,125,95,.7);stroke-width:2.6}
 .fg-links rect{fill:rgba(241,234,217,.035);stroke:rgba(241,234,217,.4);stroke-width:1.3;stroke-dasharray:4 3}
 .fg-links rect.done{stroke:rgba(150,125,95,.25);fill:none}
-.fg-links rect.open{stroke:rgba(255,179,107,.8);fill:rgba(255,179,107,.06)}
+.fg-links rect.open{stroke:rgba(200,220,230,.8);fill:rgba(200,220,230,.06)}
 .fn{position:absolute;width:var(--d);height:var(--d);margin:calc(var(--d) / -2) 0 0 calc(var(--d) / -2);padding:0;border-radius:50%;
   box-sizing:border-box;border:2px solid var(--c);background:#081719;color:#06110f;pointer-events:auto;cursor:pointer;
   display:flex;align-items:center;justify-content:center;font-size:calc(var(--d) * .48);line-height:1;transition:scale .1s,box-shadow .12s}
 .fn:hover{scale:1.14;z-index:2}
 .fn.own{background:var(--c);box-shadow:0 0 10px color-mix(in srgb,var(--c) 55%,transparent)}
 .fn.rdy{background:radial-gradient(circle,color-mix(in srgb,var(--c) 30%,#081719),#081719 70%)}
-.fn.can{border-color:${AMBER};box-shadow:0 0 0 3px rgba(255,179,107,.22),0 0 20px rgba(255,179,107,.55);animation:twNode 1.6s ease-in-out infinite}
+.fn.can{border-color:${AMBER};box-shadow:0 0 0 3px rgba(200,220,230,.22),0 0 20px rgba(200,220,230,.55);animation:twNode 1.6s ease-in-out infinite}
 .fn.lock{border-color:color-mix(in srgb,var(--c) 40%,#22302f);background:#061113}
 .fn.ex{border-color:#2a3433;background:#050c0d;opacity:.55}
 .fn.ex::after{content:'';position:absolute;left:12%;right:12%;top:50%;border-top:2px solid #6b7a78;rotate:-45deg}
@@ -7666,7 +8354,7 @@ const CSS = `
 .fn.key.own{color:#06110f}
 .fn.key.lock{outline-color:color-mix(in srgb,var(--c) 35%,transparent);color:color-mix(in srgb,var(--c) 60%,#22302f)}
 .fn.flash{animation:twflash .5s}
-@keyframes twNode{50%{box-shadow:0 0 0 5px rgba(255,179,107,.12),0 0 28px rgba(255,179,107,.75)}}
+@keyframes twNode{50%{box-shadow:0 0 0 5px rgba(200,220,230,.12),0 0 28px rgba(200,220,230,.75)}}
 .fl{position:absolute;z-index:1;translate:-50% 0;padding:1px 6px 2px;border-radius:5px;background:rgba(4,13,15,.72);font-size:12px;line-height:1.2;
   color:#cdc4ab;white-space:nowrap;text-align:center;pointer-events:none;text-shadow:0 1px 2px #000}
 .fl.dim{background:none;text-shadow:0 1px 3px #000,0 0 6px #000}
@@ -7697,13 +8385,13 @@ const CSS = `
 .srow .l{color:#cdc4ab}.srow .l small{display:block;color:#8c8470;font-size:12px}
 .seg{display:flex;gap:4px}
 .seg button{padding:6px 12px;border-radius:6px;border:1px solid rgba(150,125,95,.25);background:none;color:#a69d86;font-size:14px}
-.seg button.on{border-color:${AMBER};color:#ffe2c2;background:rgba(255,179,107,.12)}
+.seg button.on{border-color:${AMBER};color:#ffe2c2;background:rgba(200,220,230,.12)}
 .srow input[type=range]{width:200px;pointer-events:auto;accent-color:${AMBER}}
 .srow .warn{padding:6px 12px;border-radius:6px;background:none;border:1px solid rgba(255,120,90,.6);color:#ffb3a0}
 /* dev panel */
 #tw-dev{position:absolute;top:14px;right:14px;width:236px;padding:10px 12px;font-size:12px;display:none;pointer-events:auto;z-index:8}
 #tw-dev.on{display:block}
-#tw-dev h4{margin:0 0 6px;font-size:12px;letter-spacing:.16em;color:#ff8a55}
+#tw-dev h4{margin:0 0 6px;font-size:12px;letter-spacing:.16em;color:#c4622d}
 #tw-dev .r{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:5px}
 #tw-dev button,#tw-dev input{font:inherit;padding:3px 7px;border-radius:4px;border:1px solid rgba(150,125,95,.3);background:rgba(150,125,95,.06);color:#e2d9c0}
 #tw-dev input{width:52px;pointer-events:auto}
@@ -7739,13 +8427,13 @@ const CSS = `
   box-shadow:inset 0 2px 3px rgba(255,255,255,.5),inset 0 -4px 6px rgba(0,0,0,.4),0 0 12px color-mix(in srgb,var(--c) 45%,transparent),0 2px 5px rgba(0,0,0,.6)}
 .fn.rdy{background:radial-gradient(circle at 38% 30%,color-mix(in srgb,var(--c) 38%,#18282a),#0b1719 70%) padding-box,var(--rim) border-box}
 .fn.can{background:radial-gradient(circle at 50% 62%,#ffe9a8,#ff9a3c 38%,#a8330f 78%) padding-box,conic-gradient(from 200deg,#ffe2a8,#ff9a3c 30%,#8a2a0c 55%,#ff9a3c 75%,#ffe2a8) border-box;
-  box-shadow:inset 0 -3px 5px rgba(90,20,0,.5),0 0 0 3px rgba(255,179,107,.2),0 0 22px rgba(255,150,60,.65)}
+  box-shadow:inset 0 -3px 5px rgba(90,20,0,.5),0 0 0 3px rgba(200,220,230,.2),0 0 22px rgba(255,150,60,.65)}
 .fn.lock{background:radial-gradient(circle at 38% 30%,#1b2829,#081012 66%) padding-box,conic-gradient(from 200deg,color-mix(in srgb,var(--c) 35%,#34403f),color-mix(in srgb,var(--c) 18%,#1c2726) 50%,color-mix(in srgb,var(--c) 35%,#34403f)) border-box;
   box-shadow:inset 0 -3px 5px rgba(0,0,0,.6)}
 .fn.ex{background:#050c0d;box-shadow:none}
 .fn.key{border-width:4px;outline:2px solid color-mix(in srgb,var(--c) 55%,transparent);outline-offset:3px}
 .fn.key.own{color:#10181a}
-@keyframes twNode{50%{box-shadow:inset 0 -3px 5px rgba(90,20,0,.5),0 0 0 5px rgba(255,179,107,.12),0 0 30px rgba(255,150,60,.9)}}
+@keyframes twNode{50%{box-shadow:inset 0 -3px 5px rgba(90,20,0,.5),0 0 0 5px rgba(200,220,230,.12),0 0 30px rgba(255,150,60,.9)}}
 #tw-goal,#tw-pick .sub,#tw-over .sub,#tw-set .sub{font-family:Cinzel,Georgia,serif;font-weight:500;letter-spacing:.05em}
 #tw-goal{font-size:13px}
 /* LAS-48: readable HUD (nothing under 13 px at 1080 high, growing with the window height), ability buttons with an icon, a name, a key cap
@@ -7778,7 +8466,7 @@ body.twdev #fps{display:block!important}
 #tw-over .fgbox{max-width:min(1500px,128vh)}
 /* LAS-56: the upgrade bar rebuilt from Tropebrawl's shop cards: layered frame with a branch-colour top edge, an art medallion, level pips,
    a coin cost, a gold "ready" glow, hover lift + tilt, a buy pop with a burst ring. Same family as the pick cards (.card). */
-.up{--c:#ff9a5c;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto 1fr auto;column-gap:9px;row-gap:1px;align-items:center;
+.up{--c:#b8532c;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto 1fr auto;column-gap:9px;row-gap:1px;align-items:center;
   padding:9px 10px 7px;border-radius:10px;border:1px solid rgba(150,125,95,.18);border-top:3px solid var(--c);
   background:linear-gradient(180deg,color-mix(in srgb,var(--c) 16%,#0a1d1f) 0,#08191b 70%);
   box-shadow:inset 0 0 0 1px rgba(0,0,0,.5),inset 0 2px 0 rgba(255,244,220,.07),0 6px 14px rgba(0,0,0,.45);
@@ -7801,17 +8489,17 @@ body.twdev #fps{display:block!important}
 .up .pp em{font-style:normal;font-size:max(13px,1.2vh);color:var(--c);margin-left:2px}
 .up .cost{white-space:nowrap}
 .up .cost::before{content:'';display:inline-block;width:.78em;height:.78em;border-radius:50%;margin-right:.35em;vertical-align:-.04em;
-  background:radial-gradient(circle at 35% 35%,#ffe2a8,#e09a3e 60%,#9c5d1c);box-shadow:0 0 6px rgba(255,179,107,.5)}
+  background:radial-gradient(circle at 35% 35%,#ffe2a8,#e09a3e 60%,#9c5d1c);box-shadow:0 0 6px rgba(200,220,230,.5)}
 .up.max .cost::before{display:none}
 .up .key{top:6px;right:7px;background:linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.02));box-shadow:0 2px 0 rgba(0,0,0,.6)}
 .up:hover .key{color:#1a1208;background:var(--c);border-color:var(--c)}
 /* can't afford: the art and cost go dim; affordable now: a gold frame that breathes */
 .up:not(.can):not(.max) .md{filter:grayscale(.7) brightness(.8)}
 .up:not(.can):not(.max) .cost{color:#9a7f78}
-.up.can{border-color:#ffb36b;background:linear-gradient(180deg,color-mix(in srgb,var(--c) 22%,#0a1d1f) 0,#0a1d1f 70%);animation:twReady 1.6s ease-in-out infinite alternate}
-.up.can:hover{animation:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.5),0 0 0 2px #ffb36b,0 12px 22px rgba(0,0,0,.55),0 0 28px rgba(255,179,107,.55)}
-@keyframes twReady{from{box-shadow:inset 0 0 0 1px rgba(0,0,0,.5),0 0 0 2px #ffb36b,0 0 8px rgba(255,179,107,.3)}to{box-shadow:inset 0 0 0 1px rgba(0,0,0,.5),0 0 0 2px #ffb36b,0 0 22px rgba(255,179,107,.62)}}
-.up.max{border-top-color:#f0c755}
+.up.can{border-color:#c9dde5;background:linear-gradient(180deg,color-mix(in srgb,var(--c) 22%,#0a1d1f) 0,#0a1d1f 70%);animation:twReady 1.6s ease-in-out infinite alternate}
+.up.can:hover{animation:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.5),0 0 0 2px #c9dde5,0 12px 22px rgba(0,0,0,.55),0 0 28px rgba(200,220,230,.55)}
+@keyframes twReady{from{box-shadow:inset 0 0 0 1px rgba(0,0,0,.5),0 0 0 2px #c9dde5,0 0 8px rgba(200,220,230,.3)}to{box-shadow:inset 0 0 0 1px rgba(0,0,0,.5),0 0 0 2px #c9dde5,0 0 22px rgba(200,220,230,.62)}}
+.up.max{border-top-color:#a8965a}
 /* buying: the card pops, the art spins once, a ring bursts out, the level number ticks (twCnt) */
 .up .bst{position:absolute;inset:0;border-radius:50%;border:2px solid var(--c);opacity:0;pointer-events:none}
 .up.bought .bst{animation:twBurst .55s ease-out}
@@ -7819,7 +8507,7 @@ body.twdev #fps{display:block!important}
 .up.flash{animation:twBuyPop .38s cubic-bezier(.2,1.6,.4,1)}
 @keyframes twBurst{0%{opacity:.9;scale:.8}100%{opacity:0;scale:2.3}}
 @keyframes twSpin{0%{rotate:-60deg;scale:.8}60%{scale:1.18}100%{rotate:0deg;scale:1}}
-@keyframes twBuyPop{0%{scale:1;box-shadow:0 0 0 0 rgba(255,179,107,.9)}40%{scale:1.08;box-shadow:0 0 0 12px rgba(255,179,107,0),0 0 34px rgba(255,200,130,.7)}100%{scale:1}}
+@keyframes twBuyPop{0%{scale:1;box-shadow:0 0 0 0 rgba(200,220,230,.9)}40%{scale:1.08;box-shadow:0 0 0 12px rgba(200,220,230,0),0 0 34px rgba(255,200,130,.7)}100%{scale:1}}
 .up.deny{animation:twShake .3s}
 /* LAS-60 HORROR skin. Palette: black / near-black iron, bone (#d8cfb8) for text, dried blood (#8e1b1b, #c0392b) and rust (#8a4a22) for
    danger and accents, sickly grey-green (#6f8a72) for the sea-thing side; the lamp's amber is only for light (gold, embers, ready).
@@ -7841,8 +8529,8 @@ body.twdev #fps{display:block!important}
 @keyframes twHeart{0%,100%{box-shadow:0 0 0 0 rgba(192,57,43,0),inset 0 0 8px rgba(0,0,0,.8)}12%{box-shadow:0 0 14px 2px rgba(192,57,43,.7),inset 0 0 8px rgba(0,0,0,.8)}24%{box-shadow:0 0 3px 0 rgba(192,57,43,.2),inset 0 0 8px rgba(0,0,0,.8)}36%{box-shadow:0 0 18px 3px rgba(192,57,43,.85),inset 0 0 8px rgba(0,0,0,.8)}60%{box-shadow:0 0 0 0 rgba(192,57,43,0),inset 0 0 8px rgba(0,0,0,.8)}}
 @keyframes twHit{0%{box-shadow:0 0 0 2px rgba(192,57,43,.95),0 0 26px rgba(142,27,27,.9)}100%{box-shadow:0 0 0 0 rgba(192,57,43,0)}}
 @keyframes twLow{0%,100%{box-shadow:0 0 0 0 rgba(192,57,43,0)}12%{box-shadow:0 0 14px 2px rgba(192,57,43,.7)}24%{box-shadow:0 0 3px 0 rgba(192,57,43,.2)}36%{box-shadow:0 0 18px 3px rgba(192,57,43,.85)}60%{box-shadow:0 0 0 0 rgba(192,57,43,0)}}
-@keyframes twReady{from{box-shadow:inset 0 0 0 1px rgba(0,0,0,.7),inset 0 0 8px rgba(255,160,70,.18),0 0 3px rgba(255,160,70,.15)}to{box-shadow:inset 0 0 0 1px rgba(0,0,0,.7),inset 0 0 14px rgba(255,160,70,.34),0 0 9px rgba(255,160,70,.3)}}
-@keyframes twLamp{50%{box-shadow:inset 0 0 14px rgba(255,160,70,.4),0 0 10px rgba(255,160,70,.35)}}
+@keyframes twReady{from{box-shadow:inset 0 0 0 1px rgba(0,0,0,.7),inset 0 0 8px rgba(200,220,230,.18),0 0 3px rgba(200,220,230,.15)}to{box-shadow:inset 0 0 0 1px rgba(0,0,0,.7),inset 0 0 14px rgba(200,220,230,.34),0 0 9px rgba(200,220,230,.3)}}
+@keyframes twLamp{50%{box-shadow:inset 0 0 14px rgba(200,220,230,.4),0 0 10px rgba(200,220,230,.35)}}
 @keyframes twInk{0%,100%{translate:0 0;rotate:0deg}30%{translate:.6px -.4px;rotate:.15deg}33%{translate:-.5px .5px;rotate:-.2deg}34%{translate:0 0;rotate:0deg}71%{translate:.4px .5px}73%{translate:0 0}}
 #twui .disp,#tw-top .big,.card h3{text-shadow:0 0 1px rgba(0,0,0,.9),.6px .4px 0 rgba(120,20,20,.35)}
 .scr.on>*{animation:twRise .95s ease-out backwards}
@@ -7853,10 +8541,10 @@ body.twdev #fps{display:block!important}
 #tw-wave .big{color:var(--bone)}
 #tw-wbar{background:rgba(216,207,184,.1);border-radius:0;height:2px}
 #tw-wbar i{background:var(--bloodhi)}
-#tw-gold .big{color:#e0a45c}#tw-emb .big{color:#c4622d}
+#tw-gold .big{color:#b59a62}#tw-emb .big{color:#c4622d}
 #tw-gold .big,#tw-emb .big{animation:twFlick 7s linear infinite}
-.coin{background:radial-gradient(circle at 35% 35%,#e8c88a,#a9742f 60%,#5d3a12);box-shadow:0 0 5px rgba(255,160,70,.3);border-radius:45% 55% 50% 50%}
-.emb{background:radial-gradient(circle at 50% 70%,#e8a95a,#a8381a 55%,#4a0f08);box-shadow:0 0 7px rgba(200,70,30,.5)}
+.coin{background:radial-gradient(circle at 35% 35%,#a89a64,#5e5026 60%,#231b0a);box-shadow:0 0 5px rgba(200,220,230,.3);border-radius:45% 55% 50% 50%}
+.emb{background:radial-gradient(circle at 50% 70%,#a0402a,#6a1c10 55%,#2a0805);box-shadow:0 0 7px rgba(200,70,30,.5)}
 /* citadel HP: a bleeding line in a cracked iron slot */
 #tw-hpbar{height:14px;border-radius:1px;background:#050404;border:1px solid #3a2a22;margin-top:6px;overflow:visible;box-shadow:inset 0 0 6px #000}
 #tw-hpbar i{background:linear-gradient(180deg,#a82a22,#5e0d0d 80%);border-radius:0}
@@ -7886,15 +8574,15 @@ body.twdev #fps{display:block!important}
 .up .lv::before{content:'LV ';font-size:.9em;opacity:.75}
 .up .ft{grid-column:2;grid-row:2;margin:0;padding:0;border:0;align-self:start;justify-content:flex-start}
 .up .cost{font-size:max(15px,1.5vh);color:#9a8f7c}
-.up .cost::before{background:radial-gradient(circle at 35% 35%,#e8c88a,#a9742f 60%,#5d3a12);box-shadow:none}
+.up .cost::before{background:radial-gradient(circle at 35% 35%,#a89a64,#5e5026 60%,#231b0a);box-shadow:none}
 .up .key{top:-8px;right:auto;left:-5px;font-size:max(13px,1.2vh);color:var(--bone2);background:#0d0c0b;border:1px solid #4a4237;border-radius:2px;padding:0 5px;box-shadow:0 1px 0 #000;line-height:1.25;z-index:2}
 .up:hover .key{color:#0d0c0b;background:var(--bone2);border-color:var(--bone2)}
 .up:not(.can):not(.max) .md{filter:brightness(.7)}
 .up:not(.can):not(.max) .cost{color:#7d4a40}
-.up.can{border-color:#7a5420;background:var(--grain),linear-gradient(180deg,#26200f,#100d08);animation:twReady 2.6s ease-in-out infinite alternate}
-.up.can .cost{color:#e0a45c;animation:twFlick 6s linear infinite}
+.up.can{border-color:#5a4a2a;background:var(--grain),linear-gradient(180deg,#26200f,#100d08);animation:twReady 2.6s ease-in-out infinite alternate}
+.up.can .cost{color:#b59a62;animation:twFlick 6s linear infinite}
 .up.can .md svg{stroke:#e0b070}
-.up.can:hover{box-shadow:inset 0 0 14px rgba(255,160,70,.3),0 0 12px rgba(255,160,70,.4)}
+.up.can:hover{box-shadow:inset 0 0 14px rgba(200,220,230,.3),0 0 12px rgba(200,220,230,.4)}
 .up.max{border-top-color:#6a5a3a}
 .up.max .cost{font-size:max(13px,1.2vh);color:var(--bone2)}
 .up .bst{border-color:#8a4a22}
@@ -7909,7 +8597,7 @@ body.twdev #fps{display:block!important}
 .ab .ic svg .f{fill:rgba(184,168,136,.25)}
 .ab svg circle:first-child{stroke:rgba(138,74,34,.35)}
 .ab .k{top:-7px;left:-5px;background:#0d0c0b;color:var(--bone2);border:1px solid #4a4237;border-radius:2px;font-size:max(13px,1.2vh);padding:0 5px}
-.ab.ready .ic{box-shadow:inset 0 0 0 2px #7a5420,inset 0 0 8px #000,0 0 12px rgba(255,160,70,.3)}
+.ab.ready .ic{box-shadow:inset 0 0 0 2px #5a4a2a,inset 0 0 8px #000,0 0 12px rgba(200,220,230,.3)}
 .ab.ready .ic svg{stroke:#e0b070}
 .ab.armed .ic{box-shadow:0 0 0 2px #c0392b,0 0 16px rgba(192,57,43,.6)}
 .ab.armed .nm{color:var(--bloodhi)}
@@ -7969,9 +8657,9 @@ body.twdev #fps{display:block!important}
 .card.loud .lr{background:linear-gradient(180deg,#8e1b1b,#4a0c0c);color:var(--bone);border-radius:1px}
 .card .cfoil{opacity:.35}
 /* end screen */
-#tw-stats .v{color:var(--bone)}#tw-stats .hl .v{color:#e0a45c}#tw-stats .emb-t .v{color:#c4622d}
-#tw-rec b{color:var(--bone)}#tw-rec .best.new{border-color:#7a5420}#tw-rec .best.new b,#tw-rec .go{color:#e0a45c}
-#tw-rec button.can{border-color:#7a5420}
+#tw-stats .v{color:var(--bone)}#tw-stats .hl .v{color:#b59a62}#tw-stats .emb-t .v{color:#c4622d}
+#tw-rec b{color:var(--bone)}#tw-rec .best.new{border-color:#5a4a2a}#tw-rec .best.new b,#tw-rec .go{color:#b59a62}
+#tw-rec button.can{border-color:#5a4a2a}
 .fg-view{border-color:#2c2822;background:radial-gradient(ellipse at 50% 50%,rgba(26,22,18,.85),rgba(2,2,2,.95) 72%)}
 .fg-head .e{color:#c4622d}
 .fg-view .fn,.fg-view .fb{filter:saturate(.5) brightness(.92)}
@@ -7981,7 +8669,7 @@ body.twdev #fps{display:block!important}
 #twbanner>div:first-child{color:#d8cfb8!important;animation:twInk 5s steps(1) infinite}
 #twbanner>div:last-child{color:#8c8470!important;font-family:Cinzel,Georgia,serif!important}
 #twbanner>div[style*="ff9b7a"]{color:#c0392b!important}
-#twbanner>div[style*="ffc56b"]{color:#d9a15a!important}
+#twbanner>div[style*="ffc56b"]{color:#8a7a42!important}
 #twbanner>div[style*="ffb59a"]{color:#c4786a!important}
 `;
 
@@ -8057,7 +8745,7 @@ const AB = {
 };
 
 function build() {
-  const st = el('style'); st.textContent = CSS + TOWNCSS; document.head.appendChild(st);
+  const st = el('style'); st.textContent = CSS + TOWNCSS + CARTCSS; document.body.insertAdjacentHTML('afterbegin', TWArt.DEFS); document.head.appendChild(st);
   const ui = el('div'); ui.id = 'twui';
   ui.innerHTML = `
   <canvas id="tw-aim"></canvas>
@@ -8141,7 +8829,7 @@ function build() {
   // upgrade buttons
   const ups = $('tw-ups'); U.upEls = {};
   Sim.UPS.forEach((k, i) => {
-    const b = el('button', 'up', `<span class="key">${i + 1}</span><span class="md"><span class="bst"></span><svg viewBox="0 0 64 64">${UPIC[k]}</svg></span>
+    const b = el('button', 'up', `<span class="key">${i + 1}</span><span class="md"><span class="bst"></span>${TWArt.tile(UPIC[k], UPCOL[k], UPHERO[k])}</span>
       <div class="hd"><span class="nm"></span><span class="lv num"></span></div><div class="now num"></div>
       <div class="ft"><span class="pp">${'<i></i>'.repeat(PIPS)}<em class="num"></em></span><span class="cost num"></span></div>`);
     b.style.setProperty('--c', UPCOL[k]);
@@ -8567,7 +9255,8 @@ function teach(S, now) {
 // more: the text has more to say than the number and label (shown as the rule line).
 // LAS-56: art for the 7 gold upgrades (64 box, .f = tinted fill) and their colours (same palette as the pick-card branches)
 const PIPS = 7;
-const UPCOL = { dmg: '#ff9a5c', rate: '#ffb36b', range: '#7fe8dc', crit: '#f0c755', wall: '#b7c4a8', bounty: '#f0c755', rot: '#6fa8ff' };
+const UPHERO = { dmg: 'mortar', rate: 'ballista', range: 'lamp2', crit: 'tesla', wall: 'breakwater', bounty: 'cave', rot: 'bell' };   // LAS-67: the scene behind each plaque's emblem
+const UPCOL = { dmg: '#b8532c', rate: '#c9dde5', range: '#c9dde5', crit: '#a8965a', wall: '#b7c4a8', bounty: '#a8965a', rot: '#6f8fa0' };
 const UPIC = {
   dmg: '<path class="f" d="M18 26h28v26a6 6 0 01-6 6H24a6 6 0 01-6-6z"/><path d="M18 26h28M24 26v-6h16v6M32 20c0-6 6-6 8-12"/><path d="M26 38h12M26 46h12"/>',
   rate: '<path class="f" d="M6 38h30l8-6h14v12H44l-8-6"/><circle cx="14" cy="50" r="4"/><circle cx="26" cy="50" r="4"/><path d="M10 26h14M10 18h22"/>',
@@ -8577,7 +9266,7 @@ const UPIC = {
   bounty: '<path class="f" d="M8 28h48v26H8z"/><path d="M8 28l8-12h32l8 12M32 28v26M22 28v8h20v-8"/><circle cx="32" cy="42" r="3"/>',
   rot: '<circle class="f" cx="32" cy="32" r="9"/><path d="M32 6v8M32 50v8M6 32h8M50 32h8M14 14l6 6M44 44l6 6M50 14l-6 6M20 44l-6 6"/><circle cx="32" cy="32" r="18" stroke-dasharray="7 4"/>',
 };
-const BR = { gun: ['Cannon', '#ff9a5c'], light: ['Lighthouse', '#7fe8dc'], sea: ['Flood Gate', '#6fa8ff'], wall: ['Wall', '#b7c4a8'], gold: ['Gold', '#f0c755'] };
+const BR = { gun: ['Cannon', '#b8532c'], light: ['Lighthouse', '#c9dde5'], sea: ['Flood Gate', '#6f8fa0'], wall: ['Wall', '#b7c4a8'], gold: ['Gold', '#a8965a'] };
 const IC = {
   shot: '<circle class="f" cx="32" cy="32" r="11"/><path d="M32 8v8M32 48v8M8 32h8M48 32h8M15 15l6 6M43 43l6 6M49 15l-6 6M21 43l-6 6"/>',
   fast: '<path d="M10 16l16 16-16 16M30 16l16 16-16 16"/><path class="f" d="M46 22l10 10-10 10z"/>',
@@ -8615,7 +9304,7 @@ function cardMeta(c) {
   const cl = desc.match(/^([^.,]*)[.,]\s+(?:and\s+)?([\s\S]+)$/);
   if (cl && raw && cl[1].includes(raw) && cl[1].toLowerCase().includes(m[2].toLowerCase())) desc = cl[2].charAt(0).toUpperCase() + cl[2].slice(1);
   const big = m[3] || (/^x/i.test(num) ? '×' + num.slice(1) : num);
-  return { br: c.loud ? 'Loud card' : br[0], c: c.loud ? '#ff5f4a' : br[1], icon: `<svg viewBox="0 0 64 64">${IC[m[1]] || IC.shot}</svg>`, big, lb: m[2], desc };
+  return { br: c.loud ? 'Loud card' : br[0], c: c.loud ? '#ff5f4a' : br[1], icon: `<svg viewBox="0 0 64 64">${IC[m[1]] || IC.shot}</svg>`, art: TWArt.relic(IC[m[1]] || IC.shot, c.loud ? 'loud' : m[0], c.loud ? '#c0392b' : br[1]), big, lb: m[2], desc };
 }
 
 function openPick(S) {
@@ -8634,7 +9323,7 @@ function openPick(S) {
     const c = Sim.card(id, S), taken = S.picks.filter(p => p === id).length;
     const m = cardMeta(c), pips = c.max ? Array.from({ length: c.max }, (_, k) => `<i class="${k < taken ? 'on' : ''}"></i>`).join('') : '';
     const b = el('button', 'card' + (c.loud ? ' loud' : ''), `${c.loud ? '<span class="lr">BUILD-BREAKER</span><s class="cfoil"></s>' : ''}<i class="rv"></i><i class="rv"></i><i class="rv"></i><i class="rv"></i>
-      <div class="br"></div><div class="md">${m.icon}</div><h3 class="disp"></h3><div class="mid"><div class="bn num"></div><div class="lb"></div><p></p></div>
+      <div class="md">${m.art}<div class="chip"><b class="bn num"></b><span class="lb"></span></div></div><h3 class="disp"></h3><div class="tg"><div class="br"></div></div><div class="mid"><p></p></div>
       <div class="ft"><span class="ck">${i + 1}</span><span class="pp">${pips}${c.max ? `&nbsp;${taken}/${c.max}` : taken ? `Taken ${taken}x` : ''}</span></div>`);
     b.style.setProperty('--c', m.c); b.querySelector('.br').textContent = m.br;
     b.querySelector('h3').textContent = c.name; b.querySelector('.bn').textContent = m.big; b.querySelector('.lb').textContent = m.lb;
@@ -8651,7 +9340,7 @@ function openPick(S) {
 // ---------- LAS-63 island town cards (design: tidewall/design/island-town.md). The sim core (S.town) is not in yet, so a pick may carry
 // S.pick.town = [{kind:'new'|'level'|'evo'|'rep', id, lv, out}] (+ S.pick.own {building: level}, S.pick.disc {evolution: 1}); the mock behind #dev
 // builds it. The catalogue below gives role, icon, partner and the I/II/III new lines until TUNE.town.buildings[].text lands.
-const ROLE = { light: ['Light', '#e8d28a'], kill: ['Kill', '#ff9a5c'], hold: ['Hold', '#9fb0b8'], greed: ['Greed', '#c9a23f'], strange: ['Strange', '#a58fd0'] };
+const ROLE = { light: ['Light', '#c9dde5'], kill: ['Kill', '#b8532c'], hold: ['Hold', '#9fb0b8'], greed: ['Greed', '#8a7a42'], strange: ['Strange', '#8a78a8'] };
 const SVG = p => `<svg viewBox="0 0 64 64">${p}</svg>`;
 const TI = {
   brazier: '<path class="f" d="M12 28h40l-6 14H18z"/><path d="M32 6c8 8 10 12 10 18-6-2-6-6-10-6s-4 6-10 6c0-6 2-10 10-18zM24 42v14M40 42v14"/>',
@@ -8724,12 +9413,12 @@ function townCard(d, own, disc) {
   own = own || {}; disc = disc || {};
   if (d.kind === 'evo') {
     const e = EVO[d.id], a = BLD[e[1]], b = BLD[e[2]];
-    return { cls: 'evo', kicker: 'Evolution', name: e[0], icons: `<span class="ev">${bIcon(e[1])}</span><span class="ch"></span><span class="ev">${bIcon(e[2])}</span>`,
+    return { cls: 'evo', kicker: 'Evolution', name: e[0], art: TWArt.evo(e[1], e[2]), icons: `<span class="ev">${bIcon(e[1])}</span><span class="ch"></span><span class="ev">${bIcon(e[2])}</span>`,
       from: `${a[0]} III + ${b[0]}`, text: e[3], note: `${b[0]}${/s$/.test(b[0]) ? '’' : '’s'} slot is freed.`, pips: 0 };
   }
   if (d.kind === 'rep') {
     const o = BLD[d.out], n = BLD[d.id], r = ROLE[n[1]];
-    return { cls: 'rep', c: r[1], kicker: 'Replace · no more ground', name: `${n[0]} I`, icons: `<span class="ev old">${bIcon(d.out)}</span><span class="ar"></span><span class="ev">${bIcon(d.id)}</span>`,
+    return { cls: 'rep', c: r[1], kicker: 'Replace · no more ground', name: `${n[0]} I`, art: TWArt.rep(d.out, d.id), icons: `<span class="ev old">${bIcon(d.out)}</span><span class="ar"></span><span class="ev">${bIcon(d.id)}</span>`,
       from: `Tear down the ${o[0].replace(/^The /, '')}.`, text: n[2], note: `Raise the ${n[0].replace(/^The /, '')} (I) in its place. The ${o[0].replace(/^The /, '')} goes back into the pool.`, pips: 1, role: r[0] };
   }
   const b = BLD[d.id], r = ROLE[b[1]], lv = d.lv || 1, ek = evoOf(d.id), e = ek && EVO[ek], main = e && e[1] === d.id;
@@ -8740,16 +9429,16 @@ function townCard(d, own, disc) {
     line = `Answers: <i class="pi">${bIcon(other)}</i><b>${on}</b> (owned)<br><span class="lv">`
       + (disc[ek] ? (main ? `III + ${on}` : `${on} III + this`) + ` = ${e[0]}.` : (main ? 'Raise it to III' : `Raise the ${on} to III`) + ' and see what wakes.') + '</span>';
   }
-  return { cls: 'bld', c: r[1], kicker: lv === 1 ? 'New building' : 'Level up', name: `${b[0]} ${RN[lv]}`, icons: `<span class="ev">${bIcon(d.id)}</span>`, text: d.text || b[1 + lv],
+  return { cls: 'bld', c: r[1], kicker: lv === 1 ? 'New building' : 'Level up', name: `${b[0]} ${RN[lv]}`, art: TWArt.building(d.id), icons: `<span class="ev">${bIcon(d.id)}</span>`, text: d.text || b[1 + lv],
     pips: lv, role: r[0], home: HOME[b[1]], line, chain: !!has };
 }
 function townHTML(t, i) {
   const pips = t.pips ? `<span class="tp">${[1, 2, 3].map(k => `<i class="${k < t.pips ? 'on' : k === t.pips ? 'nx' : ''}"></i>`).join('')}</span>` : '';
   return `<i class="rv"></i><i class="rv"></i><i class="rv"></i><i class="rv"></i>
     ${t.role ? `<span class="rt">${t.role}</span>` : ''}${t.chain ? '<s class="cb"></s>' : ''}
-    <div class="br">${escH(t.kicker)}</div><div class="md ${t.cls}">${t.icons}</div><h3 class="disp">${escH(t.name)}</h3>${pips}
+    <div class="md ${t.cls}">${t.art}${pips}</div><h3 class="disp">${escH(t.name)}</h3><div class="tg"><div class="br">${escH(t.kicker)}</div>${t.home ? `<span class="sl">${t.home} slot</span>` : t.cls === 'evo' ? '<span class="sl">frees a slot</span>' : ''}</div>
     <div class="mid">${t.from ? `<div class="lb">${escH(t.from)}</div>` : ''}<p>${numHTML(escH(t.text))}</p>${t.note ? `<div class="nt">${escH(t.note)}</div>` : ''}${t.line ? `<div class="pl">${t.line}</div>` : ''}</div>
-    <div class="ft"><span class="ck">${i + 1}</span><span class="pp">${t.home ? `${t.home} slot` : t.cls === 'evo' ? 'frees a slot' : ''}</span></div>`;
+    <div class="ft"><span class="ck">${i + 1}</span><span class="pp"></span></div>`;
 }
 // dev mock (the #dev panel's "Town cards", and checks/townpick.js): four sets that cover every card kind
 const MOCKS = [
@@ -8845,7 +9534,7 @@ function renderForges() {
 }
 // Forge v2 tree view (LAS-22). Branch colours: the ring of every node; state is the fill (owned solid, forgeable amber glow,
 // ready lit, locked dark, the shut side of a fork struck through). Sizes in TUNE units (11 per ring).
-const FG_COL = { guns: '#ff8a55', walls: '#9fb9cc', light: '#ffe28a', plunder: '#6fdc9a', arcana: '#b99cff' };
+const FG_COL = { guns: '#c4622d', walls: '#9fb9cc', light: '#dcecf2', plunder: '#6fdc9a', arcana: '#b99cff' };
 const FG_R = n => (n.key ? 5.2 : n.d === 0 ? 3.6 : n.bridge ? 2.3 : 2.75);
 const fgKey = v => (v.closest('.scr') || {}).id || 'x';
 let FG_BOX = null;   // the tree's bounds in TUNE units, labels included
