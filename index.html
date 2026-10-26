@@ -3751,6 +3751,7 @@ const TUNE = {
     arc: Math.PI,          // spawn arc (rad) at wave 1, centred on the sea side (+y)
     arcTo: 2 * Math.PI, arcBy: 20,          // LAS-24: the arc widens to arcTo by wave arcBy (the tide surrounds the citadel)
     spawnR: 45,            // spawn distance from the citadel
+    open: { r: 29, arc: 1.2, lead: 0.9, gold: 3, arrive: 5 },   // LAS-115 first 20 s: wave 1 spawns at r m inside the beam's reach, in an arc this wide (rad), pays gold x2 (the first plaque after 2 kills) and arrives over `arrive` s
     maxAlive: 4000,        // above this, fewer but tougher (HP scaled by count / cap)
     // LAS-52 horde: from wave `from` a wave's count grows x(1 + (max-1) * ramp) over `by` waves; HP, gold and wall hit per
     // creature shrink by the same factor (as hard a wave, only more of them). max 1 = off.
@@ -4815,12 +4816,13 @@ function startWave(S) {
   let n = kinds.length, hpF = 1;
   const room = Math.max(1, W.maxAlive - S.enemies.length - S.spawnQ.length);
   if (n > room) { hpF = n / room; kinds.length = room; n = room; }
-  const gold = Math.pow(W.goldGrowth, S.wave), arc = spawnArc(W, S.wave);
+  const op = S.wave === 1 ? W.open : null;
+  const gold = Math.pow(W.goldGrowth, S.wave) * (op ? op.gold : 1), arc = op ? op.arc : spawnArc(W, S.wave);
   for (const k of kinds) {
-    const at = S.t + W.arrive * rnd(S, 'arrive');
-    const a = Math.PI / 2 + (rnd(S, 'angle') - 0.5) * arc;   // centred on +y (the sea)
+    const at = S.t + (op ? op.arrive : W.arrive) * rnd(S, 'arrive');
+    const a = (op ? S.beam.a + S.beam.dir * op.lead : Math.PI / 2) + (rnd(S, 'angle') - 0.5) * arc;   // centred on +y (the sea); wave 1: just ahead of the sweeping beam
     const so = K[k].solo ? 1 : 0;   // solo kinds keep their own count and numbers
-    S.spawnQ.push({ at, a, hp: hp * hpF * K[k].hp * (so ? hpm : 1), gold: Math.ceil(gold * K[k].gold / (so ? 1 : hm)), kind: k, solo: so });
+    S.spawnQ.push({ at, a, hp: hp * hpF * K[k].hp * (so ? hpm : 1), gold: Math.ceil(gold * K[k].gold / (so ? 1 : hm)), kind: k, solo: so, r: op ? op.r : 0 });
   }
   const boss = B.every > 0 && S.wave % B.every === 0, bk = boss ? bossKind(S.wave) : null;
   if (boss) S.spawnQ.push({ at: S.t + W.arrive / 2, a: Math.PI / 2 + (rnd(S, 'angle') - 0.5) * arc * 0.5,
@@ -4832,7 +4834,7 @@ function startWave(S) {
 
 // p = { a (angle, spawns at spawnR) or x,y, hp, gold, kind, boss: false | 'leviathan' | 'siren' | 'kraken' }
 function spawn(S, p) {
-  const r = S.T.wave.spawnR, kd = S.T.kinds[p.kind] || S.T.kinds.drowned;
+  const r = p.r || S.T.wave.spawnR, kd = S.T.kinds[p.kind] || S.T.kinds.drowned;
   // Shadelings rise on the beam's dark side (decided when they surface, not when the wave starts)
   const pa = kd.fromDark && p.x === undefined ? S.beam.a + Math.PI + (rnd(S, 'dark') - 0.5) * kd.fromDark : p.a;
   let x = p.x !== undefined ? p.x : dcos(pa) * r, y = p.y !== undefined ? p.y : dsin(pa) * r;
@@ -5238,7 +5240,7 @@ function step(S) {
       if (e.hitCd <= 0) {
         const hd = C.hitDmg * e.hit * e.hitMul;
         e.hitCd += C.hitEvery; S.hp -= hd; const H = S.hurt || (S.hurt = {}); H[e.kind] = (H[e.kind] || 0) + hd; S.lastHurt = e.kind;   // LAS-83: who hurt the wall (end screen)
-        if (S.ev) S.ev.push({ k: 'wallhit', id: e.id, dmg: hd, x: e.x, y: e.y });
+        if (S.ev) S.ev.push({ k: 'wallhit', id: e.id, dmg: hd, x: e.x, y: e.y, kind: e.kind });
       }
       if (spikes && !e.dead && !e.fly) {   // no hit events: a steady bleed, not a number per step
         e.hp -= e.maxHp * spikes * (e.boss ? T.forge.spikesBoss : 1) * dt;
@@ -5547,7 +5549,7 @@ function onEv(S, e) {
     case 'wallhit': {
       const f = e.dmg / Math.max(1, S.maxHp);
       if (f >= 0.01) F.flash = Math.min(1, F.flash + f * 6);   // LAS-81: only a real hit pulses (steady chip damage kept the screen red: the dark must stay black)
-      if (f >= 0.01 && root.TWUI && root.TWUI.hit) root.TWUI.hit(e.x, e.y, f);   // LAS-83: a red pulse in from the edge the hit came from; LAS-98: real hits only (chip damage kept a red glow up)
+      if (f >= 0.01 && root.TWUI && root.TWUI.hit) root.TWUI.hit(e.x, e.y, f, e.kind);   // LAS-83: a red pulse in from the edge the hit came from; LAS-98: real hits only (chip damage kept a red glow up)
       if (F.bossIds.has(e.id)) { kick(0.45); play('wallboss', 0.7); }   // LAS-88: a boss pounding the wall was ~1 boom a second (the 10-min mix check)
       else { if (f >= 0.03) kick(0.12); play('wall', 0.12); }
       break;
@@ -10910,6 +10912,38 @@ body.twplay #twbanner{visibility:hidden!important}
 #tw-hpbar b{background:linear-gradient(90deg,transparent 12%,rgba(0,0,0,.82) 30%,rgba(0,0,0,.82) 70%,transparent 88%)}
 .ab .ah{bottom:auto!important;top:auto!important;left:var(--ahx,0)!important;right:auto!important;translate:-50% 0!important;bottom:var(--ahb,100%)!important}
 `;
+const LAS115CSS = `
+/* LAS-115: bigger plaques, names >= 16 px, what a buy does in words, new-at-the-forge line, breach line */
+#twui #tw-ups{gap:10px!important}
+#twui .up .md{width:max(44px,4.2vh)!important;height:max(44px,4.2vh)!important}
+#twui .up{width:max(186px,17.2vh);min-width:0;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto auto;column-gap:8px;row-gap:2px;padding:8px 12px 8px 8px;opacity:.7;background:rgba(14,12,10,.92)!important;border:1px solid #2c2822}
+#twui .up{grid-template-rows:auto auto auto!important}
+#twui .up .md{grid-row:1 / 4!important;align-self:center}
+#twui .up .hd{grid-column:2!important;grid-row:1!important;display:flex!important;text-align:left!important;align-items:baseline;gap:8px}
+#twui .up .hd .nm,#twui .up .hd .lv{display:inline!important;text-align:left;margin:0!important;white-space:nowrap}
+#twui .up .nm{margin-top:0!important}
+#twui .up:not(.can):not(.max) .nm{color:var(--bone)!important}
+#twui .up .ft{grid-column:2!important;grid-row:3!important;justify-content:flex-start}
+#twui .up .now{grid-column:2!important;grid-row:2!important;text-align:left}
+#twui .up .hd{grid-column:2;grid-row:1;display:flex;align-items:baseline;gap:8px;overflow:visible;align-self:end;padding:0}
+#twui .up .nm{display:block;font-size:max(16px,1.55vh)!important}
+#twui .up .now{display:block;grid-column:2;grid-row:2;font-size:max(15px,1.4vh);line-height:1.18;color:var(--bone);white-space:normal}
+#twui .up .ft{grid-column:2;grid-row:3;margin-top:2px}
+#twui .up .cost{font-size:max(18px,1.7vh)}
+#twui .up .lv{font-size:max(14px,1.3vh)}
+.up.locked,#twui .up.locked{display:none}
+#twui .up.can{opacity:1;border:1px solid #e8f2f6;background:linear-gradient(180deg,#232a2d,#101416)!important;box-shadow:0 0 0 1px #000,0 0 24px rgba(210,230,240,.45)}
+#twui .up.can .nm{color:#fff}
+#tw-newup,#tw-breach{position:absolute;left:50%;translate:-50% 0;text-align:center;pointer-events:none;font-family:var(--fell);color:var(--bone);background:rgba(8,7,6,.92);border:1px solid #3a342b;padding:8px 18px;font-size:max(20px,2vh);display:none;z-index:6}
+#tw-newup{top:max(150px,15vh)}
+#tw-newup b{color:#c9dde5;font-weight:400}
+#tw-breach{top:max(205px,20vh);color:#ff9a8a;border-color:#6b231c}
+.bnon #tw-newup,.bnon #tw-breach{display:none!important}
+#tw-newup.on,#tw-breach.on{display:block;animation:twBn 4.2s ease-out forwards}
+@keyframes twBn{0%{opacity:0}8%{opacity:1}80%{opacity:1}100%{opacity:0}}
+#tw-why .adv{margin-top:10px;color:#c9dde5}
+.card .sl{font-size:max(14px,1.3vh)}
+`;
 const LAS112CSS = `
 /* LAS-112: one art style. Numbers = FellNum (Fell letters, Barlow digits), labels = Fell (italic where it was). Tooltip body (#tw-tip p/small) stays Barlow for readability. */
 #tw-top .big,#tw-stats .v,#tw-hpbar b,.up .cost,.up .lv,.ab .cdn,#tw-rec b,#tw-rec button.panel,.bsg b,.be .blv{font-family:var(--fell)!important}
@@ -11315,7 +11349,7 @@ function build() {
   const digits = () => { const ff = document.getElementById('tw-fonts'), bf = ff && ff.textContent.match(/@font-face{font-family:'Cinzel';font-style:normal;font-weight:400[^}]*}/);
     if (bf) { const f = el('style'); f.textContent = bf[0].replace("'Cinzel'", "'FellNum'").replace(/}$/, ';unicode-range:U+30-39,U+25,U+2B,U+2212}'); document.head.appendChild(f); } };
   if (document.readyState === 'complete') digits(); else root.addEventListener('load', digits);
-  const st = el('style'); st.textContent = CSS + TOWNCSS + CARTCSS + HORRORCSS + LAS83CSS + LAS87CSS + LAS82CSS + LAS95CSS + LAS99CSS + LAS112CSS; document.body.insertAdjacentHTML('afterbegin', TWArt.DEFS); document.head.appendChild(st);
+  const st = el('style'); st.textContent = CSS + TOWNCSS + CARTCSS + HORRORCSS + LAS83CSS + LAS87CSS + LAS82CSS + LAS95CSS + LAS99CSS + LAS112CSS + LAS115CSS; document.body.insertAdjacentHTML('afterbegin', TWArt.DEFS); document.head.appendChild(st);
   const ui = el('div'); ui.id = 'twui';
   ui.innerHTML = `
   <canvas id="tw-aim"></canvas><div id="tw-vig"></div><div id="tw-hit"></div>
@@ -11331,7 +11365,7 @@ function build() {
     <div id="tw-goal"></div>
     <div id="tw-teach" class="panel"></div>
     <div id="tw-first"></div>
-    <div id="tw-spend"><b>Spend gold:</b> 1-7</div>
+    <div id="tw-spend"><b>Spend gold:</b> 1-3</div><div id="tw-newup"></div><div id="tw-breach"></div>
     <div id="tw-build" class="panel"><div class="bth0"></div><div class="bbody"></div></div>
     <div id="tw-bnotes"></div>
   </div>
@@ -11564,6 +11598,50 @@ function sizeAim() {
 
 // ---------- actions
 function canAct() { return U.mode === 'run' && U.S && !U.S.over && !U.S.pick && !U.paused && !U.playing; }
+// LAS-115: three plaques at first (damage, light, wall), the next every 2-3 waves, each with one line. Keys follow the visible order.
+const UPORD = ['dmg', 'rot', 'wall', 'rate', 'range', 'bounty', 'crit'];
+const UPNEW = { rate: [3, 'Loaders, guns fire faster'], range: [5, 'Spyglass, guns and beam reach further'], bounty: [7, 'Salvage, kills pay more gold'], crit: [9, "Gunner's Eye, more critical hits"] };
+function upOpen(S, k) { const n = UPNEW[k]; return !n || S.wave >= n[0] || S.lv[k] > 0; }
+function upVis(S) { return UPORD.filter(k => upOpen(S, k)); }
+function upWords(S, k) {
+  const u = S.T.up[k], p = v => Math.round(v * 100) + '%';
+  return { dmg: 'Guns hit ' + p(u.per) + ' harder', rate: 'Guns fire ' + p(u.per) + ' faster', range: 'Guns and beam reach ' + p(u.per) + ' farther',
+    crit: 'Crits land ' + p(u.per) + ' more often', wall: 'Wall +' + u.per + ' HP, mends faster', bounty: 'Kills pay ' + p(u.per) + ' more gold', rot: 'Beam ' + p(u.wPer || 0) + ' wider' }[k];
+}
+function upGate(S) {   // shows the open plaques, numbers them, and says once what just opened
+  const vis = upVis(S), n = vis.length;
+  if (U.upN !== n || U.upS !== S) {
+    if (U.upS === S && n > U.upN) { const k = vis.filter(x => UPNEW[x]).pop(); if (k) newUp(UPNEW[k][1]); }
+    if (U.upS !== S) for (const k of UPORD) $('tw-ups').appendChild(U.upEls[k]);
+    U.upN = n; U.upS = S;
+    for (const k of UPORD) { const b = U.upEls[k]; b.classList.toggle('locked', vis.indexOf(k) < 0); const i = vis.indexOf(k); if (i >= 0) b.querySelector('.key').textContent = i + 1; }
+    $('tw-spend').innerHTML = '<b>Spend gold:</b> 1-' + n;
+  }
+}
+function newUp(t) {
+  const e = $('tw-newup'); e.innerHTML = '<b>New at the forge:</b> ' + t; restart(e, 'on'); e.classList.add('on'); snd('ready');
+  clearTimeout(U.newT); U.newT = setTimeout(() => e.classList.remove('on'), 4300);
+}
+// the wall took a heavy hit: name who it was and which side, once per kind per run
+const DARK = { dimmer: 1, shade: 1 };
+const ADVICE = {
+  dimmer: 'Gloams reached you in the dark: Braziers or a Rocket Rack light them.',
+  shade: 'Shadelings rose where the beam was not: Braziers keep a lit ring round the wall.',
+  swarmer: 'Spawn came in a crowd: splash helps, a Gun Battery or a Mortar Pit.',
+  brute: 'Hulks outlasted the guns: Powder and Gunner\'s Eye, or a Breakwater to buy time.',
+  flyer: 'Nightgaunts flew past the Moat: Watch Posts and a Gun Battery shoot them down.',
+  diver: 'Sounders dived out of the light: the Flood Gate and Kegs reach them below.',
+  drowned: 'The Drowned came faster than the guns: more Powder and Loaders, or a Gun Battery.',
+};
+function dirOf(x, y) { return Math.abs(x) > Math.abs(y) ? (x > 0 ? 'east' : 'west') : (y > 0 ? 'south' : 'north'); }
+function breachNote(x, y, kind) {
+  const S = U.S; if (!S) return;
+  if (U.namedS !== S) { U.named = {}; U.namedS = S; }
+  if (U.named[kind]) return; U.named[kind] = 1;
+  const nm = (Sim.FOE[kind] && Sim.FOE[kind].name) || kind, e = $('tw-breach');
+  e.textContent = nm + (DARK[kind] ? ' in the dark, ' : ' at the ') + dirOf(x, y) + ' wall'; restart(e, 'on'); e.classList.add('on');
+  clearTimeout(U.brT); U.brT = setTimeout(() => e.classList.remove('on'), 4300);
+}
 function buyUp(k) {
   if (!canAct()) return;
   const b = U.upEls[k], t = Sim.upText(U.S, k);
@@ -11714,7 +11792,7 @@ function onKey(e) {
     return;
   }
   const n = +k;
-  if (n >= 1 && n <= Sim.UPS.length) { buyUp(Sim.UPS[n - 1]); return; }
+  if (n >= 1 && U.S && n <= upVis(U.S).length) { buyUp(upVis(U.S)[n - 1]); return; }
   if (k === 'q' || k === 'Q') arm('beam');
   else if (k === 'e' || k === 'E') arm('flood');
   else if (k === 'r' || k === 'R') arm('keg');
@@ -11800,6 +11878,7 @@ function frame(S, now) {
   U.emPrev = em;
   setTxt($('tw-e'), fmt(em));
 
+  upGate(S);
   // upgrades (a glint runs across one when it becomes affordable)
   for (const k of Sim.UPS) {
     const b = U.upEls[k], t = Sim.upText(S, k), can = !t.maxed && S.gold >= t.cost;
@@ -11807,7 +11886,7 @@ function frame(S, now) {
     setTxt(b.querySelector('.lv'), String(t.lv));
     const pp = b.querySelectorAll('.pp i'); for (let j = 0; j < pp.length; j++) pp[j].classList.toggle('on', j < t.lv);
     setTxt(b.querySelector('.pp em'), t.lv > PIPS ? '+' + (t.lv - PIPS) : '');
-    setTxt(b.querySelector('.now'), t.now.replace(/ (m|s|HP[/]s)(?![a-z])/g, String.fromCharCode(160) + '$1'));
+    setTxt(b.querySelector('.now'), upWords(S, k));
     setTxt(b.querySelector('.cost'), t.maxed ? 'MAX' : fmt(t.cost));
     b.classList.toggle('max', t.maxed);
     if (can && b._can === false) restart(b, 'shine');
@@ -11974,7 +12053,7 @@ function openPick(S) {
       <div class="ft"><span class="ck">${i + 1}</span><span class="pp">${pips}${c.max ? `&nbsp;${taken}/${c.max}` : taken ? `Taken ${taken}x` : ''}</span></div>`);
     b.style.setProperty('--c', m.c); b.querySelector('.br').textContent = m.br;
     b.querySelector('h3').textContent = c.name; b.querySelector('.bn').textContent = m.big; b.querySelector('.lb').textContent = m.lb;
-    b.querySelector('p').textContent = m.desc;
+    b.querySelector('p').textContent = /Ability damage/.test(c.text) ? c.text.replace(/\.$/, '') + ' to your ' + Object.keys(S.ab).map(k => AB[k].name).join(', ') + '.' : m.desc;
     b.onclick = () => choose(i);
     b.dataset.i = i; b.style.setProperty('--torn', torn(i + 3 + (S.pick.wave || 0))); b.style.setProperty('--i', i); const jj = i - (len - 1) / 2; b.style.setProperty('--j', jj); b.style.setProperty('--aj', Math.abs(jj));
     return b;
@@ -12071,6 +12150,17 @@ const numHTML = s => s.replace(/([+−]?\d+(?:\.\d+)?(?:[×%°]|[ ](?:m|s)\b)?)/
 const escH = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const bIcon = id => SVG(TI[id]);
 // what a town pick card shows: the new line of text only, the badge and the partner line, the level pips
+function slotWhere(d, b) {   // LAS-115: the slot it fills, ring and side
+  const S = U.S; if (!S || !S.town) return HOME[b[1]] + ' ring';
+  const T = Sim.townApi;
+  let pos = null;
+  if (d.kind === 'level') { const s = S.town.slots.find(q => q.id === d.id); if (s) pos = { ring: s.ring, i: s.i }; }
+  else if (d.kind === 'rep') { const s = S.town.slots.find(q => q.id === d.out); if (s) pos = { ring: s.ring, i: s.i }; }
+  else pos = T.freeSlot(S, (S.T.town.buildings[d.id] || {}).home);
+  if (!pos) return HOME[b[1]] + ' ring';
+  const h = T.hexSlot(S.T, pos.ring, pos.i, S.town.n[pos.ring - 1]);
+  return (pos.ring === 1 ? 'inner' : pos.ring === S.town.rings ? 'outer' : 'ring ' + pos.ring) + ' ring, ' + dirOf(h.x, h.y);
+}
 function townCard(d, own, disc) {
   own = own || {}; disc = Object.assign({}, combos, disc || {});
   if (d.kind === 'evo') {
@@ -12093,13 +12183,13 @@ function townCard(d, own, disc) {
       + (disc[ek] ? (main ? `III + ${on}` : `${on} III + this`) + ` = ${e[0]}.` : (main ? 'Raise it to III' : `Raise the ${on} to III`) + ' and see what wakes.') + '</span>';
   }
   return { cls: 'bld', c: r[1], kicker: lv === 1 ? 'New building' : 'Level up', name: `${b[0]} ${RN[lv]}`, art: TWArt.building(d.id), icons: `<span class="ev">${bIcon(d.id)}</span>`, text: d.text || b[1 + lv],
-    pips: lv, role: r[0], home: HOME[b[1]], line, chain: !!(has && disc[ek]), sig: e && !disc[ek] ? (has ? 'on' : 'dim') : '' };
+    pips: lv, role: r[0], home: slotWhere(d, b), line, chain: !!(has && disc[ek]), sig: e && !disc[ek] ? (has ? 'on' : 'dim') : '' };
 }
 function townHTML(t, i) {
   const pips = t.pips ? `<span class="tp">${[1, 2, 3].map(k => `<i class="${k < t.pips ? 'on' : k === t.pips ? 'nx' : ''}"></i>`).join('')}</span>` : '';
   return `<i class="rv"></i><i class="rv"></i><i class="rv"></i><i class="rv"></i>
     ${t.role ? `<span class="rt">${t.role}</span>` : ''}${t.chain ? '<s class="cb"></s>' : ''}${t.sig ? `<s class="sg ${t.sig}"></s>` : ''}
-    <div class="md ${t.cls}">${t.art}${pips}</div><h3 class="disp">${escH(t.name)}</h3><div class="tg"><div class="br">${escH(t.kicker)}${t.role ? ' · ' + t.role : ''}</div>${t.home ? `<span class="sl">${t.home} slot</span>` : t.cls === 'evo' ? '<span class="sl">frees a slot</span>' : ''}</div>
+    <div class="md ${t.cls}">${t.art}${pips}</div><h3 class="disp">${escH(t.name)}</h3><div class="tg"><div class="br">${escH(t.kicker)}${t.role ? ' · ' + t.role : ''}</div>${t.home ? `<span class="sl">${t.home}</span>` : t.cls === 'evo' ? '<span class="sl">frees a slot</span>' : ''}</div>
     <div class="mid">${t.from ? `<div class="lb">${escH(t.from)}</div>` : ''}<p>${numHTML(escH(t.text))}</p>${t.note ? `<div class="nt">${escH(t.note)}</div>` : ''}${t.line ? `<div class="pl">${t.line}</div>` : ''}</div>
     <div class="ft"><span class="ck">${i + 1}</span><span class="pp"></span></div>`;
 }
@@ -12136,10 +12226,10 @@ function tip(S) {
     h = `<h4>New Dawn</h4><div>${Sim.newDawnInfo(meta()).text}</div><div class="hint">${!Sim.newDawn ? 'Coming with the next build.' : U.dawnArm ? 'Click again to rise.' : ''}</div>`;
   } else if (f.up) {
     const u = Sim.upText(S, f.up); let nx = ''; if (!u.maxed) { S.lv[f.up]++; try { nx = Sim.upText(S, f.up).now; } finally { S.lv[f.up]--; } }
-    h = `<h4>${u.name} <span style="color:#7fa9a5;font-weight:400">Lv ${u.lv}</span></h4><div>${u.text}</div>
+    h = `<h4>${u.name} <span style="color:#7fa9a5;font-weight:400">Lv ${u.lv}</span></h4><div>${upWords(S, f.up)} per level. ${u.text}</div>
       <div class="row">Now<b class="num">${u.now}</b></div>
       ${u.maxed ? '<div class="row">Fully upgraded<b></b></div>' : `<div class="row">Next level<b class="num">${nx}</b></div><div class="row">Cost<b class="num">${fmt(u.cost)} gold</b></div>`}
-      <div class="hint">Key ${Sim.UPS.indexOf(f.up) + 1}</div>`;
+      <div class="hint">Key ${upVis(S).indexOf(f.up) + 1}</div>`;
   } else {
     const A = AB[f.ab], I = Sim.abInfo(S, f.ab), cd = I.cd;
     h = `<h4>${A.name}</h4><div>${A.text(I)}</div><div class="row">Cooldown<b class="num">${Math.round(cd)} s</b></div>
@@ -12159,8 +12249,9 @@ function tip(S) {
 
 
 // LAS-83: a red pulse comes in from the screen edge the hit came from (the wall is at the centre), so the danger shows without lighting the dark
-function hit(x, y, f) {
+function hit(x, y, f, kind) {
   if (!U.root || U.mode !== 'run') return;
+  if (kind && f >= 0.02 && x != null) breachNote(x, y, kind);
   const now = performance.now(); if (now - (U.hitFx || 0) < 1000) return; U.hitFx = now;
   const W = root.innerWidth, H = root.innerHeight, cx = W / 2, cy = H / 2, p = x == null ? null : screenAt(x, y);
   let ax = 0, ay = -1; if (p) { ax = p[0] - cx; ay = p[1] - cy; }
@@ -12207,7 +12298,7 @@ function firstGoal(S) {
   const g = $('tw-first'), on = !!U.teach && !U.spendOn && S.t < 25 && !S.pick && !S.over && !U.paused && !S.picks.length;
   if (!on) { if (g.style.display !== 'none') g.style.display = 'none'; return; }
   const p = screenAt(0, 0); if (!p) return;
-  if (!g._on) { g._on = 1; g.innerHTML = '<b>Hold the wall.</b> The Drowned climb out of the dark.<small>Every kill pays gold. Spend it on the plaques below: keys 1 to 7.</small>'; }
+  if (!g._on) { g._on = 1; g.innerHTML = '<b>Hold the wall.</b> The Drowned climb out of the dark.<small>Every kill pays gold. Spend it on the plaques below: keys 1 to 3.</small>'; }
   g.style.left = p[0] + 'px'; g.style.top = Math.min(root.innerHeight - 260, p[1] + root.innerHeight * 0.17) + 'px'; g.style.display = 'block';
 }
 // the end screen opens on why the run ended: who breached the wall, the biggest threats, what was built
@@ -12223,6 +12314,7 @@ function overWhy(S) {
   const gold = Math.floor(S.gold);
   $('tw-why').innerHTML = (th ? '<div><span class="k">Biggest threats to the wall</span>' + th + '</div>' : '')
     + (!built.length && S.town && S.town.slots.length ? '' : '<div><span class="k">You built</span>' + (built.length ? built.slice(0, 9).join(' &middot; ') + (built.length > 9 ? ' &middot; +' + (built.length - 9) : '') : 'nothing yet: the plaques below the sea were never used') + '</div>')
+    + (S.hp <= 0 && th ? '<div class="adv">' + (ADVICE[Object.keys(H).sort((a, b) => H[b] - H[a])[0]] || ADVICE.drowned) + '</div>' : '')
     + (gold >= 10 ? '<div><span class="k">Unspent gold</span>' + fmt(gold) + '</div>' : '');
 }
 // the island as the last frame drew it (toOver runs in the frame that rendered it, so the GL buffer is still there)
