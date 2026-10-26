@@ -5368,7 +5368,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = TWSim;
 </script>
 <script>/* fx.js */
 // Tidewall fx: the juice. Reads the sim state S and its event list S.ev only (never writes either); render.js calls it.
-// Damage numbers (short format, size by hit, crits bigger and amber, merged per creature within 0.3 s, capped on
+// Damage numbers (short format, size by hit, crits bigger and lantern-white (LAS-98: no gold), merged per creature within 0.3 s, capped on
 // screen) on ONE 2D overlay canvas; the hurt flash on the same canvas; milestone banners (biggest hit past 1K, 1M,
 // 1B...), wave / boss / fall banners in one DOM element; screen shake (bosses, big crits, milestones, heavy wall hits
 // only: docs/plan-game-feel.md); Lighthouse Beam and Flood Gate in 3D (a handful of meshes, made once); synth sounds
@@ -5401,7 +5401,7 @@ const MILE = ['', 'a Thousand', 'a Million', 'a Billion', 'a Trillion', 'a Quadr
 const FX = {
   numMax: 48, numLife: 0.85, merge: 0.3, stackH: 24, stackMax: 3,          // numbers on screen at most; seconds alive; merge window per creature
   numSize: [13, 34], critMul: 1.35,               // font px from small to huge hits; crits are 35% bigger
-  numCol: '#f3e6cf', critCol: '#ffb347', beamCol: '#e6f1ff',
+  numCol: '#f3e6cf', critCol: '#dfe8ee', beamCol: '#e6f1ff',
   shakeDecay: 1.6, shakeAmp: 0.9,                 // trauma per second lost; world units at full trauma
   bannerFor: { wave: 3.6, kind: 4.2, boss: 4.6, mile: 3.8, fall: 4 },
   intro: 3.4, stop: { mile: 0.09, bossKill: 0.16, bossCrit: 0.04 },   // boss intro seconds; hit-stop seconds
@@ -5546,7 +5546,7 @@ function onEv(S, e) {
     case 'wallhit': {
       const f = e.dmg / Math.max(1, S.maxHp);
       if (f >= 0.01) F.flash = Math.min(1, F.flash + f * 6);   // LAS-81: only a real hit pulses (steady chip damage kept the screen red: the dark must stay black)
-      if (e.dmg > 0 && root.TWUI && root.TWUI.hit) root.TWUI.hit(e.x, e.y, f);   // LAS-83: a red pulse in from the edge the hit came from
+      if (f >= 0.01 && root.TWUI && root.TWUI.hit) root.TWUI.hit(e.x, e.y, f);   // LAS-83: a red pulse in from the edge the hit came from; LAS-98: real hits only (chip damage kept a red glow up)
       if (F.bossIds.has(e.id)) { kick(0.45); play('wallboss', 0.7); }   // LAS-88: a boss pounding the wall was ~1 boom a second (the 10-min mix check)
       else { if (f >= 0.03) kick(0.12); play('wall', 0.12); }
       break;
@@ -6807,7 +6807,7 @@ function buildSea(scene) {
     vAfter(sh, 'begin_vertex', `{ vec3 p=position; vec3 Tt=vec3(1.,0.,0.),Bb=vec3(0.,0.,1.),q=p; float A=0.42*smoothstep(11.,27.,length(p.xz));
       q+=gerst(vec2(1.,.3),.16*A,22.,p,Tt,Bb); q+=gerst(vec2(-.4,1.),.13*A,13.,p,Tt,Bb); q+=gerst(vec2(.7,-.8),.10*A,7.5,p,Tt,Bb); q+=gerst(vec2(-1.,-.2),.08*A,4.2,p,Tt,Bb);
       q.y-=0.12; transformed=q; vW=q; vGN=normalize(cross(Bb,Tt)); }`);
-    fHead(sh, 'varying vec3 vW;\nvarying vec3 vGN;\nuniform vec3 uLamp;\nuniform vec3 uBraz[4];\nuniform vec4 uBa;\nuniform float uShore,uBw,uBl,uFl,uFr,uBase,uDk;\nfloat vLm=0.0,vBs=0.0;\n' + BMASK + GLSL_NOISE +
+    fHead(sh, 'varying vec3 vW;\nvarying vec3 vGN;\nuniform vec3 uLamp;\nuniform vec3 uBraz[4];\nuniform vec4 uBa;\nuniform float uShore,uBw,uBl,uFl,uFr,uBase,uDk;\nfloat vLm=0.0,vBs=0.0,vPr=0.0;\n' + BMASK + GLSL_NOISE +
       '\nfloat shoreD(vec2 p){return length(p)-uShore+0.35*sin(atan(p.y,p.x)*7.0)+0.2*sin(atan(p.y,p.x)*13.0+1.3);}\n' +
       'vec2 ripple(vec2 p,float t){vec2 g=vec2(0.);for(int i=0;i<9;i++){float fi=float(i);float an=fi*2.399+0.7;vec2 d=vec2(cos(an),sin(an));float k=0.9+fi*0.62,w=sqrt(9.8*k)*0.55;float s=0.075/(1.+fi*0.45);g+=d*k*s*cos(dot(d,p)*k-w*t+fi*1.7);}return g;}\n');
     fAfter(sh, 'color_fragment', `{
@@ -6816,12 +6816,13 @@ function buildSea(scene) {
       float foam=smoothstep(2.6,0.0,d)*smoothstep(0.25,0.75,n*0.7+band*0.5)*(0.55+0.45*smoothstep(1.2,0.0,d));
       foam+=smoothstep(0.26,0.4,vW.y)*smoothstep(0.55,0.8,n)*0.5; vFoam=clamp(foam,0.0,1.0);
       vec2 q=vW.xz; float rq=length(q); vLm=max(max(bmask(q,uBa.x,uBw,uBl),bmask(q,uBa.y,uBw,uBl)),max(bmask(q,uBa.z,uBw,uBl),bmask(q,uBa.w,uBw,uBl))); vLm=max(vLm,uFl*smoothstep(uFr+2.5,uFr-2.5,rq));
+      vPr=max(max(max(bpr(q,uBa.x,uBw,uBl),bpr(q,uBa.y,uBw,uBl)),max(bpr(q,uBa.z,uBw,uBl),bpr(q,uBa.w,uBw,uBl))),uFl*smoothstep(uFr+2.5,uFr-2.5,rq));   // LAS-98: core + faint spill (the Flare stays even)
       for(int i=0;i<4;i++){ vBs=max(vBs,smoothstep(4.5,0.0,length(uBraz[i].xz-q))*step(0.0,uBraz[i].y)); } }`);
     sh.fragmentShader = 'float vFoam=0.0;\n' + sh.fragmentShader;
     fAfter(sh, 'opaque_fragment', `{
       vec3 V=normalize(cameraPosition-vW); vec3 Lv=uLamp-vW; float dl=length(Lv); vec3 L=Lv/dl;
       vec2 rg=ripple(vW.xz,uT)*0.8+ripple(vW.xz*2.1+13.,uT*1.2)*0.25; vec3 N=normalize(vGN+vec3(-rg.x,0.,-rg.y));
-      float att=1.0/(1.0+0.045*dl+0.0009*dl*dl); float lit=vLm*att*mix(0.55,1.0,smoothstep(6.0,18.0,length(vW.xz)));   // LAS-81: even across the cone (no bright core line); the sea at the island's foot is dimmed so the citadel stays the brightest thing
+      float att=1.0/(1.0+0.045*dl+0.0009*dl*dl); float lit=vPr*att*mix(0.55,1.0,smoothstep(6.0,18.0,length(vW.xz)));   // LAS-81: even across the cone (no bright core line); the sea at the island's foot is dimmed so the citadel stays the brightest thing
       vec3 Hh=normalize(L+V); float nh=max(dot(N,Hh),0.); float fres=0.02+0.98*pow(1.-max(dot(N,V),0.),5.);
       float spec=(pow(nh,180.)*4.2+pow(nh,40.)*0.9)*fres;
       vec3 cool=vec3(0.72,0.84,1.0);
@@ -6842,7 +6843,13 @@ function buildSea(scene) {
   for (let i = 0; i < 260; i++) { const f = Math.pow(jr(), 0.8), w = 1.5 + f * 16; G.push({ f, off: (jr() - 0.5) * w, ph: jr() * 6.28, sp: 1.5 + jr() * 3, len: 0.6 + f * 4 }); }
   Object.assign(R, { sea, glint, G });
 }
-const BMASK = 'float bmask(vec2 q,float a,float w,float L){float r=length(q);if(a>8.0||r<0.05)return 0.0;float c=dot(q/r,vec2(cos(a),sin(a)));float ang=acos(clamp(c,-1.0,1.0));float sf=clamp(0.8/r,0.004,0.12);float m=smoothstep(w*0.5+sf,w*0.5-sf-w*0.22,ang);return m*smoothstep(L+1.0,L-0.22*L,r);}\n'; // LAS-55: the edge sits on the sim's cone; LAS-81: a soft falloff inward (22% of the half-width, the last 22% of the reach), no hard rim
+// LAS-98 (audit p31 #1): the cone's light = spill + core x bcore(): the sea and the fog are faint across the cone, bright only
+// near its axis (the lit creatures stay lit across the whole cone: their light is not this). fog*: the same for the haze.
+const BCONE = { spill: 0.25, core: 1.15, fogSpill: 0.07, fogCore: 0.75 };
+const BMASK = 'float bmask(vec2 q,float a,float w,float L){float r=length(q);if(a>8.0||r<0.05)return 0.0;float c=dot(q/r,vec2(cos(a),sin(a)));float ang=acos(clamp(c,-1.0,1.0));float sf=clamp(0.8/r,0.004,0.12);float m=smoothstep(w*0.5+sf,w*0.5-sf-w*0.22,ang);return m*smoothstep(L+1.0,L-0.22*L,r);}\n' +
+  // LAS-98: a searchlight: a narrow soft core (sigma 14% of the cone, 2.6-6.3 deg) over a faint spill the width of the cone
+  'float bcore(float ang,float w){float sg=clamp(w*0.14,0.045,0.11);return exp(-ang*ang/(2.0*sg*sg));}\n' +
+  `float bpr(vec2 q,float a,float w,float L){float r=length(q);if(a>8.0||r<0.05)return 0.0;float ang=acos(clamp(dot(q/r,vec2(cos(a),sin(a))),-1.0,1.0));return bmask(q,a,w,L)*(${BCONE.spill.toFixed(3)}+${BCONE.core.toFixed(3)}*bcore(ang,w));}\n`; // LAS-55: the edge sits on the sim's cone; LAS-81: a soft falloff inward (22% of the half-width, the last 22% of the reach), no hard rim
 const hex3 = c => { const k = new T3.Color(c); return `vec3(${k.r.toFixed(3)},${k.g.toFixed(3)},${k.b.toFixed(3)})`; };
 
 // the sky behind the fog bank (screen space, under everything): a deep gradient, faint stars, the moon low on the left
@@ -7631,7 +7638,7 @@ function guardsTick(S, t, dt, alpha) {
 // curtain's inner face; the parapet now stands just inside that line). r, hex (the tile's top circumradius, m) and fit (how far, m, a
 // building may reach from its slot below 5.3 m: wider ones are narrowed, never lowered) all follow RLOOK.outerR, so wider terraces
 // (LAS-92) give the buildings their width back. Ring 1 sits higher, clear of the keep's rock.
-const TOWN = { r: [], n: [4, 6, 8, 10], step: [1, 2, 3, 4], y: [1.05, 0.7, 0.5, 0.32], hex: [], fit: [], fitHi: 2.1, keepR: 3.9, k: 2.2, rise: 1.7, lvl: 1.3, ember: '#ff6a20' };
+const TOWN = { r: [], n: [4, 6, 8, 10], step: [1, 2, 3, 4], y: [1.05, 0.7, 0.5, 0.32], hex: [], fit: [], fitHi: 2.1, keepR: 3.9, k: 2.2, rise: 1.7, lvl: 1.3, ember: '#ff6a20', pool: '#8fa6b6' };   // LAS-98: pool = the rise's light on its slot (cool, small)
 const wallFoot = k => RLOOK.outerR[k] - 0.85 * RLOOK.wallS, parapetB = k => wallFoot(k) + 0.4;   // the curtain's inner face; the city parapet's line (its cap reaches 0.4 in)
 for (let k = 1; k <= 4; k++) { const hi = wallFoot(k), lo = k === 1 ? TOWN.keepR : parapetB(k - 1) + 0.12, c = (lo + hi) / 2, h = (hi - lo) / 2;
   TOWN.r[k - 1] = c; TOWN.fit[k - 1] = h - 0.1; TOWN.hex[k - 1] = (k === 1 ? hi - c - 0.05 : h - 0.1) / Math.cos(Math.PI / 6); }   // ring 1's tile may run under the keep's foot
@@ -8013,7 +8020,7 @@ function townPodium(lv, H) {
 // outline cut into its top; a building stands on its own hex, an empty one waits, barely lit. Hover: the hex under the mouse
 // gets a soft rim of lantern light and TWRender.hoverSlot = { ring, slot, id, lv, empty, home, x, y } (UI tooltip, LAS-74).
 // Flat sides face the centre and the sea, so the hexes of neighbouring rings (1.9 m apart) touch like a honeycomb.
-const HEX = { r: 1.1, h: 0.8, top: 0.1, col: '#4a4743', cut: '#a8794a', lamp: '#ffcf9c', pick: 1.5 };
+const HEX = { r: 1.1, h: 0.8, top: 0.1, col: '#4a4743', cut: '#6d675d', lamp: '#cfdde6', pick: 1.5, cutA: 0.45 };   // LAS-98: the cut in ash at low alpha (brighter in a pick), the hover rim lantern-cool: no gold
 const hexS = ring => TOWN.hex[ring - 1] / (HEX.r * 0.97 * TOWN.k);   // LAS-94: a ring's tile width (x TOWN.k), from TOWN.hex
 R.hexR = ring => TOWN.hex[ring - 1];   // cut: the outline's own faint glow (unlit colour)
 // LAS-81: r 1.1 = the full honeycomb (flat to flat 1.905 m = the rings' 1.9 m step); the glowing cut runs right at the rim (not inset), so the
@@ -8031,7 +8038,7 @@ function hexInit() {
   const S = model(true), G = model(true); hexStone(S, 2, G); const geo = S.geo();
   const m = new T3.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.08 });   // wet stone: the beam glints on it
   const tiles = new T3.InstancedMesh(geo, m, 48); tiles.count = 0; tiles.receiveShadow = true; tiles.frustumCulled = false;
-  const cuts = new T3.InstancedMesh(G.geo(), new T3.MeshBasicMaterial({ vertexColors: true }), 48); cuts.count = 0; cuts.frustumCulled = false; tiles.add(cuts); tiles.cuts = cuts;
+  const cuts = new T3.InstancedMesh(G.geo(), new T3.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: HEX.cutA, depthWrite: false }), 48); cuts.count = 0; cuts.frustumCulled = false; tiles.add(cuts); tiles.cuts = cuts;
   const rg = new T3.BufferGeometry(), rp = [], ri = [];   // a flat hex band (r 0.86..1.0) on the top, corners where the block's are
   for (let k = 0; k < 6; k++) { const a = Math.PI / 6 + k * Math.PI / 3; for (const f of [0.86, 1.0]) rp.push(Math.sin(a) * HEX.r * f, 0, Math.cos(a) * HEX.r * f);
     const i = k * 2, j = ((k + 1) % 6) * 2; ri.push(i, j, i + 1, j, j + 1, i + 1); }
@@ -8078,6 +8085,9 @@ function hexTick(S, t, dt) {
   if (hit) { const k = TOWN.k, w = k * hexS(hit.ring); X.rim.position.set(hit.x, hit.y + HEX.top * k + 0.03, hit.z); X.rim.rotation.y = hit.a; X.rim.scale.set(w, k, w); X.light.position.set(hit.x - Math.sin(hit.a) * 0.6 * k, hit.y + 1.4 * k, hit.z - Math.cos(hit.a) * 0.6 * k); X.last = hit; }
   X.rim.visible = X.k > 0.01; X.rim.material.opacity = 0.6 * X.k * (0.92 + 0.08 * Math.sin(t * 3.3));
   X.light.intensity = 40 * X.k;
+  // LAS-98: the cuts brighten while a pick is open (where can it go?), faint otherwise
+  X.pk = (X.pk || 0) + (((S && S.pick) ? 1 : 0) - (X.pk || 0)) * Math.min(1, dt * 6);
+  const cm = X.tiles.cuts.material; cm.opacity = HEX.cutA + (1 - HEX.cutA) * X.pk; cm.color.setScalar(1 + 0.8 * X.pk);
 }
 // the dev helper for checks: screen points of one empty and one filled hex
 R.hexAt = () => { const X = R.hex; if (!X) return null; const src = R.townSrc, slots = src ? src.slots : [], out = [];
@@ -8219,7 +8229,7 @@ function townAnim(TW, rec, mode, t) {
   const F = !(TW.dev && TW.dev.line) && root.TWFx; if (F) { if (F.kick) F.kick(mode === 'rise' ? 0.16 : 0.08); if (F.sound) { F.sound('wallboss'); if (mode === 'lvl') F.sound('clank'); } }
   if (!rec.hot) { rec.hot = TW.tm.clone(); rec.hot.emissive = new T3.Color(TOWN.ember); }
   rec.solid.material = rec.hot;
-  if (!rec.glowPlane) { rec.glowPlane = new T3.Mesh(TW.plane, new T3.MeshBasicMaterial({ color: TOWN.ember, map: haloTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false })); rec.g.add(rec.glowPlane); }
+  if (!rec.glowPlane) { rec.glowPlane = new T3.Mesh(TW.plane, new T3.MeshBasicMaterial({ color: TOWN.pool, map: haloTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false })); rec.g.add(rec.glowPlane); }
   rec.glowPlane.rotation.x = -Math.PI / 2; rec.glowPlane.position.set(0, 0.12, 0); rec.glowPlane.renderOrder = 4;
 }
 function townDust(rec, n, big) {   // grey stone dust thrown off the plinth edge (LAS-86: x the city's scale, twice as thick)
@@ -8274,7 +8284,7 @@ function townTick(S, t, dt) {
       }
     }
     if (!rec.mode) { if (rec.hot) { rec.solid.material = TW.tm; rec.hot.dispose(); rec.hot = null; rec.g.remove(rec.glowPlane); rec.glowPlane.material.dispose(); rec.glowPlane = null; } }
-    else { rec.hot.emissiveIntensity = heat * 0.75; rec.solid.material = rec.hot; rec.glowPlane.material.opacity = gl; rec.glowPlane.scale.setScalar(6.5 * cs * (0.5 + gl)); }
+    else { rec.hot.emissiveIntensity = heat * 0.35; /* LAS-98: 0.75 -> 0.35, warm stone, not an orange flash */ rec.solid.material = rec.hot; rec.glowPlane.material.opacity = gl * 0.55; rec.glowPlane.scale.setScalar(2.6 * cs * (0.6 + 0.4 * gl)); }   // LAS-98: a small cool pool on the slot (was a 6.5 x k ember disc over the city)
     // a Gun Battery's shot (mountsTick sets rec.shotT): the building kicks back and settles
     const sk = rec.shotT != null ? Math.max(0, 1 - (t - rec.shotT) / 0.3) : 0;
     rec.pv.position.y = lift; rec.pv.position.z = -0.22 * cs * sk * sk; rec.pv.scale.set(sxz * cs, sy * cs, sxz * cs);
@@ -8583,15 +8593,16 @@ const BU = {   // beam uniforms shared by the fog march and the sea
 const f5 = x => (+x).toFixed(5), v5 = a => a.map(f5).join(',');
 const BEAM_GLSL = `
 uniform vec3 uLamp, uDirs[4]; uniform float uN, uCosWideIn, uCosWideOut, uLen, uFl, uFr;
+float bcore(float ang, float w){ float sg = clamp(w * 0.14, 0.045, 0.11); return exp(-ang * ang / (2.0 * sg * sg)); }   // LAS-98: same core as the sea (BMASK)
 // LAS-81: the shaft is even across the cone: flat inside, a soft falloff at the edges (wide in/out) and over the last 30% of the reach
 float wideOf(vec3 v, vec3 d){ vec2 h = normalize(v.xz + 1e-5); float c = dot(h, normalize(d.xz + 1e-5)); float down = smoothstep(0.05, -0.12, normalize(v).y);
   return smoothstep(uCosWideOut, uCosWideIn, c) * mix(0.15, 1.0, down); }
 float beamWide(vec3 v){ float m = 0.; for (int i = 0; i < 4; i++) if (float(i) < uN) m = max(m, wideOf(v, uDirs[i])); float r = length(v.xz);
   return max(m * smoothstep(uLen + 1.5, uLen * 0.7, r), uFl * mix(0.25, 1.0, smoothstep(0.05, -0.12, normalize(v).y)) * smoothstep(uFr + 2.5, uFr - 2.5, r)); }
-// LAS-85: how much fog the light shows here: full at the cone's edge (wide ~0.5), thin in its middle (wide -> 1) and in the Flare
-float beamHaze(vec3 v){ float m = 0.; for (int i = 0; i < 4; i++) if (float(i) < uN) m = max(m, wideOf(v, uDirs[i])); float r = length(v.xz);
-  float e = m * smoothstep(uLen + 1.5, uLen * 0.7, r); float edge = 1.0 - smoothstep(0.35, 0.95, e);
-  float cone = e * mix(${f5(BL.fogCore)}, 1.0, edge);
+// LAS-85: how much fog the light shows here; LAS-98: a faint spill across the cone + the narrow core shaft (bcore), no edge haze
+float beamHaze(vec3 v){ float m = 0., w = 2. * acos(uCosWideOut); vec2 h = normalize(v.xz + 1e-5); for (int i = 0; i < 4; i++) if (float(i) < uN) {
+    float a = acos(clamp(dot(h, normalize(uDirs[i].xz + 1e-5)), -1., 1.)); m = max(m, wideOf(v, uDirs[i]) * (${f5(BCONE.fogSpill)} + ${f5(BCONE.fogCore)} * bcore(a, w))); }
+  float r = length(v.xz), cone = m * smoothstep(uLen + 1.5, uLen * 0.7, r);
   return max(cone, uFl * ${f5(BL.fogFlare)} * mix(0.25, 1.0, smoothstep(0.05, -0.12, normalize(v).y)) * smoothstep(uFr + 2.5, uFr - 2.5, r)); }
 float beamAtt(float d){ return 1.0 / (1.0 + 0.045 * d + 0.0009 * d * d); }`;
 const POST_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }';
@@ -8642,7 +8653,7 @@ function makePost() {
   float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
   void main(){
     vec3 v = texture2D(tVol, vUv).rgb * 0.4 + (texture2D(tVol, vUv + vec2(uVt.x, 0.)).rgb + texture2D(tVol, vUv - vec2(uVt.x, 0.)).rgb + texture2D(tVol, vUv + vec2(0., uVt.y)).rgb + texture2D(tVol, vUv - vec2(0., uVt.y)).rgb) * 0.15;
-    vec3 c = texture2D(tScene, vUv).rgb + v + (texture2D(tB1, vUv).rgb * 0.6 + texture2D(tB2, vUv).rgb * 0.9) * ${f5(BL.bloom)};
+    vec3 c = texture2D(tScene, vUv).rgb + v + (texture2D(tB1, vUv).rgb * 0.6 + texture2D(tB2, vUv).rgb * 0.35) * ${f5(BL.bloom)};   // LAS-98: the wide (1/8) bloom 0.9 -> 0.35: a tighter glow on the fog
     c = aces(c * uExp);
     c = max(c - 0.004, 0.) * 1.004;
     vec2 q = vUv - .5; q.x *= uRes.x / uRes.y; c *= 1. - ${f5(BL.vignette)} * smoothstep(0.35, 1.25, length(q));
@@ -10329,6 +10340,8 @@ const LAS95CSS = `
 #tw-teach.lit{animation:twFade95 2.6s ease-in forwards}
 @keyframes twFade95{0%,40%{opacity:1}100%{opacity:0}}
 #tw-codex.dim,#tw-set.dim{background:rgba(0,0,0,.97)}
+/* LAS-96: the banner owns the centre-top lane while it shows; the goal and the hint queue behind it */
+#twui.bnon #tw-first,#twui.bnon #tw-teach{visibility:hidden!important}
 `;
 const LAS83CSS = `
 /* LAS-83 new-player clarity: a readable citadel bar, hit pulse + low-HP vignette, ability hints, named plaques, first goal, end summary */
@@ -10342,7 +10355,7 @@ const LAS83CSS = `
   font-size:max(15px,1.45vh)!important;font-weight:600;color:#f6ecd8!important;text-shadow:0 0 3px #000,0 1px 3px #000,0 0 8px #000!important}
 #tw-hpbar.low:not(.hit){animation:twBeat 1.15s ease-out infinite}
 #tw-vig,#tw-hit{position:absolute;inset:0;pointer-events:none;z-index:2;opacity:0}
-#tw-vig{background:radial-gradient(ellipse at 50% 50%,transparent 42%,rgba(130,10,8,.6) 100%)}
+#tw-vig{background:radial-gradient(ellipse at 50% 50%,transparent 66%,rgba(130,10,8,.55) 100%)}
 #twui.lowhp #tw-vig{animation:twVig 1.15s ease-out infinite}
 @keyframes twVig{0%,100%{opacity:.3}12%{opacity:1}24%{opacity:.45}36%{opacity:.85}60%{opacity:.3}}
 #tw-hit.on{animation:twHitEdge .6s ease-out forwards}
@@ -11288,6 +11301,8 @@ function frame(S, now) {
   if (U.mode !== 'run') { U.root.classList.remove('lowhp'); tip(S); return; }
 
   now = now || performance.now();
+  // LAS-96: centre-top lanes. wave line, then banner (milestone / boss / wave); goal and hint wait while a banner shows
+  { const bn = document.getElementById('twbanner'), on = !!bn && +getComputedStyle(bn).opacity > 0.05; if (on !== U.bnOn) { U.bnOn = on; U.root.classList.toggle('bnon', on); } }
   const dt = U.lastNow ? Math.min(0.1, (now - U.lastNow) / 1000) : 0; U.lastNow = now;
   // top bar: the wave number punches in, the HP bar leaves a pale trail when hit, gold counts up instead of jumping
   if (U.wPrev !== S.wave) { if (U.wPrev != null && S.wave > 0) restart($('tw-wv'), 'punch'); U.wPrev = S.wave; }
@@ -11679,9 +11694,9 @@ function hit(x, y, f) {
   const W = root.innerWidth, H = root.innerHeight, cx = W / 2, cy = H / 2, p = x == null ? null : screenAt(x, y);
   let ax = 0, ay = -1; if (p) { ax = p[0] - cx; ay = p[1] - cy; }
   const L = Math.hypot(ax, ay) || 1; ax /= L; ay /= L;
-  const t = Math.min(Math.abs(ax) > 1e-6 ? cx / Math.abs(ax) : 1e9, Math.abs(ay) > 1e-6 ? cy / Math.abs(ay) : 1e9), a = Math.min(.9, .45 + f * 6);
+  const t = Math.min(Math.abs(ax) > 1e-6 ? cx / Math.abs(ax) : 1e9, Math.abs(ay) > 1e-6 ? cy / Math.abs(ay) : 1e9), a = Math.min(.6, .3 + f * 5);
   const e = $('tw-hit');
-  e.style.background = 'radial-gradient(ellipse 34% 52% at ' + ((cx + ax * t) / W * 100).toFixed(1) + '% ' + ((cy + ay * t) / H * 100).toFixed(1) + '%,rgba(196,24,14,' + a.toFixed(2) + '),rgba(150,16,10,' + (a * .4).toFixed(2) + ') 42%,transparent 74%)';
+  e.style.background = 'radial-gradient(ellipse 22% 34% at ' + ((cx + ax * t) / W * 100).toFixed(1) + '% ' + ((cy + ay * t) / H * 100).toFixed(1) + '%,rgba(196,24,14,' + a.toFixed(2) + '),rgba(150,16,10,' + (a * .35).toFixed(2) + ') 35%,transparent 62%)';   // LAS-98: a rim band, never over the play area
   restart(e, 'on');
 }
 // the first time each ability is ready, one line by its button (one at a time, 8 s or until it is used; shown once ever)
