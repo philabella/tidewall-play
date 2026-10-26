@@ -5353,7 +5353,7 @@ function flood3d(dt) {
 // sparse, panned toward a creature that is out there and unlit, mostly reverb). A synthetic hall reverb (a decaying
 // noise impulse) gives the distance. Spec: art/look-target.md section 4.
 const A = { ctx: null, bus: null, last: {}, nz: null, n: 0 };
-const MIX = { bed: 0.55, sfx: 0.85, call: 0.5, verb: 0.7 };   // group levels under the master volume
+const MIX = { bed: 0.3, sfx: 0.85, call: 0.5, verb: 0.7 };   // group levels under the master volume
 try { const v = root.localStorage && root.localStorage.getItem('tidewall.vol'); if (v !== null && v !== undefined && v !== '') FX.vol = Math.max(0, Math.min(1, +v)); } catch (e) {}
 function audio(wake) {
   if (!A.ctx) {
@@ -5435,7 +5435,7 @@ const SYN = {
   // a boss sinks: the collapse, then one deep toll (no bright fanfare: horror, LAS-58)
   bossdie: (C, o, t, p) => { synT(C, o, t, 90, 25, 1.6, 'sine', 0.9, 0.004); synN(C, o, t, 1.4, 'bandpass', 600, 90, 0.7, 0.6, 0.01); bellT(C, lowp(C, o, 1800), t + 0.45, 147, 0.3, 4); },
   // the Flare: a magnesium flare igniting: a roaring rise, a low push, a long hiss
-  beam: (C, o, t, p) => { synN(C, o, t, 0.9, 'bandpass', 300, 2600, 0.8, 0.55, 0.05); synT(C, o, t, 72, 38, 0.9, 'sine', 0.6, 0.01); synN(C, o, t + 0.35, 1.8, 'highpass', 3500, 1800, 0.7, 0.16, 0.2); },
+  beam: (C, o, t, p) => { synN(C, o, t, 0.9, 'bandpass', 300, 2600, 0.8, 0.55, 0.05); synT(C, o, t, 72, 38, 0.9, 'sine', 0.6, 0.01); synN(C, o, t + 0.35, 1.8, 'highpass', 2600, 1400, 0.7, 0.09, 0.2); },
   flood: (C, o, t, p) => { synN(C, o, t, 1.1, 'bandpass', 250, 1200, 0.8, 0.7, 0.12); synT(C, o, t, 80, 45, 0.9, 'sine', 0.4, 0.05); },
   omen: (C, o, t, p) => { [196, 208, 277].forEach((f, i) => synT(C, o, t + i * 0.14, f, f * 0.97, 1.8, 'triangle', 0.12, 0.12)); synN(C, o, t, 1.4, 'bandpass', 500, 180, 2, 0.15, 0.25); },
   keg: (C, o, t, p) => { synT(C, o, t, 90 * p, 30, 0.6, 'sine', 0.9, 0.003); synN(C, o, t, 0.6, 'lowpass', 1500, 100, 0.8, 0.8, 0.002); },
@@ -5465,7 +5465,7 @@ function play(k, gap, to) {
 // ---------- the night beds: started once the audio is awake, driven each frame from the sim state (read only)
 const AMB = {
   seaF: 520, seaSwell: 0.09,            // sea low-pass Hz, swell Hz (gain and cutoff)
-  wind: 0.16, gust: [2, 6],             // wind level, seconds between gust changes
+  wind: 0.11, gust: [2, 6],             // wind level, seconds between gust changes
   drone: [0.015, 0.11],                 // drone level from calm to full threat
   silence: 2.6, dip: 1.1,               // s of near silence before a boss wave; s of dip before every other wave
   heart: 0.3, bpm: [62, 104],           // heartbeat under 30% HP, BPM from 30% down to 0
@@ -5524,14 +5524,14 @@ function amb(S, dt) {
     B.wind.gain.setTargetAtTime(AMB.wind * (0.45 + 1.1 * k), now, 1.2); B.windF.frequency.setTargetAtTime(480 + 700 * k, now, 1.6); }
   // a wave breaks on the rocks somewhere left or right (beds group)
   if (now >= B.nextWash && L > 0.3) { B.nextWash = now + rr([5, 11]); B.cnt.washes++; wash(C, now, Math.random() * 1.6 - 0.8); }
-  // the lamp: rumble by turn speed, one clank per turn (each sweep reversal, or each full turn)
+  // the lamp: rumble by turn speed, one clank per turn (a full turn, or a sweep reversal; at most every 4 s)
   const b = S.beam;
   if (b && live) {
     if (B.a !== null && dt > 0) {
       let da = b.a - B.a; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI;
       const w = Math.abs(da) / Math.max(1e-3, dt); B.lamp.gain.setTargetAtTime(0.06 * Math.min(1.5, w / 1.25), now, 0.3);
       B.turn += Math.abs(da);
-      if ((B.dir && b.dir && b.dir !== B.dir) || B.turn >= 2 * Math.PI) { B.turn = 0; play('clank', 0.8, A.bed); B.cnt.clanks++; }
+      if ((B.dir && b.dir && b.dir !== B.dir) || B.turn >= 2 * Math.PI) { B.turn = 0; const c0 = A.last.clank; play('clank', 4, A.bed); if (A.last.clank !== c0) B.cnt.clanks++; }
     }
     B.a = b.a; B.dir = b.dir;
   } else if (B.lamp) { B.lamp.gain.setTargetAtTime(0, now, 0.4); B.a = null; }
