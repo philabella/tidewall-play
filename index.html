@@ -5084,6 +5084,16 @@ function build3d() {
   F.flood = { sea, front, age: 9, life: 1.3, r: 1 };
   F.keg = { disc: keg, ring, age: 9, life: 0.7, x: 0, z: 0, r: 1 };
   F.harp = { m: harp, age: 9, life: 0.4, x: 0, z: 0 };
+  // LAS-73 the Flare: a magnesium star fired up from the lamp that sinks and burns down over the sim's Flare window while
+  // embers drift down off it (its light on the sea is render.js's flareEnv; R.flareI is that light, 0..1)
+  const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.25, 'rgba(255,255,255,0.45)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+    const t = new T3.CanvasTexture(c); t.colorSpace = T3.SRGBColorSpace; return t; })();
+  const spr = c => new T3.MeshBasicMaterial({ color: c, map: glowTex, transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false });
+  const star = new T3.Mesh(new T3.PlaneGeometry(1, 1), spr('#fff4e2')), emb = new T3.InstancedMesh(star.geometry, spr('#ffffff'), 160);
+  emb.instanceMatrix.setUsage(T3.DynamicDrawUsage); emb.setColorAt(0, new T3.Color()); emb.instanceColor.setUsage(T3.DynamicDrawUsage); emb.count = 0;
+  for (const m of [star, emb]) { m.visible = false; m.frustumCulled = false; m.renderOrder = 6; F.scene.add(m); }
+  F.flare = { star, emb, age: 9, dur: 4, p: [], acc: 0 };
 }
 
 // The end screen opens over the field: drop the banner at once, no fade behind the stat cards (LAS-18).
@@ -5095,7 +5105,7 @@ function hideBanner() {
 function reset(S) {
   F.nums.length = 0; F.byId.clear(); F.bossIds.clear(); F.trauma = 0; F.flash = 0;
   F.mile = S ? rung(S.biggestHit) : 0;
-  if (F.beam) F.beam.age = F.flood.age = F.keg.age = F.harp.age = 9;
+  if (F.beam) F.beam.age = F.flood.age = F.keg.age = F.harp.age = F.flare.age = 9;
   F.bnT = 0; if (F.bn) { F.bn.style.transition = 'none'; F.bn.style.opacity = 0; F.bn.style.filter = 'brightness(0)'; }
   intro.age = 9; intro.k = 0; F.holdUntil = 0; F.critStop = 0; letterbox(false);
 }
@@ -5112,7 +5122,7 @@ function frame(S, t, dt) {
   // numbers age; merged ones are already updated in place
   for (const n of F.nums) n.age += dt;
   // beam / flood
-  beam3d(dt); flood3d(dt); keg3d(dt); harp3d(dt);
+  beam3d(dt); flood3d(dt); keg3d(dt); harp3d(dt); flare3d(dt);
   amb(S, dt);   // the night beds, calls, heartbeat, lamp (sound)
   // the boss intro: in over 0.6 s, hold, out over the last 0.9 s
   if (intro.age < FX.intro) {
@@ -5158,7 +5168,7 @@ function onEv(S, e) {
       play(e.boss ? 'horn' : 'bell', 0);
       break;
     case 'ability':
-      if (e.key === 'beam' && e.flare) { Object.assign(F.keg, { age: 0, x: 0, z: 0, r: e.r + OFF() }); kick(0.22); play('beam', 0); }   // LAS-24: the Flare, a ring of light from the tower (placeholder look)
+      if (e.key === 'beam' && e.flare) { Object.assign(F.flare, { age: 0, dur: e.dur || 4 }); kick(0.22); play('beam', 0); }   // LAS-73: the Flare star rises, sinks and burns down (flare3d)
       else if (e.key === 'beam') { Object.assign(F.beam, { age: 0, a: e.a, len: e.len + OFF(), w: e.width }); kick(0.22); play('beam', 0); }
       else if (e.key === 'flood') { Object.assign(F.flood, { age: 0, a: e.a, r: e.r, arc: e.arc }); floodGeo(e.a, e.arc); kick(0.18); play('flood', 0); }
       else if (e.key === 'keg') { const [kx, kz] = V(e.x, e.y); Object.assign(F.keg, { age: 0, x: kx, z: kz, r: e.r }); kick(0.3); play('keg', 0); }
@@ -5312,6 +5322,30 @@ function keg3d(dt) {
   const q = Math.min(1, K.age / K.life), out = 1 - Math.pow(1 - q, 3), r = K.r * (0.25 + 0.75 * out), y = hAt(Math.hypot(K.x, K.z)) + 0.35;
   for (const m of [K.disc, K.ring]) { m.position.set(K.x, y, K.z); m.scale.set(r, 1, r); }
   K.disc.material.opacity = 0.55 * Math.pow(1 - q, 2); K.ring.material.opacity = 0.9 * (1 - q);
+}
+function flare3d(dt) {
+  const L = F.flare, on = L.age < L.dur + 3.5; L.star.visible = L.emb.visible = on; if (!on) { L.p.length = 0; return; }
+  L.age += dt;
+  const T3 = F.T3, a = L.age, I = (F.R && F.R.flareI) || 0, lamp = (F.R && F.R.LAMP) || [0, 12, 0], up = Math.min(1, a / 0.45), e = 1 - Math.pow(1 - up, 3);
+  // the star: up from the lamp in 0.45 s to 22 m over the sea side, then it sinks to 9 m as it burns down; it shrinks with its light
+  const k = Math.min(1, a / L.dur), sx = 0, sy = up < 1 ? lamp[1] + (22 - lamp[1]) * e : 22 - 13 * k * k, sz = 6 * e + 3 * k;
+  L.star.position.set(sx, sy, sz); L.star.quaternion.copy(F.cam.quaternion);
+  const lit = up < 1 ? 0.6 + 0.4 * e : I; L.star.scale.setScalar(0.6 + 2.6 * lit); L.star.material.opacity = Math.min(1, lit * 1.4);
+  L.star.visible = lit > 0.01;
+  // embers: shed while it burns (none in the last 0.4 s), drift down and out on the wind, cool from white to coal red and go out
+  L.acc += dt * (a < L.dur - 0.4 ? 60 * Math.max(0.25, lit) : 0);
+  while (L.acc >= 1 && L.p.length < 160) { L.acc--; const r = Math.random() * 0.5, th = Math.random() * 6.283;
+    L.p.push({ x: sx + Math.cos(th) * r, y: sy - 0.2, z: sz + Math.sin(th) * r, vx: (Math.random() - 0.5) * 2.4 + 0.6, vy: -0.6 - Math.random() * 1.6, vz: (Math.random() - 0.5) * 2.4, age: 0, life: 1.4 + Math.random() * 1.6 }); }
+  L.acc = Math.min(L.acc, 1);
+  const A = L.emb.instanceMatrix.array, C = L.emb.instanceColor.array, q = F.cam.quaternion, M = new T3.Matrix4(), P = F.v, S3 = new T3.Vector3();
+  let n = 0;
+  for (const p of L.p) { p.age += dt; if (p.age >= p.life) continue;
+    p.vy -= 1.1 * dt; p.vx *= 1 - 0.6 * dt; p.vz *= 1 - 0.6 * dt; p.vy *= 1 - 0.4 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+    const u = p.age / p.life, w = (1 - u) * (1 - u), fl = 0.75 + 0.25 * Math.sin(p.age * 31 + p.life * 17);
+    P.set(p.x, p.y, p.z); S3.setScalar(0.22 * (1 - 0.5 * u)); M.compose(P, q, S3).toArray(A, n * 16);
+    C[n * 3] = w * fl * 1.1; C[n * 3 + 1] = w * fl * (0.85 - 0.55 * u); C[n * 3 + 2] = w * fl * (0.6 - 0.55 * u); n++; }
+  L.p = L.p.filter(p => p.age < p.life);
+  L.emb.count = n; L.emb.instanceMatrix.needsUpdate = true; L.emb.instanceColor.needsUpdate = true;
 }
 function harp3d(dt) {
   const H = F.harp, on = H.age < H.life;
@@ -5632,10 +5666,12 @@ const RLOOK = {
   vignette: 'none',   // LAS-65: vignette + grain are in the final pass
   maxEnemies: 6000, maxShots: 1024, maxSparks: 512, plateau: 1.2, shore: 7.5, gunY: 4.6, deck: 4.1, walk: 1.7,
   skyTop: '#040b10', skyMid: '#0b2129', moon: '#e8f4ee', moonGlow: '#8fd6e0', foam: '#bff3ea', crest: '#2f7f80',
-  smoke: '#2a3134', fire: '#ff8a3a', bossScale: 2.1, bossRise: 2.4, creatureK: 1.8,   // LAS-49: creatures 80% bigger, the boss x2.1 (it must read from 74 m)
+  smoke: '#2a3134', fire: '#ff8a3a', bossScale: 2.1, bossRise: 2.4, creatureK: 1.8, creatureQ: 1.67,   // LAS-73: creatureQ = more facets (loft 6 -> 10 sides)
+    // LAS-49: creatures 80% bigger, the boss x2.1 (it must read from 74 m)
   // LAS-26: the camera orbits the lighthouse (world origin) at camPitch deg; its distance follows the mounts' reach
   // (reach x camK, clamped camMin..camMax, eased ~1 s). Fog thins as it pulls back so the island stays clear.
-  camPitch: 50, camLookY: 2.2, camK: 1.1, camMin: 36, camOpen: 74, camMax: 130, camWide: 1.5, camWideWave: 30, camEase: 3, fogAt: 40,
+  camPitch: 50, camLookY: 2.2, camK: 1.1, camMin: 36, camOpen: 88, camMax: 150,   // LAS-73: opens wider (74 -> 88) so the island, its slot rings and the dark read at once; the late camera wider still
+  camWide: 1.5, camWideWave: 30, camEase: 3, fogAt: 40,
   // LAS-27: the camera never pulls back so far that the citadel and its works (outer ring to the lighthouse's finial)
   // drop under fortMin of the screen height: per island step, share x distance ~ camFort (measured, checks/grow.js)
   camFort: [17.9, 20.9, 23.5, 26.1], fortMin: 0.27,
@@ -5650,7 +5686,7 @@ const RLOOK = {
   breachAt: 0.25, maxPuffs: 1200, maxWallFx: 6,
 };
 // shared shader time (gait, sea, banners, foam): one uniform object, every patched material points at it
-const U = { t: { value: 0 }, shore: { value: 6.4 }, ba: { value: 9 }, ba2: { value: 9 }, bw: { value: 0.3 }, bl: { value: 40 }, fl: { value: 0 }, base: { value: 0 }, dk: { value: 0.07 } };   // LAS-51: darkness uniforms (beam angles/width/length, Flare, base-light radius, unlit sea level)
+const U = { t: { value: 0 }, shore: { value: 6.4 }, ba: { value: 9 }, ba2: { value: 9 }, bw: { value: 0.3 }, bl: { value: 40 }, fl: { value: 0 }, fr: { value: 40 }, base: { value: 0 }, dk: { value: 0.07 } };   // LAS-73: fr = the Flare's lit radius (it shrinks as it fades)   // LAS-51: darkness uniforms (beam angles/width/length, Flare, base-light radius, unlit sea level)
 // patch a built-in material's shaders (three r160 chunks); key keeps one program per variant
 function patch(m, key, fn) { m.onBeforeCompile = sh => { sh.uniforms.uT = U.t; fn(sh); }; m.customProgramCacheKey = () => key; return m; }
 const vHead = (sh, s) => { sh.vertexShader = 'uniform float uT;\n' + s + '\n' + sh.vertexShader; };
@@ -5661,12 +5697,12 @@ const GLSL_NOISE = 'float h21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+
   'float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h21(i),h21(i+vec2(1,0)),f.x),mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x),f.y);}';
 
 // ---------- Polygon kit materials (art/poly/kit.js mat()): one cache, flat facets, glow = MeshBasic
-const MATS = new Map();
+const MATS = new Map(), WET = new Set(['#6d6a66', '#45474a', '#77726b', '#b8b0a2', '#8e3b2b', '#8f887c']);
 function mat(c, o = {}) {
   const k = [c, o.glow ? 1 : 0, o.rough || .8, o.metal || .05, o.add ? 1 : 0].join('|');
   let m = MATS.get(k); if (m) return m;
   if (o.glow) m = new T3.MeshBasicMaterial({ color: c, fog: !o.noFog });
-  else m = new T3.MeshStandardMaterial({ color: c, roughness: o.rough || .8, metalness: o.metal || .05, flatShading: true });
+  else m = new T3.MeshStandardMaterial({ color: c, roughness: o.rough || (WET.has(c) ? .6 : .8), metalness: o.metal || (WET.has(c) ? .08 : .05), flatShading: true });   // LAS-73: wet stone glints in the beam
   if (o.add) Object.assign(m, { transparent: true, depthWrite: false, blending: T3.AdditiveBlending });
   MATS.set(k, m); return m;
 }
@@ -5687,7 +5723,9 @@ function rp(s, th, sq) {
   const [y, hw, f, b, z = 0, x = 0] = s, sn = Math.sin(th), cs = Math.cos(th), e = 2 / sq;
   return [x + hw * Math.sign(sn) * Math.pow(Math.abs(sn), e), y, z + (cs > 0 ? f : b) * Math.sign(cs) * Math.pow(Math.abs(cs), e)];
 }
+let LQ = 1;   // LAS-73: creature detail while ART builds (1 = the old kit): loft rings x LQ, balls one subdivision more, limbs 7 sides
 function loft(secs, n = 6, sq = 3) {
+  n = Math.round(n * LQ);
   const pos = [], idx = [], S = secs.length, ph = Math.PI / n;
   secs.forEach(s => { for (let k = 0; k < n; k++) pos.push(...rp(s, ph + Math.PI * 2 * k / n, sq)); });
   for (let i = 0; i < S - 1; i++) for (let k = 0; k < n; k++) { const a = i * n + k, b = i * n + (k + 1) % n; idx.push(a, b, a + n, b, b + n, a + n); }
@@ -5698,11 +5736,12 @@ function loft(secs, n = 6, sq = 3) {
 // a model: parts with a colour each, merged into ONE non-indexed geometry with vertex colours (one draw per kind;
 // the instance colour multiplies on top, so wounds still darken). add(geo, col, p, r, s); limb(a, b, r0, r1, col);
 // sym(...) adds a part and its mirror (x -> -x); geo() merges.
-function model() {
+function model(smooth) {   // smooth (LAS-73): keep the primitives' own normals (round cylinders and balls, crisp boxes)
   const parts = [], c = new T3.Color(), up = new T3.Vector3(0, 1, 0), d = new T3.Vector3(), q = new T3.Quaternion();
   const put = (g, col) => {
+    const hadN = smooth && !!g.getAttribute('normal');
     g = g.index ? g.toNonIndexed() : g; if (g.getAttribute('uv')) g.deleteAttribute('uv');
-    g.computeVertexNormals(); c.set(col);
+    if (!hadN) g.computeVertexNormals(); c.set(col);
     const n = g.getAttribute('position').count, a = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; }
     g.setAttribute('color', new T3.BufferAttribute(a, 3)); parts.push(g); return g;
@@ -5712,7 +5751,7 @@ function model() {
       if (s) { if (typeof s === 'number') g.scale(s, s, s); else g.scale(s[0], s[1], s[2]); }
       g.rotateX(r[0]); g.rotateY(r[1]); g.rotateZ(r[2]); g.translate(p[0], p[1], p[2]); put(g, col); return M;
     },
-    limb(a, b, r0, r1, col, n = 5) {   // a tapered rod from a (radius r0) to b (radius r1)
+    limb(a, b, r0, r1, col, n = M.limbN || (LQ > 1.3 ? 7 : 5)) {   // a tapered rod from a (radius r0) to b (radius r1)
       d.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]); const L = d.length();
       const g = new T3.CylinderGeometry(r1, r0, L, n, 1); g.translate(0, L / 2, 0);
       q.setFromUnitVectors(up, d.normalize()); g.applyQuaternion(q); g.translate(a[0], a[1], a[2]); put(g, col); return M;
@@ -5722,7 +5761,7 @@ function model() {
   };
   return M;
 }
-const ico = (r, d = 0) => new T3.IcosahedronGeometry(r, d), cone = (r, h, n = 5) => new T3.ConeGeometry(r, h, n);
+const ico = (r, d = 0) => new T3.IcosahedronGeometry(r, d + (LQ > 1.3 ? 1 : 0)), cone = (r, h, n = 5) => new T3.ConeGeometry(r, h, n);
 const tris = g => (g.index ? g.index.count : g.getAttribute('position').count) / 3;
 
 // ---------- the creatures (face +z, feet at y = 0). Cold teal flesh, bone, kelp; eyes are a separate glowing mesh.
@@ -6025,18 +6064,25 @@ function buildScene() {
   // the tallest line on the island: a banded tower, a gallery with a rail, a lamp room that glows
   const H = RLOOK.lhH, lh = new T3.Group(); lh.position.set(0, RLOOK.plateau + RLOOK.deck, 0); scene.add(lh);
   const sd = RLOOK.stoneDark;
-  mk(lh, new T3.CylinderGeometry(0.95, 1.05, 0.5, 10), sd, { p: [0, 0.25, 0], cast: true });
-  mk(lh, new T3.CylinderGeometry(0.56, 0.86, H, 10, 4), '#b8b0a2', { p: [0, H / 2, 0], cast: true });
-  for (const y of [1.1, 2.9, 4.7]) mk(lh, new T3.CylinderGeometry(0.88 - (y + 0.8) / H * 0.3, 0.88 - y / H * 0.3, 0.8, 10), '#8e3b2b', { p: [0, y + 0.4, 0], cast: true });
+  mk(lh, new T3.CylinderGeometry(0.95, 1.05, 0.5, 20), sd, { p: [0, 0.25, 0], cast: true });
+  mk(lh, new T3.CylinderGeometry(0.56, 0.86, H, 20, 4), '#b8b0a2', { p: [0, H / 2, 0], cast: true });
+  for (const y of [1.1, 2.9, 4.7]) mk(lh, new T3.CylinderGeometry(0.88 - (y + 0.8) / H * 0.3, 0.88 - y / H * 0.3, 0.8, 20), '#8e3b2b', { p: [0, y + 0.4, 0], cast: true });
   for (let i = 0; i < 4; i++) { const a = i * 1.9 - 0.4; mk(lh, new T3.BoxGeometry(0.14, 0.24, 0.05), RLOOK.lamp, { glow: 1, p: [Math.cos(a) * 0.82 * (1 - i * 0.08), 0.9 + i * 1.45, Math.sin(a) * 0.82 * (1 - i * 0.08)], r: [0, Math.PI / 2 - a, 0] }); }
-  mk(lh, new T3.CylinderGeometry(0.9, 0.7, 0.22, 10), sd, { p: [0, H + 0.05, 0], cast: true });
+  mk(lh, new T3.CylinderGeometry(0.9, 0.7, 0.22, 20), sd, { p: [0, H + 0.05, 0], cast: true });
   mk(lh, new T3.TorusGeometry(0.86, 0.025, 3, 20), sd, { p: [0, H + 0.4, 0], r: [Math.PI / 2, 0, 0] });
   for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; mk(lh, new T3.BoxGeometry(0.03, 0.3, 0.03), sd, { p: [Math.cos(a) * 0.86, H + 0.27, Math.sin(a) * 0.86] }); }
-  const lampM = mk(lh, new T3.CylinderGeometry(0.5, 0.5, 0.8, 10), RLOOK.lamp, { glow: 1, p: [0, H + 0.55, 0] });
+  const lampM = mk(lh, new T3.CylinderGeometry(0.5, 0.5, 0.8, 20), RLOOK.lamp, { glow: 1, p: [0, H + 0.55, 0] });
   lampM.material = new T3.MeshBasicMaterial({ color: new T3.Color().setRGB(6, 5.4, 4.4) });
-  const shroud = new T3.Mesh(new T3.CylinderGeometry(0.58, 0.58, 0.95, 16, 1, true, 0.9, 4.5), new T3.MeshBasicMaterial({ color: '#050505', side: T3.DoubleSide }));
+  const shroud = new T3.Mesh(new T3.CylinderGeometry(0.58, 0.58, 0.95, 32, 1, true, 0.9, 4.5), new T3.MeshBasicMaterial({ color: '#050505', side: T3.DoubleSide }));
   shroud.position.set(0, RLOOK.plateau + RLOOK.deck + H + 0.55, 0); scene.add(shroud);
-  mk(lh, new T3.ConeGeometry(0.66, 0.75, 10), RLOOK.roof, { p: [0, H + 1.33, 0], cast: true });
+  mk(lh, new T3.ConeGeometry(0.66, 0.75, 20), RLOOK.roof, { p: [0, H + 1.33, 0], cast: true });
+  // LAS-73 dressing: stone courses up the tower, a door, corbels under the gallery, astragals round the lamp, a rod, rust runs
+  for (let y = 0.55; y < H - 0.1; y += 0.42) { const r = 0.86 - y / H * 0.3; mk(lh, new T3.CylinderGeometry(r + 0.012, r + 0.012, 0.03, 32), '#8f887c', { p: [0, y, 0] }); }
+  mk(lh, new T3.BoxGeometry(0.34, 0.62, 0.06), '#141010', { p: [0, 0.62, -0.86], r: [0.18, 0, 0] }); mk(lh, new T3.BoxGeometry(0.44, 0.06, 0.1), sd, { p: [0, 0.95, -0.88] });
+  for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; mk(lh, new T3.BoxGeometry(0.08, 0.2, 0.14), sd, { p: [Math.cos(a) * 0.66, H - 0.12, Math.sin(a) * 0.66], r: [0, -a, 0] }); }
+  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; mk(lh, new T3.BoxGeometry(0.035, 0.82, 0.035), '#1d1c1b', { p: [Math.cos(a) * 0.51, H + 0.55, Math.sin(a) * 0.51] }); }
+  mk(lh, new T3.CylinderGeometry(0.012, 0.02, 0.7, 6), '#3a3633', { p: [0, H + 2.05, 0] });
+  for (const [a, y, l] of [[-1.9, 4.6, 1.3], [-1.3, 2.9, 1.0], [-2.3, 1.6, 0.9], [-0.9, 5.4, 0.7]]) { const r = 0.875 - y / H * 0.3; mk(lh, new T3.BoxGeometry(0.06, l, 0.01), '#5a3020', { p: [Math.cos(a) * r, y - l / 2, Math.sin(a) * r], r: [0, Math.PI / 2 - a, 0] }); }
   mk(lh, new T3.IcosahedronGeometry(0.09, 0), RLOOK.amber, { glow: 1, p: [0, H + 1.78, 0] });
   const LAMP = [0, RLOOK.plateau + RLOOK.deck + H + 0.6, 0];
   const lhl = new T3.PointLight('#c9d6e8', 55, 19, 1.2); lhl.position.set(LAMP[0], LAMP[1] - 1.2, LAMP[2]); scene.add(lhl);   // LAS-65: cool fill from inside the tower, the town reads as a silhouette
@@ -6087,14 +6133,14 @@ function buildScene() {
   for (const k of KLIST) {
     const bodyMat = gaitMat(new T3.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.6, metalness: 0.1 }), k, false);
     const eyeMat = gaitMat(new T3.MeshBasicMaterial({ color: RLOOK.eye }), k, false);
-    const g = ART[k](), n = cap(k), body = inst(g, bodyMat, n);
+    LQ = RLOOK.creatureQ; const g = ART[k](); LQ = 1; const n = cap(k), body = inst(g, bodyMat, n);
     body.receiveShadow = true; body.castShadow = KIND[k] >= BOSSK;   // only bosses cast real shadows
     for (let i = 0; i < n; i++) body.setColorAt(i, col.setRGB(1, 1, 1));
     body.instanceColor.setUsage(T3.DynamicDrawUsage);
     T[k] = { body, eyes: inst(eyesGeo(k), eyeMat, n), tris: tris(g) };
   }
   const flapMat = new T3.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.7, side: T3.DoubleSide });
-  const wg = [ART.wing(1), ART.wing(-1)];
+  LQ = RLOOK.creatureQ; const wg = [ART.wing(1), ART.wing(-1)]; LQ = 1;
   T.flyer.wings = wg.map(g => inst(g, flapMat, 2000));
   T.flyer.tris += tris(wg[0]) * 2;
   // LAS-57: no warm pool, no wake ring: a lit creature is lit only by the beam itself
@@ -6179,7 +6225,7 @@ function buildSea(scene) {
   // the fragment shader. The water is black unless lit: the body colour is a trace of teal under the beam, the glitter is the beam's
   // specular (strongest along the core), foam shows only where the beam or a lamp reaches it. No sparkle texture, no reflection pass.
   const m = patch(new T3.MeshStandardMaterial({ color: RLOOK.sea, roughness: 0.35, metalness: 0.15, flatShading: true }), 'sea2', sh => {
-    sh.uniforms.uShore = U.shore; sh.uniforms.uBa = U.ba; sh.uniforms.uBa2 = U.ba2; sh.uniforms.uBw = U.bw; sh.uniforms.uBl = U.bl; sh.uniforms.uFl = U.fl; sh.uniforms.uBase = U.base; sh.uniforms.uDk = U.dk;
+    sh.uniforms.uShore = U.shore; sh.uniforms.uBa = U.ba; sh.uniforms.uBa2 = U.ba2; sh.uniforms.uBw = U.bw; sh.uniforms.uBl = U.bl; sh.uniforms.uFl = U.fl; sh.uniforms.uFr = U.fr; sh.uniforms.uBase = U.base; sh.uniforms.uDk = U.dk;
     sh.uniforms.uLamp = BU.uLamp; sh.uniforms.uBraz = R.brazU;
     const GER = 'vec3 gerst(vec2 d,float st,float wl,vec3 p,inout vec3 Tt,inout vec3 Bb){float k=6.2832/wl,c=sqrt(9.8/k);vec2 dn=normalize(d);float f=k*(dot(dn,p.xz)-c*uT),a=st/k;' +
       'Tt+=vec3(-dn.x*dn.x*st*sin(f),dn.x*st*cos(f),-dn.x*dn.y*st*sin(f));Bb+=vec3(-dn.x*dn.y*st*sin(f),dn.y*st*cos(f),-dn.y*dn.y*st*sin(f));' +
@@ -6188,7 +6234,7 @@ function buildSea(scene) {
     vAfter(sh, 'begin_vertex', `{ vec3 p=position; vec3 Tt=vec3(1.,0.,0.),Bb=vec3(0.,0.,1.),q=p; float A=0.42*smoothstep(11.,27.,length(p.xz));
       q+=gerst(vec2(1.,.3),.16*A,22.,p,Tt,Bb); q+=gerst(vec2(-.4,1.),.13*A,13.,p,Tt,Bb); q+=gerst(vec2(.7,-.8),.10*A,7.5,p,Tt,Bb); q+=gerst(vec2(-1.,-.2),.08*A,4.2,p,Tt,Bb);
       q.y-=0.12; transformed=q; vW=q; vGN=normalize(cross(Bb,Tt)); }`);
-    fHead(sh, 'varying vec3 vW;\nvarying vec3 vGN;\nuniform vec3 uLamp;\nuniform vec3 uBraz[4];\nuniform float uShore,uBa,uBa2,uBw,uBl,uFl,uBase,uDk;\nfloat vLm=0.0,vBs=0.0;\n' + BMASK + GLSL_NOISE +
+    fHead(sh, 'varying vec3 vW;\nvarying vec3 vGN;\nuniform vec3 uLamp;\nuniform vec3 uBraz[4];\nuniform float uShore,uBa,uBa2,uBw,uBl,uFl,uFr,uBase,uDk;\nfloat vLm=0.0,vBs=0.0;\n' + BMASK + GLSL_NOISE +
       '\nfloat shoreD(vec2 p){return length(p)-uShore+0.35*sin(atan(p.y,p.x)*7.0)+0.2*sin(atan(p.y,p.x)*13.0+1.3);}\n' +
       'vec2 ripple(vec2 p,float t){vec2 g=vec2(0.);for(int i=0;i<9;i++){float fi=float(i);float an=fi*2.399+0.7;vec2 d=vec2(cos(an),sin(an));float k=0.9+fi*0.62,w=sqrt(9.8*k)*0.55;float s=0.075/(1.+fi*0.45);g+=d*k*s*cos(dot(d,p)*k-w*t+fi*1.7);}return g;}\n' +
       'float azCore(vec2 hz,float a){if(a>8.0)return 0.0;return smoothstep(0.9914,0.9995,dot(hz,vec2(cos(a),sin(a))));}');
@@ -6197,7 +6243,7 @@ function buildSea(scene) {
       float band=0.5+0.5*sin(d*3.2-uT*2.2+n*3.0);
       float foam=smoothstep(2.6,0.0,d)*smoothstep(0.25,0.75,n*0.7+band*0.5)*(0.55+0.45*smoothstep(1.2,0.0,d));
       foam+=smoothstep(0.26,0.4,vW.y)*smoothstep(0.55,0.8,n)*0.5; vFoam=clamp(foam,0.0,1.0);
-      vec2 q=vW.xz; float rq=length(q); vLm=max(bmask(q,uBa,uBw,uBl),bmask(q,uBa2,uBw,uBl)); vLm=max(vLm,uFl*smoothstep(uBl+1.0,uBl-1.0,rq));
+      vec2 q=vW.xz; float rq=length(q); vLm=max(bmask(q,uBa,uBw,uBl),bmask(q,uBa2,uBw,uBl)); vLm=max(vLm,uFl*smoothstep(uFr+2.5,uFr-2.5,rq));
       for(int i=0;i<4;i++){ vBs=max(vBs,smoothstep(4.5,0.0,length(uBraz[i].xz-q))*step(0.0,uBraz[i].y)); } }`);
     sh.fragmentShader = 'float vFoam=0.0;\n' + sh.fragmentShader;
     fAfter(sh, 'opaque_fragment', `{
@@ -6466,33 +6512,33 @@ function buildCitadel(scene, cit) {
   const stages = [0, 1, 2].map(() => { const g = new T3.Group(); g.position.y = P; scene.add(g); return g; });
   // stage 0: sharpened stakes on an earth bank, a plank walk behind them
   const [s0, s1, s2] = stages;
-  lathe([[2.7, 0], [3.4, 0], [3.0, 0.45], [2.7, 0.45]].reverse(), 28, '#3d3a33', { cast: true }, s0);
+  lathe([[2.7, 0], [3.4, 0], [3.0, 0.45], [2.7, 0.45]].reverse(), 56, '#3d3a33', { cast: true }, s0);
   for (let i = 0; i < 64; i++) { const a = (i + 0.5) / 64 * Math.PI * 2; if (gate(a)) continue; const h = 1.05 + jr() * 0.25;
     mk(s0, new T3.CylinderGeometry(0.075, 0.09, h, 5), i % 3 ? MC.wood : MC.woodD, { p: [Math.cos(a) * 3.0, 0.4 + h / 2, Math.sin(a) * 3.0], r: [0, jr() * 3, 0], cast: true });
     mk(s0, new T3.ConeGeometry(0.075, 0.2, 5), MC.woodD, { p: [Math.cos(a) * 3.0, 0.5 + h, Math.sin(a) * 3.0] }); }
-  lathe([[2.62, 1.0], [2.9, 1.0], [2.9, 1.08], [2.62, 1.08]].reverse(), 28, MC.woodD, {}, s0);
+  lathe([[2.62, 1.0], [2.9, 1.0], [2.9, 1.08], [2.62, 1.08]].reverse(), 56, MC.woodD, {}, s0);
   // stage 1+: the curtain wall: a battered ring (sloped foot, straight face, wall-walk), a string course, arrow slits
   for (const sg of [s1, s2]) {
-    lathe([[2.72, 0], [3.42, 0], [3.1, 0.55], [3.06, RLOOK.walk], [2.72, RLOOK.walk], [2.72, 0]].reverse(), 28, st, { cast: true }, sg);
-    lathe([[3.14, 0.52], [3.2, 0.52], [3.2, 0.62], [3.12, 0.62]].reverse(), 28, sd, {}, sg);
+    lathe([[2.72, 0], [3.42, 0], [3.1, 0.55], [3.06, RLOOK.walk], [2.72, RLOOK.walk], [2.72, 0]].reverse(), 56, st, { cast: true }, sg);
+    lathe([[3.14, 0.52], [3.2, 0.52], [3.2, 0.62], [3.12, 0.62]].reverse(), 56, sd, {}, sg);
     for (let i = 0; i < 20; i++) { const a = (i + 0.25) / 20 * Math.PI * 2; if (Math.abs(a - Math.PI / 2) < 0.45) continue;
       mk(sg, new T3.BoxGeometry(0.06, 0.34, 0.05), '#191312', { p: [Math.cos(a) * 3.08, 1.15, Math.sin(a) * 3.08], r: [0, Math.PI / 2 - a, 0] }); }
   }
   merlonRing(0, 0, 2.95, RLOOK.walk, 30, 0.34, 0.32, gate, 1);
   // stage 2: the high inner wall (concentric castle): taller, set back, its own battlements and slits
   const HW = RLOOK.walk + 1.05;
-  lathe([[2.42, 0], [2.78, 0], [2.7, HW], [2.42, HW], [2.42, 0]].reverse(), 28, '#77726b', { cast: true }, s2);
-  lathe([[2.7, HW - 0.22], [2.78, HW - 0.22], [2.78, HW - 0.1], [2.7, HW - 0.1]].reverse(), 28, sd, {}, s2);
+  lathe([[2.42, 0], [2.78, 0], [2.7, HW], [2.42, HW], [2.42, 0]].reverse(), 56, '#77726b', { cast: true }, s2);
+  lathe([[2.7, HW - 0.22], [2.78, HW - 0.22], [2.78, HW - 0.1], [2.7, HW - 0.1]].reverse(), 56, sd, {}, s2);
   for (let i = 0; i < 16; i++) { const a = (i + 0.5) / 16 * Math.PI * 2; if (gate(a)) continue;
     mk(s2, new T3.BoxGeometry(0.06, 0.3, 0.05), '#191312', { p: [Math.cos(a) * 2.73, HW - 0.55, Math.sin(a) * 2.73], r: [0, Math.PI / 2 - a, 0] }); }
   merlonRing(0, 0, 2.62, HW, 26, 0.3, 0.3, gate, 2);
   // corner towers: round, a battered foot, corbels under a crenellated top, a tall roof with a finial
   for (let i = 0; i < 4; i++) {
     const a = Math.PI / 4 + i * Math.PI / 2, x = Math.cos(a) * 3.05, z = Math.sin(a) * 3.05, H = i < 2 ? 3.3 : 3.0;
-    mk(cit, new T3.CylinderGeometry(0.66, 0.86, 0.7, 10), st, { p: [x, 0.35, z], cast: true });
-    mk(cit, new T3.CylinderGeometry(0.62, 0.66, H - 0.7, 10), st, { p: [x, 0.7 + (H - 0.7) / 2, z], cast: true });
+    mk(cit, new T3.CylinderGeometry(0.66, 0.86, 0.7, 20), st, { p: [x, 0.35, z], cast: true });
+    mk(cit, new T3.CylinderGeometry(0.62, 0.66, H - 0.7, 20), st, { p: [x, 0.7 + (H - 0.7) / 2, z], cast: true });
     for (let k = 0; k < 10; k++) { const b = k / 10 * Math.PI * 2; mk(cit, new T3.BoxGeometry(0.12, 0.18, 0.14), sd, { p: [x + Math.cos(b) * 0.66, H - 0.05, z + Math.sin(b) * 0.66], r: [0, -b, 0] }); }
-    mk(cit, new T3.CylinderGeometry(0.78, 0.72, 0.16, 10), sd, { p: [x, H + 0.08, z], cast: true });
+    mk(cit, new T3.CylinderGeometry(0.78, 0.72, 0.16, 20), sd, { p: [x, H + 0.08, z], cast: true });
     merlonRing(x, z, 0.72, H + 0.16, 8, 0.2, 0.22);
     ROOF.push({ p: [x, H + 0.16, z], h: 1.35 - (i % 2) * 0.15, r: 0.7, th: i === 3 ? 0.45 : i === 2 ? 0.22 : -1 });
     win(x + Math.cos(a) * 0.64, 1.5, z + Math.sin(a) * 0.64, a); win(x + Math.cos(a + 0.9) * 0.63, 2.4, z + Math.sin(a + 0.9) * 0.63, a + 0.9);
@@ -6526,15 +6572,15 @@ function buildCitadel(scene, cit) {
     win(x + Math.cos(a) * 0.29, h * 0.55, z + Math.sin(a) * 0.29, a);
   }
   // the keep: buttressed drum, two rows of windows, corbels and a battlemented gun deck (the mounts stand on it)
-  mk(cit, new T3.CylinderGeometry(1.52, 1.78, 0.6, 12), st, { p: [0, 0.3, 0], cast: true });
-  mk(cit, new T3.CylinderGeometry(1.5, 1.62, DECK - 0.75, 12), st, { p: [0, 0.6 + (DECK - 0.75) / 2 - 0.15, 0], cast: true });
+  mk(cit, new T3.CylinderGeometry(1.52, 1.78, 0.6, 24), st, { p: [0, 0.3, 0], cast: true });
+  mk(cit, new T3.CylinderGeometry(1.5, 1.62, DECK - 0.75, 24), st, { p: [0, 0.6 + (DECK - 0.75) / 2 - 0.15, 0], cast: true });
   for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + Math.PI / 6;
     mk(cit, new T3.BoxGeometry(0.34, DECK - 1.0, 0.36), st, { p: [Math.cos(a) * 1.6, (DECK - 1.0) / 2, Math.sin(a) * 1.6], r: [0, -a, 0], cast: true });
     mk(cit, new T3.BoxGeometry(0.34, 0.4, 0.5), st, { p: [Math.cos(a) * 1.68, 0.2, Math.sin(a) * 1.68], r: [0, -a, 0] }); }
-  lathe([[1.52, 2.0], [1.6, 2.0], [1.6, 2.1], [1.52, 2.1]].reverse(), 12, sd, {});
+  lathe([[1.52, 2.0], [1.6, 2.0], [1.6, 2.1], [1.52, 2.1]].reverse(), 24, sd, {});
   for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; mk(cit, new T3.BoxGeometry(0.14, 0.2, 0.2), sd, { p: [Math.cos(a) * 1.6, DECK - 0.42, Math.sin(a) * 1.6], r: [0, -a, 0] }); }
-  mk(cit, new T3.CylinderGeometry(1.78, 1.66, 0.36, 16), sd, { p: [0, DECK - 0.18, 0], cast: true });
-  mk(cit, new T3.CylinderGeometry(1.7, 1.7, 0.02, 16), '#57524c', { p: [0, DECK + 0.005, 0] });   // the deck floor
+  mk(cit, new T3.CylinderGeometry(1.78, 1.66, 0.36, 32), sd, { p: [0, DECK - 0.18, 0], cast: true });
+  mk(cit, new T3.CylinderGeometry(1.7, 1.7, 0.02, 32), '#57524c', { p: [0, DECK + 0.005, 0] });   // the deck floor
   merlonRing(0, 0, 1.68, DECK, 14, 0.3, 0.3, a => Math.abs(a - Math.PI / 2) < 0.2 || Math.abs(a - Math.PI / 2 - 0.6) < 0.18 || Math.abs(a - Math.PI / 2 + 0.6) < 0.18);
   for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + 0.2; win(Math.cos(a) * 1.58, 1.4 + (i % 2) * 0.12, Math.sin(a) * 1.58, a, 1); if (i % 2) win(Math.cos(a + 0.5) * 1.55, 2.75, Math.sin(a + 0.5) * 1.55, a + 0.5); }
   // (LAS-26: the old spire at the back of the deck is gone: the lighthouse rises from the deck's centre instead)
@@ -6555,10 +6601,10 @@ function buildCitadel(scene, cit) {
   for (let i = 0; i < WIN.length; i++) winM.setColorAt(i, new T3.Color(RLOOK.lamp));
   // roofs (+ a broken stub with a jagged top shown once it falls)
   for (const r of ROOF) {
-    r.mesh = mk(dyn, new T3.ConeGeometry(r.r + 0.08, r.h, 10), RLOOK.roof, { p: [r.p[0], r.p[1] + r.h / 2, r.p[2]], cast: true });
+    r.mesh = mk(dyn, new T3.ConeGeometry(r.r + 0.08, r.h, 20), RLOOK.roof, { p: [r.p[0], r.p[1] + r.h / 2, r.p[2]], cast: true });
     if (r.spire) mk(dyn, new T3.IcosahedronGeometry(0.08, 0), RLOOK.amber, { glow: 1, p: [r.p[0], r.p[1] + r.h + 0.05, r.p[2]] });
     else r.fin = mk(dyn, new T3.ConeGeometry(0.04, 0.4, 4), sd, { p: [r.p[0], r.p[1] + r.h + 0.15, r.p[2]] });
-    if (r.th > 0) { r.stub = mk(dyn, rockify(new T3.CylinderGeometry(r.r * 0.5, r.r + 0.05, r.h * 0.35, 10, 1), 0.25, r.p[0]), RLOOK.roof, { p: [r.p[0], r.p[1] + r.h * 0.17, r.p[2]], r: [0.25, 0, 0.15], cast: true }); r.stub.visible = false; }
+    if (r.th > 0) { r.stub = mk(dyn, rockify(new T3.CylinderGeometry(r.r * 0.5, r.r + 0.05, r.h * 0.35, 20, 1), 0.25, r.p[0]), RLOOK.roof, { p: [r.p[0], r.p[1] + r.h * 0.17, r.p[2]], r: [0.25, 0, 0.15], cast: true }); r.stub.visible = false; }
   }
   // cracks: jagged dark seams on the sea-facing stone, in stages
   const crack = (x, y, z, a, len, th) => { const g = new T3.Group(); let cy = y, cx = 0;
@@ -6603,7 +6649,7 @@ function buildCitadel(scene, cit) {
     if (Math.abs(a - Math.PI / 2) < 0.55 || q < 0.3 || q > Math.PI / 2 - 0.3) continue; GA.push(a); }
   const GUN_A = GA.map((a, i) => [a, (i * 7) % GA.length]).sort((p, q) => p[1] - q[1]).map(p => p[0]);
   const carG = new T3.BoxGeometry(0.28, 0.12, 0.36); carG.translate(0, 0.06, 0);
-  const barG = T3.mergeGeometries([new T3.CylinderGeometry(0.05, 0.07, 0.5, 8), (() => { const c = new T3.CylinderGeometry(0.075, 0.075, 0.05, 8); c.translate(0, -0.25, 0); return c; })()]);
+  const barG = T3.mergeGeometries([new T3.CylinderGeometry(0.05, 0.07, 0.5, 16), (() => { const c = new T3.CylinderGeometry(0.075, 0.075, 0.05, 16); c.translate(0, -0.25, 0); return c; })()]);
   barG.rotateX(Math.PI / 2 - 0.12); barG.translate(0, 0.2, 0.12);
   const gunInst = (g, m) => { const im = new T3.InstancedMesh(g, m, GUN_A.length); im.count = 0; im.castShadow = true; dyn.add(im); return im; };
   const guns = { a: GUN_A, car: gunInst(carG, mat(MC.woodD)), bar: gunInst(barG, mat(MC.bronze, { rough: 0.45, metal: 0.55 })), n: -1, st: -1 };
@@ -6938,16 +6984,27 @@ const TC = { stone: '#5a5651', stoneD: '#38393b', stoneL: '#77716a', iron: '#262
 const hj = i => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 const TOWNC = {}, TQ = new T3.Quaternion();
 // the builder's pen. p = [x, y, z], r = [rx, ry, rz] (radians); all models face +z (the sea) and stand on y = 0 (the plinth's top)
-function townPen(S, G) {
-  const H = { gn: 0 };
-  H.box = (w, h, d, c, p, r) => { S.add(new T3.BoxGeometry(w, h, d), c, p, r); return H; };
-  H.cyl = (rt, rb, h, n, c, p, r) => { S.add(new T3.CylinderGeometry(rt, rb, h, n), c, p, r); return H; };
-  H.cone = (r0, h, n, c, p, r) => { S.add(new T3.ConeGeometry(r0, h, n), c, p, r); return H; };
-  H.ball = (rad, c, p, sc) => { S.add(ico(1), c, p, [0, 0, 0], sc || [rad, rad, rad]); return H; };
+// LAS-73: q = detail (1 = the old Polygon kit, 2 = the field, 3.5 = a card portrait): round parts get q x the segments (4-sided
+// roofs and 6-sided pots keep their facets below q 3), balls subdivide; boxes are bevelled with a darker lip at q >= 2.
+function townPen(S, G, q = 2) {
+  const H = { gn: 0, q }, sn = n => n <= 4 || (n <= 6 && q < 3) ? n : Math.round(n * q);
+  S.limbN = G.limbN = q >= 2 ? 8 : 5;
+  const dk = new T3.Color(), dark = (c, k) => '#' + dk.set(c).multiplyScalar(k).getHexString();
+  H.box = (w, h, d, c, p, r) => { S.add(new T3.BoxGeometry(w, h, d), c, p, r);
+    if (q >= 2 && Math.min(w, h, d) > 0.15) { const lh = Math.min(0.05, h * 0.12), g = new T3.BoxGeometry(w + 0.03, lh, d + 0.03); g.translate(0, h / 2 - lh / 2, 0); S.add(g, dark(c, 0.72), p, r); }   // a cap stone / lip
+    return H; };
+  H.cyl = (rt, rb, h, n, c, p, r) => { S.add(new T3.CylinderGeometry(rt, rb, h, sn(n)), c, p, r); return H; };
+  H.cone = (r0, h, n, c, p, r) => { S.add(new T3.ConeGeometry(r0, h, sn(n)), c, p, r); return H; };
+  H.ball = (rad, c, p, sc) => { S.add(ico(1, q >= 3 ? 2 : q >= 2 ? 1 : 0), c, p, [0, 0, 0], sc || [rad, rad, rad]); return H; };
+  // dressing: stone courses round a drum, rope (a sagging tube), rust streaks down a face, a coil of rope
+  H.courses = (r0, r1, y0, y1, k, c, p) => { for (let i = 1; i < k; i++) { const f = i / k, rr = r0 + (r1 - r0) * f; S.add(new T3.CylinderGeometry(rr + 0.02, rr + 0.02, 0.035, sn(10)), c, [p[0], y0 + (y1 - y0) * f, p[2]]); } return H; };
+  H.rope = (a, b, sag, c = '#5e4a33') => { const k = 6; let pa = a; for (let i = 1; i <= k; i++) { const f = i / k, pb = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f - sag * 4 * f * (1 - f), a[2] + (b[2] - a[2]) * f]; S.limb(pa, pb, 0.022, 0.022, c); pa = pb; } return H; };
+  H.streak = (x, y, z, ry, len, c = TC.rust) => { S.add(new T3.BoxGeometry(0.05, len, 0.012), c, [x, y - len / 2, z], [0, ry, 0]); return H; };
+  H.coil = (x, y, z, rad = 0.2, c = '#5e4a33') => { S.add(new T3.TorusGeometry(rad, 0.035, sn(4), sn(10)), c, [x, y + 0.04, z], [Math.PI / 2, 0, 0]); S.add(new T3.TorusGeometry(rad * 0.75, 0.035, sn(4), sn(9)), c, [x, y + 0.1, z], [Math.PI / 2, 0, 0]); return H; };
   H.limb = (a, b, r0, r1, c) => { S.limb(a, b, r0, r1, c); return H; };
   H.ring = (n, rad, fn) => { for (let k = 0; k < n; k++) { const a = (k + 0.5) / n * Math.PI * 2; fn(Math.cos(a) * rad, Math.sin(a) * rad, Math.PI / 2 - a, k); } return H; };
   H.gbox = (w, h, d, c, p, r) => { G.add(new T3.BoxGeometry(w, h, d), c, p, r); H.gn++; return H; };
-  H.gcyl = (rt, rb, h, n, c, p, r) => { G.add(new T3.CylinderGeometry(rt, rb, h, n), c, p, r); H.gn++; return H; };
+  H.gcyl = (rt, rb, h, n, c, p, r) => { G.add(new T3.CylinderGeometry(rt, rb, h, sn(n)), c, p, r); H.gn++; return H; };
   H.gball = (rad, c, p) => { G.add(ico(1), c, p, [0, 0, 0], [rad, rad, rad]); H.gn++; return H; };
   return H;
 }
@@ -7093,12 +7150,285 @@ const TOWN_BUILD = {
     return sp;
   },
 };
-function townLook(id, lv) {   // the cached geometry for (id, lv)
-  const k = id + lv; let C = TOWNC[k]; if (C) return C;
-  const S = model(), G = model(), H = townPen(S, G);
-  H.box(2.5, 1.2, 1.9, TC.stoneD, [0, -0.58, 0]).box(2.4, 0.14, 1.8, TC.stone, [0, 0.04, 0]);   // the plinth, sunk into the rock below its top
-  const sp = TOWN_BUILD[id](lv, H);
+// LAS-73: the 13 Forge buildings (design/island-town.md) get models too, so every card has a portrait and every slot a
+// building; the sim's ids (battery, boat) point at the first models' builders. Same pen, same rules (face +z, stand on y 0).
+Object.assign(TOWN_BUILD, {
+  lamp2(lv, H) {   // a slim stone lamp tower; a pale lantern room that grows a lens and a second gallery
+    const h = [2.6, 3.2, 3.8][lv - 1], sp = { h: h + 1.6, fires: [], lamps: [] };
+    H.cyl(0.42, 0.62, h, 10, TC.stone, [0, h / 2, 0]).courses(0.62, 0.42, 0.1, h, 5, TC.stoneD, [0, 0, 0]).cyl(0.62, 0.5, 0.16, 10, TC.stoneD, [0, h + 0.08, 0]);
+    H.ring(8, 0.6, (x, z, ry) => H.box(0.04, 0.32, 0.04, TC.iron, [x, h + 0.32, z], [0, ry, 0]));
+    H.cyl(0.3, 0.3, 0.5, 10, TC.iron, [0, h + 0.42, 0]).gcyl(0.26, 0.26, 0.42, 10, TC.lamp, [0, h + 0.42, 0]).cone(0.42, 0.5, 10, TC.rustD, [0, h + 0.92, 0]).limb([0, h + 1.1, 0], [0, h + 1.5, 0], 0.02, 0.01, TC.iron);
+    H.box(0.3, 0.55, 0.05, TC.black, [0, 0.28, 0.6]).streak(0.22, h - 0.2, 0.5, 0, 1.2).streak(-0.3, h * 0.6, 0.48, 0, 0.8);
+    sp.lamps.push([0, h + 0.42, 0.1, 1.6]);
+    if (lv >= 2) H.cyl(0.36, 0.36, 0.08, 10, TC.brass, [0, h + 0.2, 0]).box(0.5, 0.06, 0.06, TC.iron, [0.35, h - 0.3, 0.3], [0, 0.7, 0]);
+    if (lv === 3) { H.cyl(0.66, 0.66, 0.06, 10, TC.iron, [0, h * 0.6, 0]); H.ring(8, 0.66, (x, z, ry) => H.box(0.03, 0.25, 0.03, TC.iron, [x, h * 0.6 + 0.15, z], [0, ry, 0])); H.gbox(0.08, 0.2, 0.05, TC.lamp, [0, h * 0.45, 0.55]); }
+    return sp;
+  },
+  beacon(lv, H) {   // a black sea stack with a fire basket on top
+    const h = [2.0, 2.5, 3.0][lv - 1], sp = { h: h + 1.5, fires: [], lamps: [] };
+    H.cyl(0.45, 0.85, h, 7, TC.stoneD, [0, h / 2, 0], [0, 0.3, 0]).cyl(0.95, 1.0, 0.3, 7, TC.stone, [0.1, 0.15, -0.1], [0, 0.9, 0]).ball(0.35, TC.stoneD, [0.6, 0.25, 0.4], [0.4, 0.3, 0.35]).ball(0.3, TC.stone, [-0.6, 0.2, 0.3], [0.35, 0.25, 0.3]);
+    for (let k = 0; k < 4; k++) { const a = k * 1.57 + 0.4; H.limb([Math.cos(a) * 0.12, h, Math.sin(a) * 0.12], [Math.cos(a) * 0.48, h + 0.55, Math.sin(a) * 0.48], 0.03, 0.03, TC.iron); }
+    H.cyl(0.5, 0.25, 0.3, 8, TC.iron, [0, h + 0.4, 0]).gcyl(0.42, 0.42, 0.03, 8, TC.coal, [0, h + 0.54, 0]); sp.fires.push([0, h + 0.75, 0, 1.2 + 0.25 * lv]);
+    H.rope([0.5, 0.3, 0.5], [0.3, h * 0.7, 0.35], 0.1).streak(0.35, h - 0.1, 0.45, 0, h * 0.6, TC.black);
+    if (lv >= 2) H.cyl(0.22, 0.26, 0.42, 8, TC.woodD, [-0.7, 0.42, -0.35]).cyl(0.22, 0.26, 0.42, 8, TC.woodD, [-0.35, 0.42, -0.65]);   // whale-oil casks
+    if (lv === 3) for (const s of [-1, 1]) H.limb([s * 0.9, 0, 0.5], [s * 0.8, 1.6, 0.5], 0.04, 0.03, TC.iron).gbox(0.14, 0.2, 0.14, TC.coal, [s * 0.8, 1.7, 0.5]);
+    return sp;
+  },
+  ballista(lv, H) {   // a timber tower with a great crossbow aimed at the sea
+    const h = [1.4, 1.8, 2.2][lv - 1], sp = { h: h + 1.4, fires: [], lamps: [] };
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) H.limb([sx * 0.75, 0, sz * 0.65], [sx * 0.55, h, sz * 0.5], 0.08, 0.07, TC.woodD);
+    H.box(1.4, 0.12, 1.2, TC.wood, [0, h, 0]).box(1.2, 0.06, 0.06, TC.woodD, [0, h * 0.5, 0.58]).box(1.2, 0.06, 0.06, TC.woodD, [0, h * 0.5, -0.58]);
+    const y = h + 0.35; H.cyl(0.1, 0.14, 0.3, 8, TC.iron, [0, h + 0.16, 0]).box(0.16, 0.12, 1.6, TC.woodD, [0, y, 0.2]);
+    for (const s of [-1, 1]) H.limb([0, y, 0.75], [s * 0.85, y + 0.05, 0.45], 0.06, 0.035, TC.wood).rope([s * 0.85, y + 0.05, 0.45], [0, y + 0.02, -0.45], 0.02, TC.boneD);
+    H.limb([0, y + 0.08, -0.4], [0, y + 0.08, 1.15], 0.03, 0.03, TC.iron).cone(0.06, 0.2, 6, TC.rust, [0, y + 0.08, 1.2], [Math.PI / 2, 0, 0]);
+    H.cyl(0.08, 0.08, 0.5, 8, TC.iron, [0.3, y - 0.05, -0.55], [0, 0, Math.PI / 2]);
+    for (let k = 0; k < 2 + lv; k++) H.limb([-0.55 + k * 0.08, h + 0.07, -0.4], [-0.5 + k * 0.08, h + 0.07, 0.4], 0.02, 0.02, TC.woodD);   // spare bolts
+    if (lv >= 2) H.box(1.5, 0.3, 0.08, TC.woodD, [0, h + 0.2, 0.62]);
+    if (lv === 3) { H.cone(0.95, 0.6, 4, TC.rustD, [0, h + 1.35, -0.2], [0, Math.PI / 4, 0]); for (const s of [-1, 1]) H.limb([s * 0.55, h, -0.5], [s * 0.55, h + 1.1, -0.5], 0.05, 0.05, TC.woodD); H.gbox(0.16, 0.22, 0.16, TC.lamp, [0.55, h + 0.8, -0.4]); sp.lamps.push([0.55, h + 0.8, -0.4, 1.2]); }
+    return sp;
+  },
+  mortar(lv, H) {   // a stone-lined pit with a squat mortar tipped at the sky, shells stacked by it
+    const sp = { h: 2, fires: [], lamps: [] };
+    H.cyl(1.0, 1.05, 0.45, 12, TC.stone, [0, 0.22, 0]).cyl(0.82, 0.82, 0.47, 12, TC.black, [0, 0.24, 0]).courses(1.05, 1.0, 0, 0.45, 3, TC.stoneD, [0, 0, 0]);
+    const m = s => { H.box(0.6 * s, 0.25 * s, 0.6 * s, TC.woodD, [0, 0.38, 0]).cyl(0.26 * s, 0.32 * s, 0.6 * s, 12, TC.iron, [0, 0.62 + 0.15 * s, 0.1], [-0.5, 0, 0]).cyl(0.3 * s, 0.3 * s, 0.06, 12, TC.rustD, [0, 0.9 + 0.2 * s, 0.25], [-0.5, 0, 0]).cyl(0.18 * s, 0.18 * s, 0.04, 12, TC.black, [0, 0.93 + 0.2 * s, 0.27], [-0.5, 0, 0]); };
+    m([1, 1.2, 1.4][lv - 1]);
+    for (let k = 0; k < 2 + lv * 2; k++) H.ball(0.1, TC.iron, [0.6 + (k % 3) * 0.17 - 0.1, 0.55 + Math.floor(k / 3) * 0.15, -0.55 + (k % 2) * 0.1]);
+    if (lv >= 2) H.cyl(0.18, 0.2, 0.36, 8, TC.wood, [-0.65, 0.66, -0.4]).cyl(0.18, 0.2, 0.36, 8, TC.wood, [-0.5, 0.66, -0.7]);
+    if (lv === 3) { H.cyl(0.14, 0.18, 0.2, 8, TC.iron, [-0.7, 0.55, 0.45]); sp.fires.push([-0.7, 0.72, 0.45, 0.5]); }
+    return sp;
+  },
+  tesla(lv, H) {   // an iron mast in a stone collar, wound coils and a cold glass bulb at the top
+    const h = [2.3, 2.8, 3.3][lv - 1], sp = { h: h + 1.2, fires: [], lamps: [] };
+    H.cyl(0.55, 0.7, 0.5, 10, TC.stone, [0, 0.25, 0]).cyl(0.12, 0.2, h, 10, TC.iron, [0, h / 2 + 0.4, 0]);
+    for (let k = 0; k < 3 + lv; k++) H.cyl(0.26 - k * 0.025, 0.26 - k * 0.025, 0.12, 12, k % 2 ? TC.rust : TC.rustD, [0, 0.8 + k * 0.32, 0]);
+    H.cyl(0.36, 0.36, 0.05, 12, TC.iron, [0, h + 0.4, 0]).gball(0.18, '#bcd6e4', [0, h + 0.62, 0]); sp.lamps.push([0, h + 0.62, 0, 1.4]);
+    for (const s of [-1, 1]) H.limb([s * 0.5, 0.5, 0], [s * 0.2, h * 0.7, 0], 0.03, 0.02, TC.iron);
+    H.rope([0.6, 0.5, 0.2], [0.15, 1.2, 0.1], 0.08, TC.iron);
+    if (lv >= 2) for (let k = 0; k < 4; k++) { const a = k * 1.57 + 0.78; H.limb([Math.cos(a) * 0.7, 0, Math.sin(a) * 0.7], [Math.cos(a) * 0.7, 0.9, Math.sin(a) * 0.7], 0.03, 0.025, TC.iron).ball(0.06, '#9aa8b0', [Math.cos(a) * 0.7, 0.95, Math.sin(a) * 0.7]); }
+    if (lv === 3) H.cyl(0.5, 0.5, 0.04, 12, TC.iron, [0, h * 0.75, 0]).cyl(0.42, 0.42, 0.04, 12, TC.iron, [0, h * 0.85, 0]);
+    return sp;
+  },
+  winch(lv, H) {   // a whaler's winch: a timber frame, a rope drum, a harpoon gun on a swivel
+    const sp = { h: 2.2, fires: [], lamps: [] };
+    H.box(1.8, 0.14, 1.4, TC.wood, [0, 0.12, 0]);
+    for (const s of [-1, 1]) H.box(0.14, 1.0, 0.5, TC.woodD, [s * 0.6, 0.6, -0.3]);
+    H.cyl(0.26, 0.26, 1.06, 12, TC.woodD, [0, 0.85, -0.3], [0, 0, Math.PI / 2]);
+    for (let k = 0; k < 6; k++) H.cyl(0.29, 0.29, 0.05, 12, '#5e4a33', [-0.4 + k * 0.16, 0.85, -0.3], [0, 0, Math.PI / 2]);   // the rope on the drum
+    for (const s of [-1, 1]) H.limb([s * 0.68, 0.85, -0.3], [s * 0.68, 0.85, -0.75], 0.03, 0.03, TC.iron).limb([s * 0.68, 0.85, -0.75], [s * 0.68, 0.55, -0.85], 0.03, 0.03, TC.iron);
+    H.cyl(0.08, 0.12, 0.6, 8, TC.iron, [0.25, 0.42, 0.45]).cyl(0.06, 0.08, 1.1, 10, TC.iron, [0.25, 0.8, 0.85], [Math.PI / 2 - 0.25, 0, 0]).cone(0.08, 0.3, 6, TC.rust, [0.25, 0.93, 1.45], [Math.PI / 2 - 0.25, 0, 0]);
+    H.rope([0.2, 0.85, -0.05], [0.25, 0.9, 1.3], 0.25);
+    if (lv >= 2) H.coil(-0.6, 0.19, 0.4, 0.22);
+    if (lv === 3) { H.limb([-0.75, 0.2, -0.65], [-0.75, 2.2, -0.65], 0.05, 0.04, TC.woodD).limb([-0.75, 2.1, -0.65], [0, 1.6, 0.2], 0.04, 0.03, TC.woodD).rope([0, 1.6, 0.2], [0.1, 0.9, 0.3], 0.02, TC.iron); H.gbox(0.14, 0.2, 0.14, TC.lamp, [-0.75, 1.8, -0.5]); sp.lamps.push([-0.75, 1.8, -0.5, 1.2]); }
+    return sp;
+  },
+  mines(lv, H) {   // a rack of horned sea mines on a slip, chains to the water
+    const sp = { h: 1.8, fires: [], lamps: [] }, n = [3, 5, 5][lv - 1];
+    H.box(2.0, 0.12, 1.3, TC.woodD, [0, 0.1, 0]).box(1.9, 0.08, 0.12, TC.wood, [0, 0.35, 0.45]).box(1.9, 0.08, 0.12, TC.wood, [0, 0.35, -0.3]);
+    for (let k = 0; k < n; k++) { const x = (k - (n - 1) / 2) * (1.7 / Math.max(2, n - 0.5)), z = 0.08 + (k % 2) * 0.12, r = lv === 3 ? 0.27 : 0.22;
+      H.ball(r, TC.iron, [x, 0.5 + r * 0.8, z]).ball(r * 0.98, TC.rustD, [x, 0.5 + r * 0.8, z], [r * 0.98, r * 0.35, r * 0.98]);
+      for (let j = 0; j < 6; j++) { const a = j * 1.047, b = j % 2 ? 0.6 : -0.3; H.cone(0.035, 0.14, 6, TC.iron, [x + Math.cos(a) * Math.cos(b) * r, 0.5 + r * 0.8 + Math.sin(b) * r, z + Math.sin(a) * Math.cos(b) * r], [Math.cos(a) * 1.2, 0, -Math.sin(a) * 1.2]); }
+      H.rope([x, 0.4, z], [x * 0.8, 0.12, 0.9], 0.05, TC.iron); }
+    if (lv >= 2) H.coil(0.75, 0.16, -0.45, 0.2, TC.iron);
+    if (lv === 3) { H.gbox(0.12, 0.16, 0.12, TC.coal, [-0.85, 0.75, -0.45]); sp.lamps.push([-0.85, 0.75, -0.45, 0.8]); }
+    return sp;
+  },
+  pitch(lv, H) {   // a pitch cauldron on a stone hearth, a chute down to the wall
+    const sp = { h: 2.2, fires: [], lamps: [] };
+    H.box(1.2, 0.5, 1.0, TC.stone, [0, 0.25, -0.2]).box(0.5, 0.3, 0.06, TC.black, [0, 0.2, 0.31]);
+    H.cyl(0.5, 0.36, 0.55, 12, TC.iron, [0, 0.82, -0.2]).cyl(0.52, 0.52, 0.06, 12, TC.rustD, [0, 1.1, -0.2]).gcyl(0.44, 0.44, 0.02, 12, '#2a0d06', [0, 1.1, -0.2]);
+    sp.fires.push([0, 0.3, 0.2, 0.55]);
+    for (const s of [-1, 1]) H.limb([s * 0.65, 0, -0.2], [s * 0.6, 1.6, -0.2], 0.05, 0.05, TC.woodD);
+    H.box(1.4, 0.08, 0.08, TC.woodD, [0, 1.6, -0.2]).limb([0, 1.6, -0.2], [0, 1.12, -0.2], 0.015, 0.015, TC.iron);
+    H.box(0.42, 0.08, 1.3, TC.woodD, [0.55, 0.7, 0.55], [0.55, 0, 0]).box(0.05, 0.16, 1.3, TC.woodD, [0.35, 0.76, 0.55], [0.55, 0, 0]).box(0.05, 0.16, 1.3, TC.woodD, [0.75, 0.76, 0.55], [0.55, 0, 0]);
+    H.streak(0.55, 0.6, 0.9, 0, 0.35, '#120806');
+    if (lv >= 2) for (let k = 0; k < 2; k++) H.cyl(0.18, 0.2, 0.4, 8, TC.wood, [-0.8, 0.2, 0.25 - k * 0.42]);
+    if (lv === 3) { H.box(0.42, 0.08, 1.3, TC.woodD, [-0.55, 0.7, 0.55], [0.55, 0, 0]); sp.fires.push([0, 1.2, -0.2, 0.4]); }
+    return sp;
+  },
+  wrecker(lv, H) {   // a false light: a lantern on a crooked pole among rocks
+    const sp = { h: 3, fires: [], lamps: [] };
+    H.ball(0.5, TC.stoneD, [0.3, 0.2, 0.1], [0.6, 0.4, 0.5]).ball(0.4, TC.stone, [-0.5, 0.15, -0.2], [0.5, 0.3, 0.45]).ball(0.3, TC.stoneD, [-0.2, 0.12, 0.6], [0.35, 0.22, 0.3]);
+    H.limb([0.1, 0.2, -0.1], [0.25, 2.4, 0.05], 0.06, 0.04, TC.woodD).limb([0.25, 2.3, 0.05], [0.75, 2.4, 0.3], 0.035, 0.03, TC.woodD).limb([0.75, 2.4, 0.3], [0.75, 2.05, 0.3], 0.012, 0.012, TC.iron);
+    H.cyl(0.1, 0.13, 0.26, 8, TC.iron, [0.75, 1.9, 0.3]).gcyl(0.08, 0.08, 0.18, 8, TC.lamp, [0.75, 1.9, 0.3]).cone(0.14, 0.12, 8, TC.rustD, [0.75, 2.08, 0.3]); sp.lamps.push([0.75, 1.9, 0.3, 1.5]);
+    if (lv >= 2) { H.limb([-0.6, 0.2, 0.2], [-0.7, 1.4, 0.35], 0.04, 0.03, TC.woodD).gbox(0.1, 0.14, 0.1, TC.lamp, [-0.7, 1.3, 0.42]); sp.lamps.push([-0.7, 1.3, 0.42, 1.0]); H.box(0.5, 0.35, 0.4, TC.woodD, [-0.4, 0.45, -0.55], [0, 0.3, 0]); }
+    if (lv === 3) { for (let k = 0; k < 3; k++) H.box(0.45 - k * 0.08, 0.06, 0.12, TC.wood, [0.6, 0.15 + k * 0.03, -0.6 + k * 0.1], [0, k * 0.5, 0.2]); H.ball(0.14, TC.bone, [-0.25, 0.42, 0.55], [0.13, 0.16, 0.14]); }
+    return sp;
+  },
+  cave(lv, H) {   // a rock arch over a dark mouth, an iron-bound chest in it
+    const sp = { h: 2.4, fires: [], lamps: [] };
+    H.ball(0.7, TC.stoneD, [-0.6, 0.6, -0.2], [0.55, 0.75, 0.6]).ball(0.7, TC.stoneD, [0.6, 0.6, -0.2], [0.55, 0.8, 0.6]).ball(0.8, TC.stone, [0, 1.25, -0.25], [0.95, 0.45, 0.65]);
+    H.box(0.75, 0.9, 0.05, TC.black, [0, 0.45, 0.12]);
+    H.box(0.5, 0.28, 0.32, TC.woodD, [0, 0.16, 0.45]).box(0.52, 0.04, 0.34, TC.iron, [0, 0.24, 0.45]).box(0.04, 0.3, 0.34, TC.iron, [-0.15, 0.16, 0.45]).box(0.04, 0.3, 0.34, TC.iron, [0.15, 0.16, 0.45]);
+    if (lv >= 2) { H.cyl(0.16, 0.18, 0.36, 8, TC.wood, [0.6, 0.18, 0.5]).cyl(0.16, 0.18, 0.36, 8, TC.wood, [0.8, 0.18, 0.2]); H.coil(-0.55, 0.02, 0.55, 0.18); }
+    if (lv === 3) { H.box(0.42, 0.24, 0.28, TC.woodD, [-0.4, 0.14, 0.2], [0, 0.4, 0]); H.limb([-0.3, 0, 0.7], [-0.3, 1.1, 0.7], 0.03, 0.025, TC.iron).gbox(0.1, 0.14, 0.1, TC.lamp, [-0.3, 1.0, 0.75]); sp.lamps.push([-0.3, 1.0, 0.75, 1.0]); }
+    return sp;
+  },
+  well(lv, H) {   // an old stone well with a slate hood, a rope down into black water
+    const sp = { h: 2.6, fires: [], lamps: [] };
+    H.cyl(0.62, 0.66, 0.65, 14, TC.stone, [0, 0.32, 0]).courses(0.66, 0.62, 0, 0.65, 3, TC.stoneD, [0, 0, 0]).cyl(0.48, 0.48, 0.67, 14, '#030405', [0, 0.33, 0]).cyl(0.68, 0.68, 0.06, 14, TC.stoneL, [0, 0.67, 0]);
+    for (const s of [-1, 1]) H.box(0.1, 1.3, 0.1, TC.woodD, [s * 0.58, 1.2, 0]);
+    H.cyl(0.07, 0.07, 1.3, 8, TC.woodD, [0, 1.55, 0], [0, 0, Math.PI / 2]).limb([0, 1.55, 0], [0.05, 0.75, 0], 0.02, 0.02, '#5e4a33').cyl(0.11, 0.09, 0.16, 8, TC.woodD, [0.05, 0.68, 0]);
+    H.cone(0.95, 0.55, 4, TC.rustD, [0, 2.12, 0], [0, Math.PI / 4, 0]).limb([0.65, 1.55, 0], [0.8, 1.35, 0.15], 0.025, 0.025, TC.iron);
+    if (lv >= 2) H.ball(0.12, TC.bone, [-0.45, 0.78, 0.4], [0.11, 0.14, 0.12]).streak(0.6, 0.6, 0.15, 1.57, 0.4, '#1d2622');
+    if (lv === 3) for (let k = 0; k < 5; k++) { const a = k * 1.25 + 0.3; H.limb([Math.cos(a) * 0.9, 0, Math.sin(a) * 0.9], [Math.cos(a) * 0.95, 0.5 + hj(k) * 0.3, Math.sin(a) * 0.95], 0.06, 0.03, TC.boneD); }
+    return sp;
+  },
+  spire(lv, H) {   // a tall iron storm spire on a stone base, braced with chains
+    const h = [3.2, 3.9, 4.6][lv - 1], sp = { h: h + 0.8, fires: [], lamps: [] };
+    H.box(1.0, 0.7, 1.0, TC.stone, [0, 0.35, 0]).box(0.8, 0.4, 0.8, TC.stoneD, [0, 0.9, 0]).cone(0.22, h, 8, TC.iron, [0, 1.1 + h / 2, 0]).limb([0, 1.1 + h * 0.9, 0], [0, 1.6 + h, 0], 0.03, 0.01, TC.rust);
+    for (let k = 0; k < 3; k++) H.cyl(0.22 - k * 0.05, 0.22 - k * 0.05, 0.08, 10, TC.rustD, [0, 1.5 + k * h * 0.25, 0]);
+    for (const [x, z] of [[-0.9, 0.7], [0.9, 0.7], [0, -0.95]]) H.rope([x, 0.05, z], [0, 1.1 + h * 0.55, 0], 0.15, TC.iron).ball(0.08, TC.iron, [x, 0.05, z]);
+    H.gball(0.07, '#c4d8e6', [0, 1.62 + h, 0]); sp.lamps.push([0, 1.62 + h, 0, 1.0]);
+    if (lv >= 2) H.cyl(0.42, 0.42, 0.05, 10, TC.iron, [0, 1.1 + h * 0.5, 0]);
+    if (lv === 3) for (let k = 0; k < 4; k++) { const a = k * 1.57 + 0.78; H.limb([0, 1.1 + h * 0.62, 0], [Math.cos(a) * 0.45, 1.1 + h * 0.72, Math.sin(a) * 0.45], 0.02, 0.015, TC.iron); }
+    return sp;
+  },
+  choir(lv, H) {   // a ring of drowned figures in stone, kelp-hung, around a cold lamp
+    const sp = { h: 2.2, fires: [], lamps: [] }, n = [3, 4, 5][lv - 1];
+    H.cyl(0.95, 1.0, 0.12, 14, TC.stoneD, [0, 0.06, 0]);
+    for (let k = 0; k < n; k++) { const a = Math.PI / 2 + (k - (n - 1) / 2) * (Math.PI * 1.6 / Math.max(n, 2)), x = Math.cos(a) * 0.65, z = Math.sin(a) * 0.65, ry = Math.PI / 2 - a + Math.PI;
+      H.cyl(0.13, 0.2, 0.95, 8, '#4a5250', [x, 0.6, z]).ball(0.13, '#5a6260', [x, 1.18, z], [0.12, 0.15, 0.13]).limb([x, 1.0, z], [x * 0.75, 0.75, z * 0.75], 0.045, 0.03, '#4a5250');
+      H.streak(x * 1.15, 1.1, z * 1.15, ry, 0.5, '#2d3b33').gbox(0.03, 0.03, 0.02, '#7f9a94', [x * 0.83, 1.2, z * 0.83]); }
+    H.limb([0, 0.1, 0], [0, 1.0, 0], 0.04, 0.03, TC.iron).gball(0.1, '#9cb4b8', [0, 1.08, 0]); sp.lamps.push([0, 1.08, 0, 1.1]);
+    return sp;
+  },
+});
+TOWN_BUILD.battery = TOWN_BUILD.gun; TOWN_BUILD.boat = TOWN_BUILD.boathouse;
+Object.assign(TOWN_HOME, { lamp2: 'in', beacon: 'in', pitch: 'in', battery: 'out', ballista: 'out', mortar: 'out', tesla: 'out', winch: 'out', mines: 'out', wrecker: 'out', boat: 'out', cave: 'out', well: 'out', spire: 'out', choir: 'out' });
+// LAS-73: dressing on the first 8 models (stone courses, rope, rust runs, weed), added after their builders
+const TOWN_DRESS = {
+  gun(lv, H) { const h = [1.5, 2.0, 2.5][lv - 1]; H.courses(0.96, 0.8, 0, h, 4, TC.stoneD, [0, 0, -0.1]).streak(0.5, h, 0.62, 0.65, h * 0.6).streak(-0.62, h - 0.1, 0.48, -0.9, h * 0.45, '#1f2a24').coil(-0.95, 0.02, 0.55, 0.2); },
+  brazier(lv, H) { H.rope([-0.9, 0.05, 0.6], [0.9, 0.05, 0.6], -0.02, TC.iron); },
+  rocket(lv, H) { H.rope([-0.85, 1.12, -0.1], [0.85, 1.12, -0.1], 0.12).coil(0.9, 0.02, 0.55, 0.16); },
+  watch(lv, H) { if (lv < 3) H.rope([-0.6, 2.3, -0.2], [-0.3, 0.1, 0.4], 0.15); else H.rope([0.85, 2.2, 0.65], [1.1, 0.1, 0.9], 0.1); },
+  breakwater(lv, H) { for (let i = 0; i < 4; i++) H.streak(-0.9 + i * 0.6, 0.7 + hj(i) * 0.4, 0.66 + 0.04 * (1 - Math.abs(i - 1.5) / 1.5), 0, 0.5, i % 2 ? '#1f2a24' : TC.rustD); },
+  bell(lv, H, sp) { H.rope([0, sp.bell.y - 0.5, 0.05], [0.3, 0.15, 0.45], 0.05); },
+  boathouse(lv, H) { H.coil(0.7, 0.02, 0.15, 0.18).rope([0.5, 0.35, 0.9], [0.9, 0.1, 1.0], 0.05); },
+  horn(lv, H) { H.streak(0.6, 0.6, 0.55, 0.9, 0.5).streak(-0.7, 0.6, 0.4, -0.9, 0.45, '#1f2a24'); },
+};
+TOWN_DRESS.battery = TOWN_DRESS.gun; TOWN_DRESS.boat = TOWN_DRESS.boathouse;
+function townLook(id, lv, q = 2, plinth) {   // the cached geometry for (id, lv) at detail q (LAS-73: on the island the slot's hex is the plinth; portraits ask for one)
+  const k = id + lv + '|' + q + (plinth ? 'p' : ''); let C = TOWNC[k]; if (C) return C;
+  const S = model(true), G = model(true), H = townPen(S, G, q);
+  if (plinth) { hexStone(S, q, G); H.gn++; }
+  const sp = (TOWN_BUILD[id] || TOWN_BUILD.brazier)(lv, H); if (TOWN_DRESS[id]) TOWN_DRESS[id](lv, H, sp);
   return (TOWNC[k] = { solid: S.geo(), glow: H.gn ? G.geo() : null, sp });
+}
+// ---------- LAS-73 the slot hexes. Every slot of the open rings is a hexagon of dark dressed stone set in the rock, a faint
+// outline cut into its top; a building stands on its own hex, an empty one waits, barely lit. Hover: the hex under the mouse
+// gets a soft rim of lantern light and TWRender.hoverSlot = { ring, slot, id, lv, empty, home, x, y } (UI tooltip, LAS-74).
+// Flat sides face the centre and the sea, so the hexes of neighbouring rings (1.9 m apart) touch like a honeycomb.
+const HEX = { r: 1.08, h: 0.8, top: 0.1, col: '#4a4743', cut: '#8a6a44', lamp: '#ffcf9c' };   // cut: the outline's own faint glow (unlit colour)
+function hexStone(S, q = 2, G = S) {   // into model S: the hex block (top at y HEX.top), a bevelled lip, cracks; into G: the cut outline
+  const n = q >= 3 ? 2 : 1, r = HEX.r, ap = r * Math.cos(Math.PI / 6);
+  S.add(new T3.CylinderGeometry(r * 0.97, r * 1.07, HEX.h, 6, n, false, Math.PI / 6), HEX.col, [0, HEX.top - 0.04 - HEX.h / 2, 0]);
+  S.add(new T3.CylinderGeometry(r * 0.93, r * 0.97, 0.04, 6, 1, false, Math.PI / 6), '#33312f', [0, HEX.top - 0.02, 0]);
+  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3, d = ap * 0.78, g = new T3.BoxGeometry(r * 0.8, 0.012, 0.035);
+    G.add(g, HEX.cut, [Math.sin(a) * d, HEX.top + 0.004, Math.cos(a) * d], [0, a, 0]); }
+  for (let k = 0; k < 4; k++) { const a = k * 1.7 + 0.4, d = r * (0.55 + 0.2 * hj(k)); S.add(new T3.BoxGeometry(0.05, 0.01, 0.22 + 0.2 * hj(k + 3)), '#232221', [Math.sin(a) * d, HEX.top + 0.003, Math.cos(a) * d], [0, a + 1.2, 0]); }   // cracks
+}
+function hexInit() {
+  if (R.hex) return R.hex;
+  const S = model(true), G = model(true); hexStone(S, 2, G); const geo = S.geo();
+  const m = new T3.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.08 });   // wet stone: the beam glints on it
+  const tiles = new T3.InstancedMesh(geo, m, 48); tiles.count = 0; tiles.receiveShadow = true; tiles.frustumCulled = false;
+  const cuts = new T3.InstancedMesh(G.geo(), new T3.MeshBasicMaterial({ vertexColors: true }), 48); cuts.count = 0; cuts.frustumCulled = false; tiles.add(cuts); tiles.cuts = cuts;
+  const rg = new T3.BufferGeometry(), rp = [], ri = [];   // a flat hex band (r 0.86..1.0) on the top, corners where the block's are
+  for (let k = 0; k < 6; k++) { const a = Math.PI / 6 + k * Math.PI / 3; for (const f of [0.86, 1.0]) rp.push(Math.sin(a) * HEX.r * f, 0, Math.cos(a) * HEX.r * f);
+    const i = k * 2, j = ((k + 1) % 6) * 2; ri.push(i, j, i + 1, j, j + 1, i + 1); }
+  rg.setAttribute('position', new T3.Float32BufferAttribute(rp, 3)); rg.setIndex(ri);
+  const rim = new T3.Mesh(rg, new T3.MeshBasicMaterial({ color: HEX.lamp, transparent: true, opacity: 0, depthWrite: false, blending: T3.AdditiveBlending, fog: false, side: T3.DoubleSide }));
+  rim.renderOrder = 5; rim.visible = false;
+  const light = new T3.PointLight(HEX.lamp, 0, 6, 1.6);   // always in the scene (0 when nothing is hovered): no shader recompile on hover
+  R.scene.add(tiles, rim, light);
+  const mouse = { x: -1, y: -1, on: false };
+  root.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.on = true; });
+  root.addEventListener('mouseleave', () => { mouse.on = false; });
+  if (root.document) root.document.addEventListener('mouseleave', () => { mouse.on = false; });
+  return (R.hex = { tiles, rim, light, mouse, list: [], key: '', hov: null, k: 0, o: new T3.Vector3(), dv: new T3.Vector3(), d0: new T3.Object3D() });
+}
+// the open slots: [{ ring, i, x, y, z, a }] for rings 1..src.rings (TOWN.n per ring; ring 1 alone before the town exists)
+function hexSlots(src) {
+  const rings = Math.max(1, Math.min(4, (src && src.rings) || 1)), L = [];
+  for (let r = 1; r <= rings; r++) for (let i = 0; i < TOWN.n[r - 1]; i++) { const p = townPos(r, i); L.push({ ring: r, i, x: p[0], y: p[1], z: p[2], a: Math.atan2(p[0], p[2]) }); }
+  return L;
+}
+function hexTick(S, t, dt) {
+  const X = R.hex; if (!X) return;
+  const src = R.townSrc, L = hexSlots(src), key = L.length + ':' + TOWN.n.join(','), show = !(R.town && R.town.dev && R.town.dev.line);
+  X.tiles.visible = show;
+  if (key !== X.key) { X.key = key; X.list = L; const d = X.d0;
+    L.forEach((s, j) => { d.position.set(s.x, s.y, s.z); d.rotation.set(0, s.a, 0); d.updateMatrix(); X.tiles.setMatrixAt(j, d.matrix); X.tiles.cuts.setMatrixAt(j, d.matrix); });
+    X.tiles.count = X.tiles.cuts.count = L.length; X.tiles.instanceMatrix.needsUpdate = X.tiles.cuts.instanceMatrix.needsUpdate = true; }
+  // hover: the mouse ray against each ring's top plane, then the nearest slot centre inside the hex
+  let hit = null;
+  if (show && X.mouse.on && !(S && S.over)) {
+    const nx = X.mouse.x / root.innerWidth * 2 - 1, ny = -(X.mouse.y / root.innerHeight) * 2 + 1, o = X.o.set(nx, ny, -1).unproject(R.cam), dv = X.dv.set(nx, ny, 1).unproject(R.cam).sub(o).normalize();
+    let best = 1e9;
+    for (const s of X.list) { const tt = (s.y + HEX.top - o.y) / dv.y; if (!(tt > 0)) continue;
+      const px = o.x + dv.x * tt - s.x, pz = o.z + dv.z * tt - s.z, dd = Math.hypot(px, pz);
+      if (dd < HEX.r * 0.95 && dd < best) { best = dd; hit = s; } }
+  }
+  const slots = src ? src.slots : [], sl = hit && slots.find(q => q.ring === hit.ring && q.i === hit.i);
+  if (hit) { const sc = R.screenOf(hit.x, hit.y + HEX.top, hit.z), home = hit.ring <= 2 ? 'inner' : 'outer';
+    X.hov = { ring: hit.ring, slot: hit.i, id: sl ? sl.id : null, lv: sl ? sl.lv : 0, empty: !sl, home: sl ? (TOWN_HOME[sl.id] === 'out' ? 'outer' : 'inner') : home, x: sc.x, y: sc.y }; }
+  else X.hov = null;
+  R.hover = X.hov;
+  // the lantern rim eases in and out
+  X.k += ((hit ? 1 : 0) - X.k) * Math.min(1, dt * 10);
+  if (hit) { X.rim.position.set(hit.x, hit.y + HEX.top + 0.02, hit.z); X.rim.rotation.y = hit.a; X.light.position.set(hit.x - Math.sin(hit.a) * 0.6, hit.y + 1.4, hit.z - Math.cos(hit.a) * 0.6); X.last = hit; }
+  X.rim.visible = X.k > 0.01; X.rim.material.opacity = 0.6 * X.k * (0.92 + 0.08 * Math.sin(t * 3.3));
+  X.light.intensity = 16 * X.k;
+}
+// the dev helper for checks: screen points of one empty and one filled hex
+R.hexAt = () => { const X = R.hex; if (!X) return null; const src = R.townSrc, slots = src ? src.slots : [], out = [];
+  const e = X.list.find(s => !slots.some(q => q.ring === s.ring && q.i === s.i)), f = X.list.find(s => slots.some(q => q.ring === s.ring && q.i === s.i));
+  for (const [s, em] of [[e, true], [f, false]]) if (s) { const p = R.screenOf(s.x, s.y + HEX.top, s.z); out.push({ x: p.x, y: p.y, empty: em }); }
+  return out; };
+
+// ---------- LAS-73 the gold upgrades show on the island: every level adds something you can see. Powder stores (Heavy Shot),
+// a gun crew drilling by a shot pile (Quick Hands), shoring timbers and fresh stone at the wall (Mortar and Stone), salvage
+// from wrecks (Wreckers' Due) stand in the gaps between the first ring's hexes; the lamp's mechanism is on the lighthouse: brass
+// prism hoops round the lamp room (Long Sight), counterweights on chains down the tower (Lamp Wick), watch lanterns on the
+// gallery rail (Keen Eye). One instanced mesh per kind; counts follow S.lv.
+function upGeo(kind) {
+  const S = model(true), H = townPen(S, model(true), 2);
+  if (kind === 'keg') { H.cyl(0.17, 0.15, 0.36, 10, TC.wood, [0, 0.18, 0]).cyl(0.175, 0.175, 0.03, 10, TC.iron, [0, 0.07, 0]).cyl(0.175, 0.175, 0.03, 10, TC.iron, [0, 0.29, 0]).cyl(0.15, 0.15, 0.01, 10, TC.woodD, [0, 0.365, 0]); }
+  else if (kind === 'crew') {   // a hooded gunner: coat, head, a rammer on the shoulder
+    H.cyl(0.11, 0.17, 0.5, 8, TC.cloth, [0, 0.25, 0]).ball(0.08, '#3b3530', [0, 0.58, 0.01], [0.085, 0.095, 0.085]).cone(0.11, 0.16, 8, TC.cloth, [0, 0.66, -0.01]);
+    H.limb([0.12, 0.42, 0], [0.2, 0.9, -0.12], 0.015, 0.015, TC.woodD); }
+  else if (kind === 'shot') { H.ball(0.07, TC.iron, [0, 0.07, 0]).ball(0.07, TC.iron, [0.14, 0.07, 0]).ball(0.07, TC.iron, [0.07, 0.07, 0.12]).ball(0.07, TC.iron, [0.07, 0.18, 0.04]); }
+  else if (kind === 'shore') { H.box(0.5, 0.32, 0.36, TC.stoneL, [0, 0.16, 0]).limb([-0.3, 0, 0.25], [0.15, 0.75, -0.2], 0.035, 0.03, TC.woodD); }
+  else if (kind === 'crate') { H.box(0.34, 0.28, 0.3, TC.woodD, [0, 0.14, 0]).box(0.36, 0.03, 0.04, TC.iron, [0, 0.2, 0.14]).box(0.36, 0.03, 0.04, TC.iron, [0, 0.2, -0.14]); }
+  else if (kind === 'hoop') { S.add(new T3.TorusGeometry(0.62, 0.025, 6, 40), TC.brass, [0, 0, 0], [Math.PI / 2, 0, 0]); }
+  else if (kind === 'weight') { H.limb([0, 0, 0], [0, 1.2, 0], 0.012, 0.012, TC.iron).cyl(0.07, 0.07, 0.24, 8, TC.iron, [0, -0.1, 0]).cyl(0.075, 0.075, 0.03, 8, TC.rust, [0, 0.0, 0]); }
+  else if (kind === 'lantern') { H.limb([0, 0, 0], [0, 0.32, 0], 0.012, 0.012, TC.iron).cyl(0.045, 0.05, 0.09, 8, TC.iron, [0, 0.36, 0]).cone(0.06, 0.06, 8, TC.rustD, [0, 0.43, 0]); }
+  return S.geo();
+}
+const UPROP = {   // lv key -> what each level adds: kind, how many at most, where item j stands ([x, y, z, ry] in world units)
+  dmg: { kind: 'keg', max: 14, at: j => { const row = j < 5 ? 0 : j < 9 ? 1 : j < 12 ? 2 : 3, k = j - [0, 5, 9, 12][row], a = Math.PI * 1.25; const c = [Math.cos(a) * 4.45, 0.9, Math.sin(a) * 4.45];
+    return [c[0] + (k - [2, 1.5, 1, 0.5][row]) * 0.36 * 0.7 - (row % 2) * 0.05, c[1] + row * 0.36, c[2] + (k - [2, 1.5, 1, 0.5][row]) * 0.36 * 0.7, 0]; } },
+  rate: { kind: 'crew', max: 8, at: j => { const a = Math.PI * 1.75 + (j % 4 - 1.5) * 0.11, r = 4.2 + Math.floor(j / 4) * 0.45; return [Math.cos(a) * r, 0.9, Math.sin(a) * r, Math.atan2(-Math.cos(a), -Math.sin(a)) + (j % 2 ? 0.4 : -0.3)]; } },
+  rateShot: { kind: 'shot', max: 4, at: j => { const a = Math.PI * 1.75 + (j - 1.5) * 0.12; return [Math.cos(a) * 5.0, 0.9, Math.sin(a) * 5.0, j]; } },
+  wall: { kind: 'shore', max: 12, at: j => { const a = Math.PI * 0.75 + (j % 6 - 2.5) * 0.09, r = 3.85 + Math.floor(j / 6) * 0.42; return [Math.cos(a) * r, 0.9, Math.sin(a) * r, -a + Math.PI / 2]; } },
+  bounty: { kind: 'crate', max: 14, at: j => { const row = j < 6 ? 0 : j < 10 ? 1 : j < 13 ? 2 : 3, k = j - [0, 6, 10, 13][row], a = Math.PI * 0.25 + (k - [2.5, 1.5, 1, 0][row]) * 0.085; return [Math.cos(a) * (4.45 - row * 0.05), 0.9 + row * 0.28, Math.sin(a) * (4.45 - row * 0.05), a * 3 + j]; } },
+  range: { kind: 'hoop', max: 10, at: j => [0, RLOOK.plateau + RLOOK.deck + RLOOK.lhH + 0.2 + j * 0.07, 0, 0] },
+  rot: { kind: 'weight', max: 10, at: j => { const a = -Math.PI / 2 + (j - 4.5) * 0.24, y = RLOOK.plateau + RLOOK.deck + RLOOK.lhH - 1.3 - (j % 3) * 0.35; return [Math.cos(a) * 0.86, y, Math.sin(a) * 0.86, 0]; } },
+  crit: { kind: 'lantern', max: 15, at: j => { const a = -Math.PI / 2 + (j % 2 ? 1 : -1) * (0.25 + Math.floor(j / 2) * 0.4); return [Math.cos(a) * 0.86, RLOOK.plateau + RLOOK.deck + RLOOK.lhH + 0.16, Math.sin(a) * 0.86, 0]; } },
+};
+function upInit() {
+  if (R.ups) return R.ups;
+  const m = new T3.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.15 }), geos = {}, d = new T3.Object3D(), grp = new T3.Group(); R.scene.add(grp);
+  const P = {};
+  for (const k in UPROP) { const U0 = UPROP[k], g = geos[U0.kind] || (geos[U0.kind] = upGeo(U0.kind)), im = new T3.InstancedMesh(g, m, U0.max);
+    for (let j = 0; j < U0.max; j++) { const p = U0.at(j); d.position.set(p[0], p[1], p[2]); d.rotation.set(0, p[3], 0); d.updateMatrix(); im.setMatrixAt(j, d.matrix); }
+    im.count = 0; im.castShadow = true; im.receiveShadow = true; grp.add(im); P[k] = im; }
+  return (R.ups = { P, grp, sig: '' });
+}
+function upTick(S) {
+  const U0 = R.ups; if (!U0) return; const lv = (S && S.lv) || {};
+  const sig = Object.keys(UPROP).map(k => lv[k === 'rateShot' ? 'rate' : k] || 0).join(','); if (sig === U0.sig) return; U0.sig = sig;
+  for (const k in UPROP) { const n = lv[k === 'rateShot' ? 'rate' : k] || 0; U0.P[k].count = Math.min(UPROP[k].max, k === 'rateShot' ? Math.ceil(n / 2) : n); }
 }
 function townPos(ring, i) {   // [x, y, z] of slot i of ring (1..4); i = fill order: 0 = the sea side, then alternately left and right
   const n = TOWN.n[ring - 1], o = i === 0 ? 0 : (i % 2 ? (i + 1) / 2 : -i / 2), a = Math.PI / 2 + o * Math.PI * 2 / n;
@@ -7106,7 +7436,7 @@ function townPos(ring, i) {   // [x, y, z] of slot i of ring (1..4); i = fill or
 }
 function townInit() {
   if (R.town) return R.town;
-  const tm = new T3.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.05, flatShading: true });
+  const tm = new T3.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.08 });   // LAS-73: smooth round parts, a little wet
   const gm = new T3.MeshBasicMaterial({ vertexColors: true });
   const fm = mat('#ffb04a', { glow: 1 });
   const hm = new T3.MeshBasicMaterial({ color: '#ff9a4a', map: haloTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false });
@@ -7297,16 +7627,16 @@ const BL = {
 const BU = {   // beam uniforms shared by the fog march and the sea
   uLamp: { value: new T3.Vector3() }, uDir: { value: new T3.Vector3(1, 0, 0) }, uDir2: { value: new T3.Vector3(-1, 0, 0) }, uTwo: { value: 0 },
   uCosCoreIn: { value: Math.cos(BL.coreHalf * 0.55 * Math.PI / 180) }, uCosCoreOut: { value: Math.cos(BL.coreHalf * Math.PI / 180) },
-  uCosWideIn: { value: 0.9 }, uCosWideOut: { value: 0.8 }, uLen: { value: 40 }, uFl: { value: 0 }, uTime: { value: 0 },
+  uCosWideIn: { value: 0.9 }, uCosWideOut: { value: 0.8 }, uLen: { value: 40 }, uFl: { value: 0 }, uFr: { value: 40 }, uTime: { value: 0 },
 };
 const f5 = x => (+x).toFixed(5), v5 = a => a.map(f5).join(',');
 const BEAM_GLSL = `
-uniform vec3 uLamp, uDir, uDir2; uniform float uTwo, uCosCoreIn, uCosCoreOut, uCosWideIn, uCosWideOut, uLen, uFl;
+uniform vec3 uLamp, uDir, uDir2; uniform float uTwo, uCosCoreIn, uCosCoreOut, uCosWideIn, uCosWideOut, uLen, uFl, uFr;
 float coreOf(vec3 v, vec3 d){ return smoothstep(uCosCoreOut, uCosCoreIn, dot(normalize(v), d)); }
 float wideOf(vec3 v, vec3 d){ vec2 h = normalize(v.xz + 1e-5); float c = dot(h, normalize(d.xz + 1e-5)); float down = smoothstep(0.05, -0.12, normalize(v).y);
   return smoothstep(uCosWideOut, uCosWideIn, c) * mix(0.25, 1.0, down); }
 float beamCore(vec3 v){ float m = coreOf(v, uDir); if (uTwo > 0.5) m = max(m, coreOf(v, uDir2)); return m; }
-float beamWide(vec3 v){ float m = wideOf(v, uDir); if (uTwo > 0.5) m = max(m, wideOf(v, uDir2)); return max(m, uFl * mix(0.25, 1.0, smoothstep(0.05, -0.12, normalize(v).y))) * smoothstep(uLen + 1.5, uLen - 1.5, length(v.xz)); }
+float beamWide(vec3 v){ float m = wideOf(v, uDir); if (uTwo > 0.5) m = max(m, wideOf(v, uDir2)); float r = length(v.xz); return max(m * smoothstep(uLen + 1.5, uLen - 1.5, r), uFl * mix(0.25, 1.0, smoothstep(0.05, -0.12, normalize(v).y)) * smoothstep(uFr + 2.5, uFr - 2.5, r)); }
 float beamAtt(float d){ return 1.0 / (1.0 + 0.045 * d + 0.0009 * d * d); }`;
 const POST_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }';
 
@@ -7412,7 +7742,7 @@ function warm() {
 }
 
 function init(S) {
-  if (!R.on) { initGL(); buildScene(); R.braz = [0, 1, 2, 3].map(makeBrazier); resize(); root.addEventListener('resize', resize); warm(); R.on = true; }
+  if (!R.on) { initGL(); buildScene(); R.braz = [0, 1, 2, 3].map(makeBrazier); townInit(); hexInit(); upInit(); resize(); root.addEventListener('resize', resize); warm(); R.on = true; }
   setRun(S);
   root.TWPerf = R.perf = { fps: 0, worst: 0, n: 0, shots: 0, calls: 0, tris: 0, drowned: R.tris.drowned, kinds: R.tris.kinds };
 }
@@ -7540,7 +7870,12 @@ function camBase(d) {
 function baseRad(S) { const T = S.T || {}; return S.ringR || (T.light && T.light.baseR) || (T.base && T.base.r) || 0; }   // LAS-53: S.ringR = the brazier ring (m from the centre)
 function litAmt(S, e) {   // 0..1; > 0 exactly when the guns can shoot e (sim isLit): beam / linger mark / Flare / auto mode; not under water, not in the Black Lamp's dark cone
   if (e.under > S.t) return 0;
-  if (S.T.light.mode === 'auto' || S.flareT > S.t) return 1;
+  if (S.T.light.mode === 'auto') return 1;
+  if (S.flareT > S.t) {   // LAS-73: the Flare fades: full in the beam, else its shrinking, dimming disc; never 0 while the sim lights it (the guns may shoot it)
+    if (e.litT >= S.t) return 1;
+    const d = Math.hypot(e.x, e.y) * radK(Math.hypot(e.x, e.y)), k = Math.min(1, Math.max(0, (U.fr.value + 3 - d) / 6));
+    return Math.max(0.1, U.fl.value * (0.25 + 0.75 * k * k * (3 - 2 * k)));
+  }
   if (S.dark) { const D = S.dark; if (e.x * D.ca + e.y * D.sa >= Math.hypot(e.x, e.y) * D.ch) return 0; }
   return e.litT >= S.t ? 1 : 0;   // LAS-55: drawn only while the beam is on it; LAS-53: no linger, so the sim's mark is exactly 'in the cone now' (and honours Gloam murk)
 }
@@ -7749,7 +8084,7 @@ function frame(S, alpha, now) {
   }
 
   // the mounts turn, fire and recoil; the citadel shows its damage; smoke drifts
-  flankTick(t); mountsTick(S, t, dtR, alpha); guardsTick(S, t, dtR, alpha); townTick(S, t, dtR); growth(S, dtR, t); damage(S, t, dtR); smokeTick(dtR); ringsTick(t);
+  flankTick(t); mountsTick(S, t, dtR, alpha); guardsTick(S, t, dtR, alpha); townTick(S, t, dtR); hexTick(S, t, dtR); upTick(S); growth(S, dtR, t); damage(S, t, dtR); smokeTick(dtR); ringsTick(t);
   const dT0 = Math.max(RLOOK.camOpen, RLOOK.camMin, Math.min(RLOOK.camMax, RLOOK.camFort[R.isleStep || 0] / RLOOK.fortMin, (reach(S) + (R.off || 0)) * RLOOK.camK));   // the reach is drawn R.off further out
   // LAS-51: the late game shows its horde: the view widens up to x1.5 (77 m -> ~115 m) with the island steps / the wave, eased
   const lg = Math.min(1, Math.max((R.isleStep || 0) / 3, (S.wave || 0) / RLOOK.camWideWave)), dT = dT0 * (1 + (RLOOK.camWide - 1) * lg * lg * (3 - 2 * lg));
@@ -7860,16 +8195,24 @@ function adapt(now) {
   R.perf.res = A.k;
 }
 
+// LAS-73: the Flare's light over its sim window (S.flareT): up in 0.2 s, full for the first quarter, then it shrinks (to 30%
+// of the reach) and dims to nothing exactly as the window closes, so nothing is cut and every shot lands where it is still lit.
+function flareEnv(S, L) {
+  const left = S.flareT - S.t;
+  if (left > 0 && R.flT !== S.flareT) { R.flT = S.flareT; R.flDur = Math.max(0.5, left); }
+  const dur = R.flDur || 4, on = left > 0, q = on ? Math.min(1, left / (0.75 * dur)) : 0, sq = q * q * (3 - 2 * q);
+  U.fl.value = R.flareI = on ? Math.min(1, (dur - left) / 0.2) * Math.pow(sq, 0.8) : 0; U.fr.value = L * (0.3 + 0.7 * sq);
+}
 // LAS-51: the sim's light -> the sea shader (beam cone, Flare, base ring) + dust motes in the shaft + the lamp's lens streak
 function lightFrame(S, t, burning) {
   const SB = S.beam, off = R.off || 0, br = baseRad(S);
   U.ba.value = SB ? SB.a : 9; U.ba2.value = SB && SB.a2 !== null && SB.a2 !== undefined ? SB.a2 : 9; U.bw.value = SB ? SB.w : 0.3; U.bl.value = SB ? SB.len + off : 40;
-  const fl = S.flareT > S.t ? 1 : 0; U.fl.value += (fl - U.fl.value) * 0.2;
+  flareEnv(S, (SB ? SB.len : 40) + off);
   U.base.value = br > 0 ? br + off : 5.5 + off;
   // LAS-65: the same numbers for the fog march: a narrow cool core shaft that slopes to the water near the reach, plus the wedge's spill
   const two = SB && SB.a2 !== null && SB.a2 !== undefined, a = SB ? SB.a : 0.95 * Math.sin(t * 0.45), w = SB ? SB.w : 0.3, L = (SB ? SB.len : 40) + off, hh = R.LAMP[1];
   const pit = Math.max(Math.atan2(hh, 0.85 * L), 4 * Math.PI / 180), cp = Math.cos(pit), sp = -Math.sin(pit), hw = w / 2;
-  BU.uLamp.value.set(R.LAMP[0], R.LAMP[1], R.LAMP[2]); BU.uLen.value = L; BU.uFl.value = U.fl.value; BU.uTwo.value = two ? 1 : 0;
+  BU.uLamp.value.set(R.LAMP[0], R.LAMP[1], R.LAMP[2]); BU.uLen.value = L; BU.uFl.value = U.fl.value; BU.uFr.value = U.fr.value; BU.uTwo.value = two ? 1 : 0;
   BU.uDir.value.set(Math.cos(a) * cp, sp, Math.sin(a) * cp);
   if (two) BU.uDir2.value.set(Math.cos(SB.a2) * cp, sp, Math.sin(SB.a2) * cp);
   BU.uCosWideOut.value = Math.cos(hw); BU.uCosWideIn.value = Math.cos(hw * 0.8);
@@ -7894,7 +8237,168 @@ function fpsTick(now, n, ns) {
 }
 
 Object.assign(R, { toView, toSim, hAt });   // fx.js and the aim overlay draw sim points through these
-root.TWRender = { init, pre, frame, resize, RLOOK, R, toView, toSim };
+root.TWRender = { init, pre, frame, resize, RLOOK, R, toView, toSim, get hoverSlot() { return R.hover || null; },   // LAS-73: the hex under the mouse (null if none)
+  models: { town: townLook, hex: hexStone, up: upGeo, creature: k => ART[k] && R.T && R.T[k] ? R.T[k] : null, model, ids: () => Object.keys(TOWN_BUILD), T3 } };   // LAS-73: for the card portraits (portrait.js)
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+</script>
+<script>/* portrait.js */
+// LAS-73 live 3D card portraits (spec: art/ui-horror.md section 5). ONE small offscreen WebGL renderer, shared by every card,
+// plaque and banner: it draws each model (a building at portrait detail on its hex, an upgrade's props, a creature) turning
+// slowly on black, lit by one lantern from the left and a faint cold rim from behind, and copies the frame into the card's
+// own 2D canvas. ~30 fps while the canvas is on screen, nothing when none is; each model is built once and cached.
+// API: TWRender.portrait(id, w, h) -> a <canvas> (CSS w x h) that animates while it is in the document.
+//      TWRender.portraitStill(id, w, h) -> a data URL (one frame, cached).
+//      Any element with data-tw-portrait="<id>" gets a portrait canvas mounted inside it (ui/cardart use this).
+// ids: 'b:<building>[:<level>]' (the 21 town buildings), 'u:<dmg|rate|range|crit|wall|bounty|rot|sea|pact>',
+//      'c:<creature kind>', 'e:<a>+<b>' (an evolution: the two side by side).
+(function (root) {
+'use strict';
+if (typeof document === 'undefined' || !root.TWRender || !root.TWRender.models) return;
+const TW = root.TWRender, M = TW.models, T3 = M.T3;
+const P = { r: null, live: new Set(), cache: new Map(), stills: new Map(), last: 0, raf: 0, W: 0, H: 0, fails: 0 };
+const PQ = 3.5;   // portrait detail (townPen q): the same builders as the island, more segments, smooth
+
+function ensure() {
+  if (P.r || P.fails) return !!P.r;
+  try {
+    const cv = document.createElement('canvas');
+    P.r = new T3.WebGLRenderer({ canvas: cv, antialias: true, alpha: false, powerPreference: 'low-power' });
+  } catch (e) { P.fails = 1; console.warn('portrait: no WebGL', e); return false; }
+  P.r.setPixelRatio(1); P.r.outputColorSpace = T3.SRGBColorSpace; P.r.toneMapping = T3.ACESFilmicToneMapping; P.r.toneMappingExposure = 1.05;
+  P.r.setClearColor(0x000000, 1);
+  const sc = P.scene = new T3.Scene();
+  P.cam = new T3.PerspectiveCamera(28, 16 / 9, 0.1, 100);
+  // the lantern: warm, from the left and a little in front; a cold rim from behind right (the beam); almost no fill
+  const lan = new T3.PointLight('#ffd9b0', 60, 0, 1.6); lan.position.set(-3.2, 2.6, 2.6);
+  const rim = new T3.DirectionalLight('#9fc0d8', 0.55); rim.position.set(3, 2.5, -4);
+  sc.add(lan, rim, new T3.HemisphereLight('#3a4652', '#050505', 0.18));
+  P.pivot = new T3.Group(); sc.add(P.pivot);
+  P.mat = new T3.MeshStandardMaterial({ vertexColors: true, roughness: 0.66, metalness: 0.1 });
+  P.glow = new T3.MeshBasicMaterial({ vertexColors: true });
+  P.fire = new T3.MeshBasicMaterial({ color: '#ff9a4a' });
+  P.flame = new T3.ConeGeometry(0.2, 0.55, 10);
+  return true;
+}
+// --- the models
+function building(id, lv) {
+  const C = M.town(id, lv, PQ, true), g = new T3.Group();
+  g.add(new T3.Mesh(C.solid, P.mat)); if (C.glow) g.add(new T3.Mesh(C.glow, P.glow));
+  for (const f of C.sp.fires) { const m = new T3.Mesh(P.flame, P.fire); m.position.set(f[0], f[1], f[2]); m.scale.setScalar(f[3]); m.userData.fire = f[3]; g.add(m); }
+  if (C.sp.bell) { const b = new T3.Mesh(C.sp.bell.geo, P.mat); b.position.y = C.sp.bell.y; g.add(b); }
+  g.userData.h = C.sp.h; return g;
+}
+const UPK = {   // an upgrade's vignette on a hex: [kind, x, y, z, ry, scale]
+  dmg: [['keg', -0.35, 0.1, 0.1, 0, 1.3], ['keg', 0.1, 0.1, 0.2, 1, 1.3], ['keg', 0.55, 0.1, 0.05, 2, 1.3], ['keg', -0.12, 0.57, 0.15, 3, 1.3], ['keg', 0.33, 0.57, 0.12, 4, 1.3], ['keg', 0.1, 1.04, 0.13, 5, 1.3], ['shot', -0.7, 0.1, -0.4, 0, 1.4]],
+  rate: [['crew', -0.4, 0.1, 0.1, 0.5, 1.5], ['crew', 0.35, 0.1, -0.1, -0.4, 1.5], ['crew', 0.0, 0.1, 0.45, 0.1, 1.5], ['shot', 0.5, 0.1, 0.5, 0, 1.4], ['keg', -0.6, 0.1, -0.5, 0, 1.2]],
+  range: [['hoop', 0, 0.6, 0, 0, 0.9], ['hoop', 0, 0.75, 0, 0, 0.95], ['hoop', 0, 0.9, 0, 0, 0.9], ['lamp', 0, 0.1, 0, 0, 1]],
+  crit: [['lantern', -0.45, 0.1, 0.1, 0, 2.2], ['lantern', 0.1, 0.1, -0.25, 0, 2.6], ['lantern', 0.5, 0.1, 0.3, 0, 2.0]],
+  wall: [['shore', -0.3, 0.1, 0, 0.3, 1.4], ['shore', 0.35, 0.1, 0.25, -0.4, 1.3], ['shore', 0.1, 0.55, 0.05, 0.1, 1.2]],
+  bounty: [['crate', -0.35, 0.1, 0.05, 0.3, 1.6], ['crate', 0.25, 0.1, 0.25, -0.5, 1.5], ['crate', 0.0, 0.55, 0.1, 0.2, 1.4], ['keg', 0.55, 0.1, -0.35, 0, 1.2]],
+  rot: [['beam', 0, 0, 0, 0, 1], ['weight', -0.45, 0.55, 0, 0, 1.3], ['weight', 0, 0.35, 0, 0, 1.3], ['weight', 0.45, 0.65, 0, 0, 1.3]],
+};
+UPK.light = UPK.range; UPK.gun = UPK.dmg; UPK.gold = UPK.bounty; UPK.pact = UPK.dmg.concat([['skull', 0.1, 1.5, 0.15, 0, 1]]);
+function upgrade(key) {
+  if (key === 'sea') return building('breakwater', 2);
+  const L = UPK[key] || UPK.dmg, S = M.model(true), G = M.model(true); M.hex(S, PQ, G);
+  const parts = new Map(), g = new T3.Group();
+  for (const [kind, x, y, z, ry, s] of L) {
+    let geo = parts.get(kind);
+    if (!geo) { geo = kind === 'lamp' ? lampGeo() : kind === 'beam' ? beamGeo() : kind === 'skull' ? skullGeo() : M.up(kind); parts.set(kind, geo); }
+    const m = new T3.Mesh(geo, kind === 'lamp' ? P.glowStd || (P.glowStd = new T3.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.2, emissive: '#3a2a18' })) : P.mat);
+    m.position.set(x, y, z); m.rotation.y = ry; m.scale.setScalar(s); g.add(m);
+  }
+  g.add(new T3.Mesh(S.geo(), P.mat), new T3.Mesh(G.geo(), P.glow)); g.userData.h = 1.6; return g;
+}
+const geoOf = fn => { const S = M.model(true); fn(S); return S.geo(); };
+const lampGeo = () => geoOf(S => { S.add(new T3.CylinderGeometry(0.3, 0.34, 0.12, 24), '#26292c', [0, 0.06, 0]); S.add(new T3.CylinderGeometry(0.24, 0.24, 0.5, 24), '#ffe2b8', [0, 0.37, 0]);
+  for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; S.add(new T3.BoxGeometry(0.03, 0.52, 0.03), '#1d1c1b', [Math.cos(a) * 0.25, 0.37, Math.sin(a) * 0.25]); }
+  S.add(new T3.ConeGeometry(0.34, 0.3, 24), '#4d2a1e', [0, 0.77, 0]); });
+const beamGeo = () => geoOf(S => { for (const s of [-1, 1]) S.add(new T3.BoxGeometry(0.1, 1.5, 0.1), '#33281f', [s * 0.75, 0.85, 0]); S.add(new T3.BoxGeometry(1.7, 0.12, 0.12), '#33281f', [0, 1.62, 0]);
+  for (const x of [-0.45, 0, 0.45]) S.add(new T3.CylinderGeometry(0.01, 0.01, 0.6, 6), '#26292c', [x, 1.3, 0]); });
+const skullGeo = () => geoOf(S => { S.add(new T3.IcosahedronGeometry(0.16, 2), '#cdc3a4', [0, 0, 0]); S.add(new T3.BoxGeometry(0.05, 0.07, 0.04), '#0b0b0c', [-0.06, 0.0, 0.14]); S.add(new T3.BoxGeometry(0.05, 0.07, 0.04), '#0b0b0c', [0.06, 0.0, 0.14]); });
+function creature(kind) {
+  const T = TW.R.T && TW.R.T[kind]; if (!T) return null;
+  const g = new T3.Group();
+  g.add(new T3.Mesh(T.body.geometry, P.cmat || (P.cmat = new T3.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.12, flatShading: true }))));
+  g.add(new T3.Mesh(T.eyes.geometry, P.eye || (P.eye = new T3.MeshBasicMaterial({ color: '#7fb8b0' }))));
+  if (kind === 'flyer' && T.wings) for (const w of T.wings) g.add(new T3.Mesh(w.geometry, P.cmat));
+  return g;
+}
+function build(id) {
+  const [t, a, b] = id.split(':');
+  let g = null;
+  if (t === 'b') g = building(a, +b || 1);
+  else if (t === 'u') g = upgrade(a);
+  else if (t === 'c') g = creature(a);
+  else if (t === 'e') { const [x, y] = a.split('+'); g = new T3.Group(); const A = building(x, 3), B = building(y, 2); A.position.x = -1.25; B.position.x = 1.25; B.scale.setScalar(0.85); g.add(A, B); }
+  if (!g) g = building('brazier', 1);
+  // frame it: the bounding box of what stands on the plinth (the plinth alone must not set the size)
+  const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9], v = new T3.Vector3();   // (the trimmed three has no Box3: walk the vertices)
+  g.updateMatrixWorld(true);
+  g.traverse(o => { if (!o.isMesh) return; const pa = o.geometry.getAttribute('position'); for (let i = 0; i < pa.count; i += 3) { v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld);
+    for (let k = 0; k < 3; k++) { const x = v.getComponent(k); if (x < lo[k]) lo[k] = x; if (x > hi[k]) hi[k] = x; } } });
+  if (t !== 'c') lo[1] = Math.max(lo[1], -0.35);
+  const c = new T3.Vector3((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2), sz = new T3.Vector3(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+  return { g, c, r: Math.max(sz.y * 0.62, Math.hypot(sz.x, sz.z) * 0.5, 0.8), t };
+}
+function get(id) { let E = P.cache.get(id); if (!E) { E = build(id); P.cache.set(id, E); } return E; }
+
+// --- drawing: one region of the shared canvas per portrait, copied out right after the render
+function draw(E, w, h, t, out) {
+  if (P.W < w || P.H < h) { P.W = Math.max(P.W, w, 256); P.H = Math.max(P.H, h, 160); P.r.setSize(P.W, P.H, false); }
+  P.pivot.children.length && P.pivot.remove(P.pivot.children[0]); P.pivot.add(E.g);
+  E.g.rotation.y = 0.6 + t * 0.32;   // a slow turn
+  for (const o of E.g.children) if (o.userData.fire) o.scale.set(o.userData.fire * (0.9 + 0.1 * Math.sin(t * 13)), o.userData.fire * (0.85 + 0.2 * Math.sin(t * 9.1)), o.userData.fire);
+  const cam = P.cam, d = E.r / Math.sin(cam.fov * Math.PI / 360) * (w / h < 1.3 ? 1.15 : 1);
+  cam.aspect = w / h; cam.updateProjectionMatrix();
+  cam.position.set(E.c.x, E.c.y + d * 0.32, E.c.z + d * 0.95); cam.lookAt(E.c.x, E.c.y, E.c.z);
+  P.r.setViewport(0, P.H - h, w, h); P.r.setScissor(0, P.H - h, w, h); P.r.setScissorTest(true);
+  P.r.render(P.scene, cam);
+  const g = out.getContext('2d'); g.drawImage(P.r.domElement, 0, 0, w, h, 0, 0, out.width, out.height);
+}
+function portrait(id, cw, ch) {
+  const dpr = Math.min(2, root.devicePixelRatio || 1), cv = document.createElement('canvas');
+  cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr); cv.className = 'twp'; cv.dataset.p = id;
+  cv.style.width = cw + 'px'; cv.style.height = ch + 'px';
+  if (!ensure()) return cv;
+  P.live.add({ cv, id, ph: (P.live.size * 1.7) % 6.28 }); kick(); return cv;
+}
+function portraitStill(id, w, h) {
+  const k = id + '|' + w + 'x' + h; if (P.stills.has(k)) return P.stills.get(k);
+  if (!ensure()) return ''; const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  draw(get(id), w, h, 0, cv); const u = cv.toDataURL('image/png'); P.stills.set(k, u); return u;
+}
+function kick() { if (!P.raf) P.raf = root.requestAnimationFrame(loop); }
+function loop(now) {
+  P.raf = 0;
+  for (const L of P.live) if (!L.cv.isConnected) P.live.delete(L);
+  if (!P.live.size) return;
+  P.raf = root.requestAnimationFrame(loop);
+  if (now - P.last < 32) return;   // ~30 fps is enough for a slow turn
+  P.last = now; const t = now / 1000;
+  for (const L of P.live) { const r = L.cv.getBoundingClientRect(); if (r.width < 4 || r.bottom < 0 || r.top > root.innerHeight) continue;
+    draw(get(L.id), L.cv.width, L.cv.height, t + L.ph, L.cv); }
+}
+// auto-mount: any [data-tw-portrait] element gets a canvas the size of its box (card art windows, plaques)
+function mount(el) {
+  if (el.__twp) return; const r = el.getBoundingClientRect(); if (r.width < 4 || r.height < 4) { el.__twpWait = 1; return; }
+  el.__twp = 1; const cv = portrait(el.dataset.twPortrait, Math.round(r.width), Math.round(r.height)); cv.style.width = cv.style.height = '100%'; el.appendChild(cv);
+  const md = el.closest('.md'); if (md) md.classList.add('twp-on');
+}
+function scan() { for (const el of document.querySelectorAll('[data-tw-portrait]')) mount(el); }
+const CSS = `[data-tw-portrait]{position:absolute;inset:0;pointer-events:none}
+[data-tw-portrait] canvas.twp{display:block;width:100%;height:100%;-webkit-mask-image:radial-gradient(ellipse 72% 88% at 46% 46%,#000 58%,transparent 100%);mask-image:radial-gradient(ellipse 72% 88% at 46% 46%,#000 58%,transparent 100%)}
+.md.twp-on svg.art{visibility:hidden}
+.card [data-tw-portrait]{filter:brightness(.82) saturate(.75)}.card:hover [data-tw-portrait],.card.hot [data-tw-portrait]{filter:none}
+.up [data-tw-portrait]{filter:brightness(.7) saturate(.6)}.up:hover [data-tw-portrait],.up.can [data-tw-portrait]{filter:brightness(.95)}`;
+function boot() {
+  const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
+  new MutationObserver(() => scan()).observe(document.body, { childList: true, subtree: true });
+  setInterval(() => { for (const el of document.querySelectorAll('[data-tw-portrait]')) if (el.__twpWait && !el.__twp) { el.__twpWait = 0; mount(el); } }, 250);
+  scan();
+}
+if (document.body) boot(); else document.addEventListener('DOMContentLoaded', boot);
+Object.assign(TW, { portrait, portraitStill, portraitCache: P });
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
 <script>/* cardart.js */
@@ -8055,7 +8559,13 @@ const TWArt = (() => {
   const evo = (a, b, col) => frame(col || '#9a8e72', `${half(a, -32, .78)}${half(b, 98, .78)}
     <path d="M150 0V180" stroke="#000" stroke-width="2" opacity=".6"/>${ln('M130 92q-12 0-12 12t12 12h22q12 0 12-12t-12-12z', '#a8582a', 5)}${ln('M156 92q12 0 12 12t-12 12h-22', '#7a3a1c', 5)}${ln('M126 96h28M126 112h28', '#e0a070', 1, .4)}`, { top: '' });
   const rep = (a, b, col) => frame(col || '#8a7a42', `<g opacity=".5" style="filter:grayscale(.7) brightness(.7)">${half(a, -47, .78)}</g>${ln('M20 24L120 150M120 24L20 150', '#8e1b1b', 5, .8)}${half(b, 91, .86)}${ln('M126 90h30', '#d8cfb8', 2.4, .9)}${ln('M148 82l10 8-10 8', '#d8cfb8', 2.4, .9)}`, {});
-  return { DEFS, building, relic, tile, evo, rep, has: id => !!B[id] };
+  // LAS-73: every art window also carries a live 3D portrait slot (src/portrait.js mounts a turning model into it and hides the
+  // painted SVG once it draws; the SVG stays as the fallback). Upgrade plaques show their upgrade's props, relics their branch's.
+  const pt = (svg, id) => svg + `<div data-tw-portrait="${id}"></div>`;
+  const HERO_UP = { mortar: 'dmg', ballista: 'rate', lamp2: 'range', tesla: 'crit', breakwater: 'wall', cave: 'bounty', bell: 'rot' };
+  return { DEFS, has: id => !!B[id], svg: { building, relic, tile, evo, rep },
+    building: id => pt(building(id), 'b:' + id), relic: (p, br, col) => pt(relic(p, br, col), 'u:' + br),
+    tile: (p, col, hero) => pt(tile(p, col, hero), 'u:' + (HERO_UP[hero] || 'dmg')), evo: (a, b, col) => pt(evo(a, b, col), 'e:' + a + '+' + b), rep: (a, b, col) => pt(rep(a, b, col), 'b:' + b) };
 })();
 if (typeof window !== 'undefined') window.TWArt = TWArt;
 </script>
