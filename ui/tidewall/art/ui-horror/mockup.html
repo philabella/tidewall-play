@@ -1,0 +1,363 @@
+<!doctype html>
+<!-- LAS-70 mockup: Tidewall UI "shrouded in darkness" + live 3D card portraits. Not game code: a target for UI/UX and
+     Battle Feel to build from (spec: tidewall/art/ui-horror.md). Params: ?v=A|B|C card style, ?s=pick|end screen,
+     ?t=<seconds> freeze the clock (screenshots), ?hover=0|1|2 the card under the mouse, #debug = tris + portrait cost.
+     One shared WebGLRenderer draws every portrait in turn and copies it into the card's 2D canvas (render-to-canvas);
+     the bottom-bar thumbnails are frames cached once from the same renderer. -->
+<html lang="en"><head><meta charset="utf-8"><title>Tidewall: darkness UI mockup</title>
+<style>
+@font-face{font-family:Fell;src:url(fonts/IMFeENrm28P.ttf)}
+@font-face{font-family:Fell;font-style:italic;src:url(fonts/IMFeENit28P.ttf)}
+@font-face{font-family:FellSC;src:url(fonts/IMFeENsc28P.ttf)}
+:root{--void:#000;--lantern:#d9e4ea;--bone:#c9bfab;--ash:#6d675d;--blood:#4e1712;--coal:#8a2c1a;
+  --body:Barlow,"Segoe UI",sans-serif}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%;background:#000;color:var(--bone);overflow:hidden;font-family:Fell,Georgia,serif}
+#stage{position:fixed;inset:0}
+/* the world behind: only a far beam haze, everything else black */
+#world{position:absolute;inset:0;background:
+  radial-gradient(ellipse 18% 46% at 50% -8%,rgba(150,170,185,.10),transparent 70%),
+  #000}
+#grain{position:absolute;inset:-50%;pointer-events:none;opacity:.045;mix-blend-mode:screen;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.4 -.35'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation:grain 1s steps(6) infinite}
+@keyframes grain{0%{transform:translate(0,0)}33%{transform:translate(-3%,2%)}66%{transform:translate(2%,-3%)}100%{transform:translate(-1%,1%)}}
+#vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 75% 80% at 50% 50%,transparent 45%,rgba(0,0,0,.92) 100%)}
+
+/* ---------- HUD: no panels, no plates; type sits on the dark ---------- */
+#hud{position:absolute;left:50%;top:26px;transform:translateX(-50%);width:880px;display:flex;align-items:flex-start;gap:40px;
+  opacity:.82}
+#hud .wave{font-size:30px;line-height:1;color:var(--bone)}
+#hud .wave small{display:block;font-style:italic;font-size:15px;color:var(--ash);margin-top:6px}
+#hud .hp{flex:1;padding-top:12px}
+#hud .hp .line{position:relative;height:3px;background:rgba(201,191,171,.10)}
+#hud .hp .fill{position:absolute;inset:0 18% 0 0;background:linear-gradient(90deg,#5e1a12,#7a2416 70%,#a03a22);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='6' preserveAspectRatio='none'%3E%3Cfilter id='r'%3E%3CfeTurbulence baseFrequency='.08 .9' numOctaves='2'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='5'/%3E%3C/filter%3E%3Crect x='0' y='1' width='600' height='4' filter='url(%23r)'/%3E%3C/svg%3E") 0 0/100% 100%}
+#hud .hp .num{font-family:var(--body);font-size:13px;color:var(--ash);margin-top:7px;letter-spacing:.04em}
+#hud .res{display:flex;gap:26px;font-family:var(--body);font-size:26px;line-height:1}
+#hud .res small{font-family:Fell,serif}
+#hud .res span small{display:block;font-style:italic;font-size:14px;color:var(--ash);margin-top:6px}
+#hud .res .em{color:#a8402a}
+
+/* ---------- the wave banner: letters condense out of the black ---------- */
+#banner{position:absolute;left:0;right:0;top:206px;text-align:center;pointer-events:none}
+#banner h1{font-weight:400;font-size:76px;letter-spacing:.02em;color:var(--bone);text-shadow:0 0 30px rgba(0,0,0,1)}
+#banner h1 .ch{display:inline-block;opacity:0;animation:emerge 2.6s cubic-bezier(.3,0,.2,1) forwards}
+#banner p{font-style:italic;font-size:22px;color:var(--ash);margin-top:6px;opacity:0;animation:emerge 2.2s ease-out 1.7s forwards}
+#smoke{position:absolute;left:50%;top:150px;width:1100px;height:260px;transform:translateX(-50%);pointer-events:none;opacity:0;
+  background:radial-gradient(ellipse 50% 40% at 50% 55%,rgba(120,124,126,.10),transparent 70%);filter:blur(18px);animation:smoke 6s ease-out forwards}
+@keyframes emerge{0%{opacity:0;filter:blur(14px)}45%{opacity:.45;filter:blur(5px)}100%{opacity:1;filter:blur(0)}}
+@keyframes smoke{0%{opacity:0;transform:translateX(-50%) scale(.8)}35%{opacity:1}100%{opacity:.35;transform:translateX(-50%) scale(1.25)}}
+
+/* ---------- pick cards ---------- */
+#cards{position:absolute;left:50%;top:356px;transform:translateX(-50%);display:flex;gap:46px;align-items:flex-start}
+.card{position:relative;width:372px;height:560px;opacity:0;animation:outofdark 1.9s ease-out forwards}
+@keyframes outofdark{0%{opacity:0;filter:brightness(0) blur(8px)}60%{opacity:1;filter:brightness(.45) blur(1px)}100%{opacity:1;filter:brightness(1) blur(0)}}
+.card .shade{position:absolute;inset:0;transition:filter 1.2s,opacity 1.2s}
+.card.dim .shade{filter:brightness(.5) saturate(.7)}
+.card canvas.por{position:absolute;left:0;top:0;width:372px;height:262px}
+.card .txt{position:absolute;left:34px;right:30px;top:268px}
+.card .tag{font-style:italic;font-size:18px;color:#a4402a}
+.card .name{font-size:36px;line-height:1.05;color:var(--bone);margin-top:2px}
+.card .stat{display:flex;align-items:baseline;gap:12px;margin-top:22px}
+.card .stat b{font-family:var(--body);font-weight:400;font-size:54px;line-height:.9;color:var(--lantern);letter-spacing:-.01em}
+.card .stat span{font-family:var(--body);font-size:17px;color:#958d7f}
+.card .desc{font-family:var(--body);font-size:16px;line-height:1.45;color:#7d766a;margin-top:14px;max-width:30ch}
+.card .foot{position:absolute;left:34px;right:30px;bottom:26px;display:flex;justify-content:space-between;align-items:center}
+.card .key{font-size:24px;color:var(--ash)}
+.card.hov .key{color:var(--lantern)}
+.card .lv svg{display:block}
+/* the lantern: one light from the left edge of the screen, so every card is lit on its left side */
+.card .lamp{position:absolute;inset:0;pointer-events:none;transition:opacity 1.2s;
+  background:linear-gradient(90deg,rgba(217,228,234,.07),rgba(217,228,234,.015) 22%,transparent 45%)}
+.card.hov .lamp{background:linear-gradient(90deg,rgba(217,228,234,.15),rgba(217,228,234,.04) 30%,transparent 62%)}
+
+/* A: lantern-lit paper. A sheet of dark rag paper, torn edge, no border; the portrait is printed into it */
+.vA .card .sheet{position:absolute;inset:0;background:
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='372' height='560'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.012 .5' numOctaves='3' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 .55 0 0 0 0 .5 0 0 0 0 .42 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='372' height='560' filter='url(%23p)'/%3E%3C/svg%3E"),
+  linear-gradient(180deg,#090807,#060505 60%,#030303);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='372' height='560'%3E%3Cfilter id='t'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.06' numOctaves='3' seed='9'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='9'/%3E%3C/filter%3E%3Crect x='6' y='6' width='360' height='548' filter='url(%23t)'/%3E%3C/svg%3E") 0 0/100% 100%}
+.vA .card canvas.por{-webkit-mask:linear-gradient(180deg,#000 62%,transparent 100%),linear-gradient(90deg,transparent,#000 9%,#000 91%,transparent);-webkit-mask-composite:source-in}
+.vA .card .lamp{-webkit-mask:inherit}
+
+/* B: no card at all. The portrait hangs in the black, feathered; ink text below */
+.vB .card .sheet{display:none}
+.vB .card canvas.por{-webkit-mask:radial-gradient(ellipse 50% 52% at 50% 50%,#000 52%,transparent 100%)}
+.vB .card .lamp{background:radial-gradient(ellipse 60% 40% at 8% 30%,rgba(217,228,234,.06),transparent 70%)}
+.vB .card.hov .lamp{background:radial-gradient(ellipse 70% 50% at 8% 30%,rgba(217,228,234,.14),transparent 70%)}
+
+/* C: tintype. The portrait is a wet-plate photograph of the thing, silver on black, pour marks and scratches */
+.vC .card .sheet{position:absolute;left:10px;top:4px;width:352px;height:256px;border-radius:3px;
+  background:radial-gradient(ellipse 60% 60% at 50% 50%,transparent 55%,rgba(0,0,0,.95) 100%)}
+.vC .card canvas.por{left:10px;top:4px;width:352px;height:256px;filter:grayscale(.92) sepia(.22) contrast(1.15) brightness(1.08);border-radius:3px;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='352' height='256'%3E%3Cfilter id='c'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.035' numOctaves='4' seed='3'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='22'/%3E%3CfeGaussianBlur stdDeviation='2.5'/%3E%3C/filter%3E%3Crect x='16' y='14' width='320' height='228' rx='30' filter='url(%23c)'/%3E%3C/svg%3E") 0 0/100% 100%}
+.vC .card .scr{position:absolute;left:10px;top:4px;width:352px;height:256px;pointer-events:none;opacity:.35;mix-blend-mode:screen}
+
+/* ---------- bottom bar: building marks, no plates; affordable ones catch the lantern ---------- */
+#bar{position:absolute;left:50%;bottom:30px;transform:translateX(-50%);display:flex;gap:18px;align-items:flex-end}
+.slot{position:relative;width:124px;text-align:left;opacity:.28}
+.slot.ok{opacity:.9}
+.slot canvas{display:block;width:124px;height:78px;-webkit-mask:radial-gradient(ellipse 52% 55% at 50% 50%,#000 50%,transparent 100%)}
+.slot .l{display:flex;justify-content:space-between;font-size:17px;color:var(--bone);margin-top:-2px;padding:0 8px}
+.slot .l i{font-style:normal;font-family:var(--body);font-size:14px;color:var(--ash)}
+.slot .k{position:absolute;left:8px;top:2px;font-size:15px;color:var(--ash)}
+.slot.ok::before{content:"";position:absolute;inset:-6px -4px;background:linear-gradient(90deg,rgba(217,228,234,.07),transparent 60%);pointer-events:none}
+.pow{min-width:96px;text-align:center;opacity:.85;white-space:nowrap}
+.pow .w{font-size:22px;color:var(--bone)} .pow .w em{font-style:normal;color:var(--ash);font-size:16px;margin-right:6px}
+.pow .burn{height:2px;margin:9px 14px 0;background:linear-gradient(90deg,#a8402a 62%,rgba(201,191,171,.12) 62%)}
+.pow.cd{opacity:.4}
+#hint{position:absolute;left:0;right:0;top:132px;text-align:center;font-style:italic;font-size:17px;color:#4d4842}
+
+/* ---------- end screen ---------- */
+#end{position:absolute;inset:0;display:none}
+.sEnd #end{display:block}.sEnd #cards,.sEnd #banner,.sEnd #hint,.sEnd #smoke{display:none}.sEnd #hud,.sEnd #bar{opacity:0}
+#end canvas{position:absolute;left:calc(50% - 760px);top:120px;width:760px;height:840px;opacity:0;animation:outofdark 4s ease-out .4s forwards;
+  -webkit-mask:radial-gradient(ellipse 48% 50% at 50% 46%,#000 45%,transparent 100%)}
+#end .col{position:absolute;left:calc(50% + 40px);top:270px;width:600px}
+#end h2{font-weight:400;font-size:72px;line-height:1;color:var(--bone)}
+#end h2 .ch{display:inline-block;opacity:0;animation:emerge 3s cubic-bezier(.3,0,.2,1) forwards}
+#end .sub{font-style:italic;font-size:24px;color:var(--ash);margin-top:14px;opacity:0;animation:emerge 2.4s ease-out 2.4s forwards}
+#end dl{margin-top:44px;width:470px;opacity:0;animation:emerge 2.4s ease-out 3.4s forwards}
+#end dl div{display:flex;align-items:baseline;gap:10px;font-size:23px;padding:7px 0;color:#9e9583}
+#end dl dt{white-space:nowrap}#end dl dd{margin-left:auto;color:var(--bone);font-family:var(--body);font-size:22px}
+#end dl div::after{content:"";order:1;flex:1;border-bottom:1px dotted rgba(201,191,171,.18);transform:translateY(-6px)}
+#end dl dd{order:2}
+#end .acts{margin-top:52px;display:flex;gap:44px;font-size:28px;opacity:0;animation:emerge 2s ease-out 4.6s forwards}
+#end .acts a{color:var(--bone);text-decoration:none;padding-bottom:6px;border-bottom:1px solid transparent}
+#end .acts a.f{color:var(--lantern);border-color:rgba(217,228,234,.35)}
+#end .acts a:not(.f){color:var(--ash)}
+#dbg{position:absolute;left:12px;bottom:10px;font:12px/1.4 Consolas,monospace;color:#7a8;white-space:pre;display:none}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01s!important;animation-delay:0s!important}}
+</style>
+<script>(function(){ /* Barlow comes from the game's own font file */ })();</script>
+<script src="../../src/uifont.js"></script>
+<script src="../vendor/three-r160.min.js"></script>
+</head><body>
+<div id="stage">
+  <div id="world"></div>
+  <div id="hud">
+    <div class="wave">Wave 2<small>a choice when wave 5 holds</small></div>
+    <div class="hp"><div class="line"><div class="fill"></div></div><div class="num">citadel 205 of 250</div></div>
+    <div class="res"><span>8<small>gold</small></span><span class="em">289<small>embers</small></span></div>
+  </div>
+  <div id="smoke"></div>
+  <div id="banner"><h1 id="bh">Wave 2 holds</h1><p>Choose one. The tide waits.</p></div>
+  <div id="cards"></div>
+  <div id="bar"></div>
+  <div id="end">
+    <canvas id="endc" width="760" height="840"></canvas>
+    <div class="col">
+      <h2 id="eh">The light went out</h2>
+      <div class="sub">on wave 28, an hour before dawn</div>
+      <dl>
+        <div><dt>Waves held</dt><dd>27</dd></div>
+        <div><dt>Drowned ones put back in the sea</dt><dd>4,212</dd></div>
+        <div><dt>Hardest hit</dt><dd>1,904</dd></div>
+        <div><dt>Buildings raised on the rock</dt><dd>9</dd></div>
+        <div><dt>Embers carried home</dt><dd>289</dd></div>
+      </dl>
+      <div class="acts"><a class="f" href="#">Light the lamp again</a><a href="#">Leave the island</a></div>
+    </div>
+  </div>
+  <div id="grain"></div><div id="vig"></div>
+  <div id="dbg"></div>
+</div>
+<script>
+'use strict';
+const T = THREE, Q = new URLSearchParams(location.search);
+const V = Q.get('v') || 'A', SCR = Q.get('s') || 'pick', TF = Q.has('t') ? +Q.get('t') : null, HOV = Q.has('hover') ? +Q.get('hover') : 1;
+const DEBUG = location.hash === '#debug';
+document.body.classList.add('v' + V); if (SCR === 'end') document.body.classList.add('sEnd');
+
+// ---------- noise (value noise + fbm), for displacement and canvas textures
+const hash = (x, y, z) => { let h = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return h - Math.floor(h); };
+function vn3(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z), xf = x - xi, yf = y - yi, zf = z - zi;
+  const s = t => t * t * (3 - 2 * t), u = s(xf), v = s(yf), w = s(zf), L = (a, b, t) => a + (b - a) * t;
+  const c = (i, j, k) => hash(xi + i, yi + j, zi + k);
+  return L(L(L(c(0,0,0), c(1,0,0), u), L(c(0,1,0), c(1,1,0), u), v), L(L(c(0,0,1), c(1,0,1), u), L(c(0,1,1), c(1,1,1), u), v), w);
+}
+const fbm = (x, y, z, o = 4) => { let a = 0, f = 1, m = .5; for (let i = 0; i < o; i++) { a += vn3(x * f, y * f, z * f) * m; f *= 2.03; m *= .5; } return a; };
+// displace along the radial direction (lathe objects) or the position direction (heads), so seams stay closed
+function displace(g, amt, fr, mode = 'radial') {
+  const p = g.attributes.position, v = new T.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i); const n = (fbm(v.x * fr, v.y * fr, v.z * fr, 3) - .5) * amt;
+    if (mode === 'radial') { const r = Math.hypot(v.x, v.z) || 1; v.x += v.x / r * n; v.z += v.z / r * n; }
+    else { const r = v.length() || 1; v.multiplyScalar(1 + n / r); }
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals(); return g;
+}
+// canvas textures: base colour with grime + a roughness map
+function tex(kind) {
+  const N = 256, c = document.createElement('canvas'); c.width = c.height = N; const x = c.getContext('2d'), d = x.createImageData(N, N);
+  const P = { iron: [[18, 17, 16], [58, 52, 46], [70, 34, 20]], wood: [[22, 15, 10], [64, 46, 30], [30, 22, 16]],
+    stone: [[34, 33, 31], [92, 88, 80], [40, 44, 40]], bronze: [[16, 20, 18], [52, 58, 48], [38, 62, 54]], flesh: [[22, 26, 25], [78, 84, 78], [50, 34, 30]] }[kind];
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const u = i / N * 6, v = j / N * 6;
+    let t = kind === 'wood' ? .5 + .5 * Math.sin(u * 2.2 + fbm(u * .7, v * .25, 1, 4) * 9) : fbm(u, v, 2, 5);
+    const g = fbm(u * 2.3, v * 2.3, 9, 3), k = (j * N + i) * 4, st = Math.max(0, fbm(u * .8, v * .8, 5, 3) - .55) * 3;
+    for (let q = 0; q < 3; q++) d.data[k + q] = P[0][q] + (P[1][q] - P[0][q]) * t * (.6 + .4 * g) + (P[2][q] - P[1][q]) * st * .7;
+    d.data[k + 3] = 255;
+  }
+  x.putImageData(d, 0, 0); const t = new T.CanvasTexture(c); t.colorSpace = T.SRGBColorSpace; t.wrapS = t.wrapT = T.RepeatWrapping; return t;
+}
+const TX = {}; const tx = k => TX[k] || (TX[k] = tex(k));
+const M = (k, o = {}) => new T.MeshStandardMaterial(Object.assign({ map: tx(k), roughness: .78, metalness: k === 'iron' || k === 'bronze' ? .55 : 0 }, o));
+const lathe = (pts, seg = 64) => new T.LatheGeometry(pts.map(p => new T.Vector2(p[0], p[1])), seg);
+const add = (g, geo, m, p = [0, 0, 0], r = [0, 0, 0]) => { const o = new T.Mesh(geo, m); o.position.set(...p); o.rotation.set(...r); g.add(o); return o; };
+
+function flameTex() {   // a soft teardrop: white-hot base, fading up
+  const c = document.createElement('canvas'); c.width = 64; c.height = 128; const x = c.getContext('2d');
+  const gr = x.createRadialGradient(32, 96, 2, 32, 80, 60); gr.addColorStop(0, 'rgba(255,240,220,1)'); gr.addColorStop(.35, 'rgba(255,170,110,.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = gr; x.beginPath(); x.moveTo(32, 2); x.bezierCurveTo(52, 50, 62, 90, 32, 124); x.bezierCurveTo(2, 90, 12, 50, 32, 2); x.fill();
+  const t = new T.CanvasTexture(c); t.colorSpace = T.SRGBColorSpace; return t;
+}
+// ---------- the models (portrait LOD: smooth normals, 4-12k triangles, own textures)
+function brazier() {
+  const g = new T.Group(), iron = M('iron'), st = M('stone');
+  add(g, displace(lathe([[0, 0], [.55, 0], [.6, .12], [.42, .22], [.4, .3], [0, .3]], 48), .05, 3), st, [0, -1.25, 0]);
+  add(g, displace(new T.CylinderGeometry(.07, .1, 1.9, 24, 24), .025, 6), iron, [0, -.15, 0]);
+  add(g, displace(lathe([[.05, 0], [.32, .04], [.58, .2], [.7, .42], [.74, .46], [.66, .44], [.54, .26], [.3, .12], [0, .1]], 72), .04, 5), iron, [0, .74, 0]);
+  for (let i = 0; i < 3; i++) { const a = i * 2.094, cu = new T.CatmullRomCurve3([new T.Vector3(.06, -.2, 0), new T.Vector3(.3, .35, 0), new T.Vector3(.52, .8, 0), new T.Vector3(.7, 1.16, 0)]);
+    add(g, new T.TubeGeometry(cu, 24, .022, 8), iron, [0, 0, 0], [0, a, 0]); }
+  const coal = new T.MeshStandardMaterial({ color: '#1a0c08', emissive: '#7a1c0a', emissiveIntensity: 1.6, roughness: .9 });
+  for (let i = 0; i < 26; i++) { const a = hash(i, 1, 2) * 6.28, r = hash(i, 3, 4) * .42;
+    add(g, new T.DodecahedronGeometry(.07 + hash(i, 5, 6) * .06, 0), coal, [Math.cos(a) * r, 1.0 + hash(i, 7, 8) * .1, Math.sin(a) * r], [i, i * 2, 0]); }
+  const fl = [], ft = flameTex();
+  for (let i = 0; i < 7; i++) { const s = new T.Sprite(new T.SpriteMaterial({ map: ft, color: i < 2 ? '#d8703a' : '#9a2e14', transparent: true, opacity: .8, blending: T.AdditiveBlending, depthWrite: false, fog: false }));
+    s.position.set((hash(i, 2, 2) - .5) * .5, 1.35, (hash(i, 3, 3) - .5) * .4); s.userData.w = .35 + hash(i, 4, 4) * .3; g.add(s); fl.push(s); }
+  const pl = new T.PointLight('#c2401c', 5, 5, 2); pl.position.set(0, 1.5, 0); g.add(pl);
+  g.userData.tick = t => { fl.forEach((f, i) => { const k = .7 + .4 * Math.abs(Math.sin(t * (2.1 + i * .37) + i * 2) * Math.sin(t * 1.3 + i)); f.scale.set(f.userData.w, f.userData.w * 2.2 * k, 1); f.position.y = 1.1 + .5 * k * f.userData.w; });
+    pl.intensity = 4 + 1.5 * Math.sin(t * 7.3) * Math.sin(t * 3.1); };
+  g.userData.frame = { y: .1, d: 6.2 }; return g;
+}
+function cannon() {
+  const g = new T.Group(), iron = M('iron'), wood = M('wood'), st = M('stone');
+  const bp = [[0, -.06], [.2, -.05], [.26, .02], [.27, .2], [.25, .22], [.25, .55], [.27, .57], [.27, .62], [.23, .64], [.2, 1.5], [.22, 1.52], [.22, 1.58], [.18, 1.6], [.2, 1.7], [.24, 1.74], [.22, 1.8], [.12, 1.8], [.11, 1.0], [0, .9]];
+  const b = add(g, displace(lathe(bp, 72), .012, 9), iron, [-.1, .78, 0], [0, 0, -1.42]);
+  add(g, new T.SphereGeometry(.09, 24, 16), iron, [-.12 - .02, .8, 0]).position.x = -.16;
+  const cheek = new T.Shape(); cheek.moveTo(-.85, 0); cheek.lineTo(.75, 0); cheek.lineTo(.75, .42); cheek.lineTo(.42, .42); cheek.lineTo(.42, .62); cheek.lineTo(.05, .62); cheek.lineTo(.05, .82); cheek.lineTo(-.4, .82); cheek.lineTo(-.85, .3); cheek.lineTo(-.85, 0);
+  const eg = new T.ExtrudeGeometry(cheek, { depth: .1, bevelEnabled: true, bevelSize: .015, bevelThickness: .015, bevelSegments: 3, curveSegments: 8 });
+  add(g, eg, wood, [0, .18, .26]); add(g, eg, wood, [0, .18, -.36]);
+  for (const z of [.38, -.38]) for (const x of [-.55, .45]) {
+    add(g, new T.CylinderGeometry(.26, .26, .08, 40, 1), M('wood', { color: '#6a6058' }), [x, .26, z * 1.1], [Math.PI / 2, 0, 0]);
+    add(g, new T.TorusGeometry(.26, .02, 10, 48), iron, [x, .26, z * 1.1 + (z > 0 ? .04 : -.04)]);
+  }
+  add(g, new T.BoxGeometry(1.7, .06, .9, 8, 1, 4), wood, [0, .26, 0]);
+  add(g, displace(new T.CylinderGeometry(1.25, 1.4, .34, 72, 6), .16, 2.2), M('stone', { color: '#7a7670' }), [0, -.17, 0]);   // the tower top it stands on
+  g.userData.frame = { y: .5, d: 6.4 }; g.userData.tick = t => { b.rotation.z = -1.42 + Math.sin(t * .7) * .015; };
+  return g;
+}
+function bell() {
+  const g = new T.Group(), br = M('bronze', { roughness: .5 }), wood = M('wood'), iron = M('iron');
+  const bp = [[0, 1.0], [.2, 1.0], [.28, .97], [.33, .9], [.36, .74], [.38, .55], [.44, .34], [.55, .16], [.64, .06], [.68, 0], [.66, -.02], [.58, -.01], [.5, .08], [.42, .26], [.34, .5], [.3, .78], [.24, .92], [0, .94]];
+  const piv = new T.Group(); piv.position.y = 1.5; g.add(piv);
+  add(piv, displace(lathe(bp, 96), .012, 7), br, [0, -1.05, 0]);
+  add(piv, new T.TorusGeometry(.12, .035, 12, 32), iron, [0, .02, 0]);
+  add(piv, new T.SphereGeometry(.09, 24, 16), iron, [0, -.9, 0]);
+  add(piv, new T.CylinderGeometry(.018, .018, .8, 8), iron, [0, -.5, 0]);
+  const beam = new T.BoxGeometry(2.2, .16, .2, 12, 2, 2); add(g, displace(beam, .02, 4, 'pos'), wood, [0, 1.62, 0]);
+  for (const x of [-1, 1]) add(g, displace(new T.BoxGeometry(.18, 2.4, .18, 2, 12, 2), .02, 4, 'pos'), wood, [x, .45, 0]);
+  const rope = new T.CatmullRomCurve3([new T.Vector3(.9, 1.6, .1), new T.Vector3(1.1, .9, .3), new T.Vector3(1.2, .1, .5), new T.Vector3(1.15, -.6, .6)]);
+  add(g, new T.TubeGeometry(rope, 48, .02, 8), M('wood', { roughness: 1 }));
+  g.userData.frame = { y: .6, d: 6.0 }; g.userData.tick = t => { piv.rotation.z = Math.sin(t * .9) * .06; };
+  return g;
+}
+function drowned() {   // the end screen: the thing that took the wall, half-seen, lit from the side
+  const g = new T.Group(), sk = M('flesh', { roughness: .32, metalness: 0 });
+  const h = new T.SphereGeometry(1, 80, 60), p = h.attributes.position, v = new T.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i); v.y *= 1.32; if (v.y < 0) { v.x *= 1 - .32 * -v.y; v.z += -v.y * .12; }
+    const e = (dx) => Math.exp(-((v.x - dx) ** 2 * 22 + (v.y - .12) ** 2 * 26)) * (v.z > .3 ? 1 : 0); v.z -= (e(.33) + e(-.33)) * .38;
+    const m = Math.exp(-(v.x ** 2 * 18 + (v.y + .62) ** 2 * 40)) * (v.z > .2 ? 1 : 0); v.z -= m * .18;
+    v.x *= .82; p.setXYZ(i, v.x, v.y, v.z);
+  }
+  displace(h, .07, 3.2, 'pos'); const hd = add(g, h, sk, [0, .9, 0]);
+  const sh = new T.SphereGeometry(1, 72, 48); displace(sh, .12, 2.2, 'pos'); add(g, sh, M('flesh', { roughness: .55 }), [0, -.75, -.35]).scale.set(1.7, 1.0, 1.0);   // hunched shoulders sinking into the dark
+  const weed = M('bronze', { roughness: .9, metalness: 0, color: '#9aa898' });
+  for (let i = 0; i < 18; i++) { const a = -1.2 + i / 17 * 2.4, x0 = Math.sin(a) * .8, z0 = Math.cos(a) * .5 - .2;
+    const cu = new T.CatmullRomCurve3([new T.Vector3(x0, 2.05, z0 - .3), new T.Vector3(x0 * 1.15, 1.2, z0 + .1), new T.Vector3(x0 * 1.25 + (hash(i, 1, 1) - .5) * .3, .3 - hash(i, 2, 1) * .5, z0 + .25)]);
+    add(g, new T.TubeGeometry(cu, 32, .03 + hash(i, 3, 1) * .03, 6), weed); }
+  const eye = new T.MeshStandardMaterial({ color: '#0a0b0a', roughness: .08, metalness: 0 });
+  void eye;   // no eyes: the sockets stay black (no glow, no highlight)
+  g.userData.frame = { y: .9, d: 5.4, fov: 32 }; g.userData.tick = t => { const b = Math.sin(t * .55); hd.position.y = .9 + b * .02; hd.rotation.y = .32 + Math.sin(t * .23) * .08; hd.rotation.x = .06 + b * .015; };
+  return g;
+}
+
+// ---------- the shared portrait renderer: one WebGL context, render each scene in turn, copy into 2D canvases
+const R = new T.WebGLRenderer({ antialias: true, alpha: false });
+R.toneMapping = T.ACESFilmicToneMapping; R.toneMappingExposure = 1.05; R.outputColorSpace = T.SRGBColorSpace; R.setClearColor('#000');
+const PORTRAITS = [];
+function portrait(model, w, h, light = {}) {
+  const sc = new T.Scene(); sc.fog = new T.FogExp2('#000', .045); sc.add(model);
+  sc.add(new T.HemisphereLight('#4a5866', '#000', .06));
+  // frame the model from its bounds: it fills the window with a little black around it
+  const F = Object.assign({}, model.userData.frame), bx = new T.Box3().setFromObject(model), sz = bx.getSize(new T.Vector3()), ce = bx.getCenter(new T.Vector3());
+  const th = Math.tan((F.fov || 28) * Math.PI / 360) * (F.tight || 1.18);
+  F.y = ce.y; F.d = Math.max(sz.y / (2 * th), sz.x / (2 * th * w / h), sz.z / (2 * th * w / h)) + Math.max(sz.x, sz.z) / 2;
+  const cam = new T.PerspectiveCamera(F.fov || 28, w / h, .1, 80);
+  // one lantern, held low at the left and in front; a much weaker cold rim behind so the silhouette separates from the black
+  const L = new T.SpotLight('#d6e4f0', (light.i || 1) * 9 * F.d * F.d, F.d * 4, .62, .8, 2); L.position.set(-F.d * .85, F.y + F.d * .35, F.d * .55); L.target.position.set(0, F.y, 0); sc.add(L, L.target);
+  const Rm = new T.DirectionalLight('#8aa0b4', .35); Rm.position.set(4, 3, -6); sc.add(Rm); sc.fog.density = .25 / F.d;
+  const P = { sc, cam, model, w, h, yaw: light.yaw || 0, spin: light.spin == null ? .12 : light.spin, L, tris: 0 };
+  model.traverse(o => { if (o.isMesh) P.tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
+  P.place = t => { const a = P.yaw + Math.sin(t * P.spin) * .55; cam.position.set(Math.sin(a) * F.d, F.y + F.d * .2, Math.cos(a) * F.d); cam.lookAt(0, F.y, 0); };
+  PORTRAITS.push(P); return P;
+}
+function draw(P, ctx, t) { if (R.domElement.width !== P.w * 2) R.setSize(P.w * 2, P.h * 2, false);
+  P.place(t); P.model.userData.tick && P.model.userData.tick(t); R.render(P.sc, P.cam); ctx.drawImage(R.domElement, 0, 0, ctx.canvas.width, ctx.canvas.height); }
+
+// ---------- the pick cards
+const CARDS = [
+  { m: brazier, tag: 'The wall', name: 'More Braziers', stat: '+4 m', unit: 'brazier ring', desc: 'The fire ring around the wall reaches farther, so the Wall Guard sees more of the sea.', lv: [1, 2] },
+  { m: cannon, tag: 'The guns', name: 'Gun Battery', stat: '40%', unit: 'of cannon damage', desc: 'A second cannon on its own tower. It fires only at what the light shows.', lv: [0, 3] },
+  { m: bell, tag: 'The wall', name: 'Bell Tower', stat: '1 s', unit: 'every creature stops', desc: 'Every 12 s the bell rings across the brazier ring and the dark goes still.', lv: [0, 3] },
+];
+const lvSvg = (n, of) => `<svg width="${of * 16}" height="16">${Array.from({ length: of }, (_, i) => `<path d="M${i * 16 + 3} 14 L${i * 16 + 9} 2" stroke="${i < n ? '#c9bfab' : 'rgba(201,191,171,.22)'}" stroke-width="2" stroke-linecap="round"/>`).join('')}</svg>`;
+const scratches = () => { let s = ''; for (let i = 0; i < 9; i++) { const x = hash(i, 9, 1) * 352, y = hash(i, 8, 1) * 256; s += `<path d="M${x} ${y} l${(hash(i, 7, 1) - .5) * 160} ${(hash(i, 6, 1) - .5) * 60}" stroke="#cfc8bb" stroke-width="${.4 + hash(i, 5, 1)}" fill="none"/>`; } return `<svg class="scr" viewBox="0 0 352 256">${s}</svg>`; };
+const cardsEl = document.getElementById('cards'), CTX = [];
+CARDS.forEach((c, i) => {
+  const el = document.createElement('div'); el.className = 'card' + (i === HOV ? ' hov' : ' dim'); el.style.animationDelay = (1.9 + i * .45) + 's';
+  el.innerHTML = `<div class="shade"><div class="sheet"></div><canvas class="por" width="744" height="524"></canvas>${V === 'C' ? scratches() : ''}
+    <div class="txt"><div class="tag">${c.tag}</div><div class="name">${c.name}</div><div class="stat"><b>${c.stat}</b><span>${c.unit}</span></div><div class="desc">${c.desc}</div></div>
+    <div class="foot"><span class="key">${i + 1}</span><span class="lv">${lvSvg(c.lv[0], c.lv[1])}</span></div></div><div class="lamp"></div>`;
+  cardsEl.appendChild(el);
+  el.addEventListener('mouseenter', () => [...cardsEl.children].forEach((e, j) => { e.classList.toggle('hov', j === i); e.classList.toggle('dim', j !== i); }));
+  CTX.push([portrait(c.m(), 372, 262, { yaw: -.35 + i * .05 }), el.querySelector('canvas').getContext('2d')]);
+});
+const endP = portrait(drowned(), 380, 420, { i: .22, yaw: .35, spin: .05 }), endCtx = document.getElementById('endc').getContext('2d');
+
+// ---------- bottom bar: thumbnails are frames cached ONCE from the shared renderer (no per-frame cost)
+const BAR = [['Braziers', 2, 15, 1, brazier], ['Gun Battery', 1, 13, 1, cannon], ['Bell Tower', 0, 12, 0, bell], ['Watch Posts', 0, 15, 0, null], ['Breakwater', 1, 10, 1, null], ['Rocket Rack', 0, 12, 0, null], ['Lamp', 2, 21, 0, null]];
+const barEl = document.getElementById('bar'), thumbs = {};
+BAR.forEach(([n, lv, cost, ok, mk], i) => {
+  const s = document.createElement('div'); s.className = 'slot' + (ok ? ' ok' : ''); s.title = n;
+  s.innerHTML = `<canvas width="248" height="156"></canvas><span class="k">${i + 1}</span><div class="l"><span>${lvSvg(lv, 3).replace(/width="48"/, 'width="48"')}</span><i>${cost} gold</i></div>`;
+  barEl.appendChild(s); const cx = s.querySelector('canvas').getContext('2d');
+  const P = portrait((mk || [brazier, cannon, bell][i % 3])(), 124, 78, { yaw: -.4, spin: 0 }); P.sc.fog.density = .02; draw(P, cx, 0);   // the cache
+});
+[['Q', 'Flare', 0], ['E', 'Flood Gate', 1]].forEach(([k, n, cd]) => { const p = document.createElement('div'); p.className = 'pow' + (cd ? ' cd' : ''); p.innerHTML = `<div class="w"><em>${k}</em>${n}</div><div class="burn" style="${cd ? 'background:linear-gradient(90deg,#a8402a 35%,rgba(201,191,171,.12) 35%)' : ''}"></div>`; barEl.appendChild(p); });
+
+// ---------- letters of the banner condense out of the dark in their own time
+function letters(id, base, spread) { const h = document.getElementById(id); h.innerHTML = [...h.textContent].map((ch, i) => ch === ' ' ? ' ' : `<span class="ch" style="animation-delay:${(base + hash(i, 4, 2) * spread).toFixed(2)}s">${ch}</span>`).join(''); }
+letters('bh', .3, 1.1); letters('eh', .8, 1.6);
+
+// ---------- clock: real time, or frozen at ?t= for screenshots (CSS animations are set to the same moment)
+const t0 = performance.now(); let frames = 0, cost = 0;
+const dbg = document.getElementById('dbg'); if (DEBUG) dbg.style.display = 'block';
+function loop(now) {
+  const t = TF != null ? TF : (now - t0) / 1000;
+  if (TF != null) document.getAnimations().forEach(a => { a.pause(); a.currentTime = TF * 1000; });
+  const c0 = performance.now();
+  if (SCR === 'pick') CTX.forEach(([P, ctx]) => draw(P, ctx, t)); else draw(endP, endCtx, t);
+  cost = cost * .95 + (performance.now() - c0) * .05; frames++; window.__frames = frames;
+  if (DEBUG && frames % 15 === 0) dbg.textContent = `portrait tris: ${CTX.map(([P], i) => CARDS[i].name + ' ' + Math.round(P.tris)).join(', ')}, end bust ${Math.round(endP.tris)}\nportrait draw cost (CPU side, per frame): ${cost.toFixed(2)} ms   calls ${R.info.render.calls}`;
+  window.__ready = frames > 2; window.__tris = Object.fromEntries(CTX.map(([P], i) => [CARDS[i].name, Math.round(P.tris)]).concat([['Drowned bust', Math.round(endP.tris)]]));
+  window.__cost = cost;
+  if (TF == null || frames < 4) requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body></html>
