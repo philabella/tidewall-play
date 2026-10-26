@@ -5025,7 +5025,7 @@ const FX = {
   numSize: [13, 34], critMul: 1.35,               // font px from small to huge hits; crits are 35% bigger
   numCol: '#f3e6cf', critCol: '#ffb347', beamCol: '#e6f1ff',
   shakeDecay: 1.6, shakeAmp: 0.9,                 // trauma per second lost; world units at full trauma
-  bannerFor: { wave: 1.6, kind: 2.6, boss: 3.2, mile: 2.4, fall: 4 },
+  bannerFor: { wave: 3.6, kind: 4.2, boss: 4.6, mile: 3.8, fall: 4 },
   intro: 3.4, stop: { mile: 0.09, bossKill: 0.16, bossCrit: 0.04 },   // boss intro seconds; hit-stop seconds
   vol: 0.6,
 };
@@ -5045,7 +5045,7 @@ function init(o) {
   const b = document.createElement('div'); b.id = 'twbanner';
   b.style.cssText = 'position:fixed;left:0;right:0;top:17%;z-index:3;pointer-events:none;text-align:center;opacity:0;' +
     'font-family:Georgia,"Times New Roman",serif;color:#ffd9a0;text-shadow:0 0 18px rgba(255,160,70,.55),0 2px 3px #000;' +
-    'transition:opacity .35s ease, transform .35s ease;transform:translateY(-8px)';
+    'transition:opacity 1.6s ease-in,filter 1.6s ease-in;filter:brightness(0)';
   document.body.appendChild(b);
   // the boss intro's letterbox: two black bars that slide in
   const bar = top => { const d = document.createElement('div');
@@ -5086,14 +5086,14 @@ function build3d() {
 // The end screen opens over the field: drop the banner at once, no fade behind the stat cards (LAS-18).
 function hideBanner() {
   if (!F.bn) return;
-  F.bn.style.transition = 'none'; F.bn.style.opacity = 0; F.bnT = 0; F.bnRank = 0;
-  void F.bn.offsetWidth; F.bn.style.transition = 'opacity .35s ease, transform .35s ease';
+  F.bn.style.transition = 'none'; F.bn.style.opacity = 0; F.bn.style.filter = 'brightness(0)'; F.bnT = 0; F.bnRank = 0;
+  void F.bn.offsetWidth;
 }
 function reset(S) {
   F.nums.length = 0; F.byId.clear(); F.bossIds.clear(); F.trauma = 0; F.flash = 0;
   F.mile = S ? rung(S.biggestHit) : 0;
   if (F.beam) F.beam.age = F.flood.age = F.keg.age = F.harp.age = 9;
-  F.bnT = 0; if (F.bn) F.bn.style.opacity = 0;
+  F.bnT = 0; if (F.bn) { F.bn.style.transition = 'none'; F.bn.style.opacity = 0; F.bn.style.filter = 'brightness(0)'; }
   intro.age = 9; intro.k = 0; F.holdUntil = 0; F.critStop = 0; letterbox(false);
 }
 
@@ -5124,7 +5124,7 @@ function frame(S, t, dt) {
   shake.y = a * (Math.sin(t * 43 + 2) * 0.6 + Math.sin(t * 71) * 0.4) * 0.7;
   shake.z = a * Math.sin(t * 29 + 4) * 0.4;
   F.flash = Math.max(0, F.flash - dt * 2.2);
-  if (F.bnT && t > F.bnT) { F.bn.style.opacity = 0; F.bn.style.transform = 'translateY(-8px)'; F.bnT = 0; }
+  if (F.bnT && t > F.bnT) { F.bn.style.transition = 'opacity 1.1s ease-out,filter 1.1s ease-out'; F.bn.style.opacity = 0; F.bn.style.filter = 'brightness(0)'; F.bnT = 0; }
 }
 
 function onEv(S, e) {
@@ -5272,7 +5272,9 @@ function banner(title, sub, dur, col, kind) {
   const big = kind !== 'wave';
   F.bn.innerHTML = `<div style="font-size:${big ? 54 : 40}px;letter-spacing:.06em;font-weight:700;color:${col || '#ffd9a0'}">${title}</div>` +
     `<div style="font-size:${big ? 20 : 17}px;letter-spacing:.22em;text-transform:uppercase;color:#9fd8d2;margin-top:6px;font-family:'Segoe UI',system-ui,sans-serif">${sub}</div>`;
-  F.bn.style.opacity = 1; F.bn.style.transform = 'translateY(0)';
+  // out of the dark (LAS-71): start black and clear, fade up slowly, no slide or bounce; the flicker is ui.js CSS
+  F.bn.style.transition = 'none'; F.bn.style.opacity = 0; F.bn.style.filter = 'brightness(0)'; void F.bn.offsetWidth;
+  F.bn.style.transition = 'opacity 1.6s ease-in,filter 1.6s ease-in'; F.bn.style.opacity = 1; F.bn.style.filter = 'brightness(1)';
   F.bnT = F.t + dur;
 }
 // rung 0 = none yet, 1 = 100 (LAS-18: the first banner lands in the first ~15 s), 2 = 1K, 3 = 1M ...
@@ -6926,7 +6928,7 @@ function guardsTick(S, t, dt, alpha) {
 // model (vertex colours, one solid + one glow draw) per id and level, shared by every copy; flames, lanterns and the bell are the only parts
 // that move. A new building rises (0.6 s: stone up out of the rock, ember-hot, dust); a level-up pulses (0.5 s) and swaps the look.
 // R.townStep: the island needs its outer wall for the rings to stand inside (growth() reads it); the sim's rim (item 1) replaces this.
-const TOWN = { r: [4.9, 6.8, 8.7, 10.6], n: [4, 6, 8, 10], step: [1, 2, 2, 3], y: [0.9, 0.28, 0.28, 0.28], rise: 0.6, lvl: 0.5, ember: '#ff6a20' };
+const TOWN = { r: [4.9, 6.8, 8.7, 10.6], n: [4, 6, 8, 10], step: [1, 2, 2, 3], y: [0.9, 0.28, 0.28, 0.28], rise: 1.7, lvl: 1.3, ember: '#ff6a20' };
 const TOWN_HOME = { brazier: 'in', rocket: 'in', watch: 'in', breakwater: 'in', bell: 'in', gun: 'out', boathouse: 'out', horn: 'out' };
 const TOWN_IDS = Object.keys(TOWN_HOME);
 const TC = { stone: '#5a5651', stoneD: '#38393b', stoneL: '#77716a', iron: '#26292c', rust: '#7a3f26', rustD: '#4d2a1e', wood: '#4d3b2c', woodD: '#33281f', bone: '#cdc3a4', boneD: '#9a917a', brass: '#8f6a35', ember: '#ff8a3a', coal: '#a8431a', lamp: '#ffc27a', black: '#0b0b0c', cloth: '#141112' };
@@ -7137,7 +7139,7 @@ function townDust(rec, n, big) {   // grey stone dust thrown off the plinth edge
 }
 function townTick(S, t, dt) {
   const src = S.town && S.town.slots ? S.town : (R.town && R.town.dev), TW = R.town || (src ? townInit() : null);
-  R.townStep = src ? TOWN.step[Math.max(0, Math.min(3, (src.rings || 1) - 1))] : 0;
+  R.townStep = src ? TOWN.step[Math.max(0, Math.min(3, (src.rings || 1) - 1))] : 0; R.townSrc = src;
   if (!TW) return;
   const slots = src ? src.slots : [], seen = new Set();
   for (const sl of slots) {
@@ -7184,6 +7186,19 @@ function townAdd(TW, id, lv, fresh) {
   for (const r of rings) for (let i = 0; i < TOWN.n[r - 1]; i++) if (!taken.has(r * 16 + i)) { const sl = { ring: r, i, id, lv, fresh: !!fresh }; D.slots.push(sl); return sl; }
   return null;
 }
+// LAS-71 (the pick plays out): where the next building of this home ('in' | 'out') will stand, as [x, y, z]; the level-up of a standing one: its slot
+R.townPreview = (id, home) => {
+  const D = R.townSrc; if (!D) return null;
+  const hit = D.slots.find(s => s.id === id); if (hit) return townPos(hit.ring, hit.i);
+  const taken = new Set(D.slots.map(s => s.ring * 16 + s.i)), nSl = D.slots.length + 1; let rings = D.rings || 1;
+  for (let r = 2, cap = TOWN.n[0]; r <= 4; r++, cap += TOWN.n[r - 2]) if (nSl > cap && rings < r) rings = r;
+  const order = []; for (let r = 1; r <= rings; r++) order.push(r); if ((home || TOWN_HOME[id]) === 'out') order.reverse();
+  for (const r of order) for (let i = 0; i < TOWN.n[r - 1]; i++) if (!taken.has(r * 16 + i)) return townPos(r, i);
+  return null;
+};
+// the camera eases toward a point (R.focus = {x, z} or null) while a pick plays out; f is the eased 0..1
+R.focus = null; R.focusF = 0; R.townKnows = id => !!TOWN_BUILD[id];
+R.screenOf = (x, y, z) => { const v = new T3.Vector3(x, y, z).project(R.cam); return { x: (v.x + 1) / 2 * root.innerWidth, y: (1 - v.y) / 2 * root.innerHeight }; };
 // #town=gun2,brazier1,... (id + level) or #town=all2; &rings=N (default: the fewest that hold them). TWRender.R.townApi: add / up / reset.
 function townDevInit() {
   const qs = root.location.search + '&' + root.location.hash, q = qs.match(/[?&#]town=([a-z0-9,]+)/); if (!q) return;
@@ -7805,6 +7820,13 @@ function frame(S, alpha, now) {
     const il = Math.hypot(I.x, I.z) || 1, lf = Math.min(1, 7 / il) * q;   // the lean toward the boss is capped at 7 m: the island stays in the middle
     R.cam.position.set(R.camBase.x + k.x + I.x * 0.6 * lf, R.camBase.y + k.y, R.camBase.z + k.z + I.z * 0.6 * lf);
     R.cam.lookAt(I.x * lf, RLOOK.camLookY, I.z * lf);
+    const fg = R.focus; R.focusF += ((fg ? 1 : 0) - R.focusF) * Math.min(1, dtR * (fg ? 2.4 : 3)); if (R.focusF < 0.002) R.focusF = 0;
+    if (R.focusF > 0) {   // LAS-71: close in on the slot being built: orbit nearer the point, look at it
+      const f = R.focusF, e = f * f * (3 - 2 * f), fx = (fg || R.focusLast).x * 0.8 * e, fz = (fg || R.focusLast).z * 0.8 * e, s = 1 - 0.5 * e;
+      if (fg) R.focusLast = fg;
+      R.cam.position.set(fx + (R.camBase.x + k.x) * s, RLOOK.camLookY + (R.camBase.y - RLOOK.camLookY) * s + k.y, fz + (R.camBase.z + k.z) * s);
+      R.cam.lookAt(fx, RLOOK.camLookY - 1.2 * e, fz);
+    }
     if (R.view) { R.cam.position.set(...R.view.pos); R.cam.lookAt(...R.view.look); }   // checks/look.js close-ups only
     if (q > 0 || R.cam.zoom !== 1) { R.cam.zoom = 1 + 0.18 * q; R.cam.updateProjectionMatrix(); }
     R.hemi.intensity = R.light0.hemi * (1 - 0.4 * q); R.key.intensity = R.light0.key * (1 - 0.3 * q);
@@ -8781,7 +8803,36 @@ body.twdev #fps{display:block!important}
 .fg-view .fn,.fg-view .fb{filter:saturate(.5) brightness(.92)}
 /* the banners (fx.js sets the inline style; the skin overrides it) */
 #twbanner{font-family:Cinzel,Georgia,serif!important;color:var(--bone)!important;text-shadow:0 0 2px #000,2px 2px 0 rgba(110,16,16,.5),0 0 28px rgba(142,27,27,.45)!important;
-  transition:opacity .9s ease,transform 1.6s ease,filter .9s ease!important;letter-spacing:.1em}
+  transform:none!important;letter-spacing:.1em}
+@keyframes twFlick{0%,100%{opacity:1}12%{opacity:.82}14%{opacity:1}47%{opacity:.9}49%{opacity:.7}51%{opacity:1}83%{opacity:.88}85%{opacity:1}}
+#twbanner>div{animation:twFlick 3.1s steps(1) 1.5s infinite}
+/* LAS-71: overlays dim the game into the dark (a vignette, not a box); the pick plays out; hidden combos */
+#tw-pick.dim{background:none}
+#tw-pick::before{content:'';position:absolute;inset:0;z-index:-1;background:radial-gradient(ellipse at 50% 46%,rgba(0,0,0,.5),rgba(0,0,0,.95) 78%);transition:opacity 1s ease}
+#tw-pick.play::before{opacity:.18}
+#tw-pick.on>h2,#tw-pick.on>.sub{animation:twDark 1.5s ease-out both}
+#tw-pick.play>h2,#tw-pick.play>.sub{opacity:0!important;animation:none;transition:opacity .35s}
+@keyframes twDark{from{opacity:0;filter:brightness(0)}to{opacity:1;filter:brightness(1)}}
+.card.fly{animation:none!important;pointer-events:none;z-index:6;transition:none}
+.card .sg{position:absolute;top:22px;right:20px;width:30px;height:30px;z-index:3;pointer-events:none;opacity:.2;background:var(--sgil) center/contain no-repeat}
+.card .sg.on{opacity:.9;filter:drop-shadow(0 0 7px rgba(196,98,45,.8));animation:twSigil 2.4s ease-in-out infinite}
+@keyframes twSigil{50%{opacity:.35;filter:drop-shadow(0 0 2px rgba(196,98,45,.3))}}
+.card.hid h3{letter-spacing:.3em;color:#8c8470}.card.hid .md{filter:grayscale(.7) brightness(.7)}
+:root{--sgil:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40' fill='none' stroke='%23c9b98a' stroke-width='2'><circle cx='20' cy='20' r='15'/><path d='M20 3 L33 20 L20 37 L7 20 Z'/><circle cx='20' cy='20' r='3' fill='%23c9b98a'/></svg>")}
+#tw-reveal{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 50%,rgba(6,3,2,.9),#000 80%);animation:twFade 1.1s ease-out both;pointer-events:none;text-align:center;font-family:Cinzel,Georgia,serif;color:var(--bone)}
+#tw-reveal.out{animation:twRevOut .8s ease-in both}@keyframes twRevOut{to{opacity:0}}
+#tw-reveal .sg.big{position:static;width:96px;height:96px;opacity:.9;background:var(--sgil) center/contain no-repeat;filter:drop-shadow(0 0 18px rgba(196,98,45,.8));animation:twSigil 2.4s ease-in-out infinite}
+#tw-reveal .rk{margin-top:22px;font-size:16px;letter-spacing:.34em;text-transform:uppercase;color:#8c8470;animation:twDark 1.8s ease-out .5s both}
+#tw-reveal h2{font-size:64px;margin:10px 0 16px;letter-spacing:.1em;color:#d8cfb8;text-shadow:0 0 2px #000,0 0 40px rgba(142,27,27,.55);animation:twDark 2.2s ease-in 1.1s both}
+#tw-reveal .rp{display:flex;align-items:center;gap:16px;font-size:15px;letter-spacing:.16em;color:#a69d86;text-transform:uppercase;animation:twDark 1.6s ease-out 2s both}
+#tw-reveal .rp span{display:flex;align-items:center;gap:8px}#tw-reveal .rp svg{width:26px;height:26px}#tw-reveal .rp i{width:40px;height:1px;background:#6b6250}
+#tw-reveal p{max-width:640px;font:500 20px/1.45 Barlow,sans-serif;color:#b9b19a;margin:16px 0 0;animation:twDark 1.6s ease-out 2.6s both}
+#tw-codex{z-index:5}#tw-codex .box{min-width:760px;max-width:900px;padding:22px 28px}
+#tw-codex .cx{display:grid;grid-template-columns:44px 1fr;gap:4px 14px;align-items:center;padding:10px 0;border-top:1px solid #2c2822}
+#tw-codex .cx .sg{width:34px;height:34px;opacity:.28;background:var(--sgil) center/contain no-repeat}#tw-codex .cx.on .sg{opacity:.95;filter:drop-shadow(0 0 6px rgba(196,98,45,.6))}
+#tw-codex .cx b{font:600 20px Cinzel,Georgia,serif;letter-spacing:.08em;color:#d8cfb8}#tw-codex .cx:not(.on) b{color:#6b6250;letter-spacing:.4em}
+#tw-codex .cx small{grid-column:2;font:500 15px/1.35 Barlow,sans-serif;color:#a69d86}
+
 #twbanner>div:first-child{color:#d8cfb8!important;animation:twInk 5s steps(1) infinite}
 #twbanner>div:last-child{color:#8c8470!important;font-family:Cinzel,Georgia,serif!important}
 #twbanner>div[style*="ff9b7a"]{color:#c0392b!important}
@@ -8803,6 +8854,8 @@ function fmtLocal(n) {
 const store = (k, v) => { try { if (v === undefined) return root.localStorage.getItem(k); root.localStorage.setItem(k, v); } catch (e) {} return null; };
 // first-run hints (LAS-34): each shows once, ever ('tidewall.hints'); Reset progress forgets them with the rest
 let hints = (() => { try { return JSON.parse(store('tidewall.hints')) || {}; } catch (e) { return {}; } })();
+let combos = (() => { try { return JSON.parse(store('tidewall.combos')) || {}; } catch (e) { return {}; } })();   // LAS-71: discovered hidden combinations
+const comboFound = k => { combos[k] = 1; store('tidewall.combos', JSON.stringify(combos)); };
 const hintDone = k => { hints[k] = 1; store('tidewall.hints', JSON.stringify(hints)); };
 const NUMS = { short: 'Short', sci: 'Scientific', full: 'Full' };
 let numMode = NUMS[store('tidewall.num')] ? store('tidewall.num') : 'short';
@@ -8832,6 +8885,8 @@ function voices() {
   V('deal', (C, o, t, p, T, N) => { N(C, o, t, 0.16, 'highpass', 1400 * p, 4200, 0.7, 0.45, 0.02); T(C, o, t, 1500 * p, 900, 0.1, 'sine', 0.08); }, 0.4);
   V('take', (C, o, t, p, T, N) => { T(C, o, t, 140 * p, 70, 0.09, 'square', 0.3); N(C, o, t, 0.05, 'lowpass', 2200, 300, 1, 0.5);
     [523, 784].forEach((f, i) => T(C, o, t + 0.06 + i * 0.05, f, f, 0.45, 'triangle', 0.18)); }, 0.6);
+  V('rise', (C, o, t, p, T, N) => { N(C, o, t, 1.8, 'lowpass', 180, 760, 0.8, 0.8, 0.6); T(C, o, t, 46, 64, 1.7, 'sine', 0.55, 0.5); T(C, o, t + 1.35, 96, 38, 0.3, 'sine', 0.8); N(C, o, t + 1.35, 0.25, 'lowpass', 900, 200, 1, 0.5); }, 0.7);
+  V('reveal', (C, o, t, p, T, N) => { T(C, o, t, 98, 98, 3.2, 'sine', 0.4, 1.1); T(C, o, t, 147, 147, 3.2, 'triangle', 0.14, 1.4); T(C, o, t + 1.2, 49, 49, 2.4, 'sine', 0.5, 0.6); N(C, o, t + 0.2, 2.4, 'bandpass', 300, 1400, 1.2, 0.35, 1.2); }, 0.7);
   V('whoosh', (C, o, t, p, T, N) => N(C, o, t, 0.32, 'bandpass', 260 * p, 1300, 0.9, 0.7, 0.08), 0.35);
   V('tick', (C, o, t, p, T) => T(C, o, t, 1700 * p, 1500, 0.025, 'triangle', 0.35, 0.001), 0.18);
   V('ready', (C, o, t, p, T) => { T(C, o, t, 660, 990, 0.14, 'sine', 0.3); T(C, o, t + 0.07, 1320, 1320, 0.25, 'sine', 0.12); }, 0.3);
@@ -8887,6 +8942,7 @@ function build() {
         <button class="mi pri sel" id="tw-start" data-i="0" style="--i:0">New run<small id="tw-m0"></small></button>
         <button class="mi" id="tw-toforge" data-i="1" style="--i:1">The Forge<small id="tw-m1"></small></button>
         <button class="mi" id="tw-toset" data-i="2" style="--i:2">Settings</button>
+        <button class="mi" id="tw-tocodex" data-i="3" style="--i:3">Codex<small id="tw-m3"></small></button>
       </nav>
     </div>
     <div class="br"><div id="tw-tmeta" class="num"></div>
@@ -8917,6 +8973,10 @@ function build() {
     <div class="fgbox"></div>
     <div style="margin-top:18px"><button class="btn" id="tw-fgo">New run <span class="kb">Enter</span></button>
       <button class="btn sec" id="tw-fback">Back <span class="kb">Esc</span></button></div>
+  </div>
+  <div id="tw-codex" class="scr dim">
+    <div class="box panel"><h2 class="disp">Codex</h2><div class="sub">Hidden pairings. They show themselves once.</div><div id="tw-cxl"></div>
+      <div style="text-align:center;margin-top:14px"><button class="btn sec" id="tw-cxback">Back <span class="kb">Esc</span></button></div></div>
   </div>
   <div id="tw-set" class="scr dim">
     <div class="box panel">
@@ -8968,6 +9028,7 @@ function build() {
   };
   $('tw-toforge').onclick = () => show('forge');
   $('tw-toset').onclick = $('tw-pset').onclick = () => openSet(true);
+  $('tw-tocodex').onclick = () => openCodex(true); $('tw-cxback').onclick = () => openCodex(false);
   $('tw-fgo').onclick = () => U.cb.onStart && U.cb.onStart();
   $('tw-fback').onclick = () => show('title');
   $('tw-sback').onclick = () => openSet(false);
@@ -9036,7 +9097,7 @@ function build() {
   $('tw-reset').onclick = () => {
     const b = $('tw-reset');
     if (!b._arm) { b._arm = 1; b.textContent = 'Click again to reset'; return; }
-    b._arm = 0; b.textContent = 'Reset'; hints = {}; store('tidewall.hints', '{}');
+    b._arm = 0; b.textContent = 'Reset'; hints = {}; store('tidewall.hints', '{}'); combos = {}; store('tidewall.combos', '{}');
     if (U.cb.resetMeta) U.cb.resetMeta(); renderForges(); syncTitle();
   };
   // the beam hint goes away on a click; the end screen's Forge line forges that node
@@ -9091,7 +9152,7 @@ function sizeAim() {
 }
 
 // ---------- actions
-function canAct() { return U.mode === 'run' && U.S && !U.S.over && !U.S.pick && !U.paused; }
+function canAct() { return U.mode === 'run' && U.S && !U.S.over && !U.S.pick && !U.paused && !U.playing; }
 function buyUp(k) {
   if (!canAct()) return;
   const b = U.upEls[k], t = Sim.upText(U.S, k);
@@ -9122,17 +9183,72 @@ function fire(k) {
   disarm();
   return ok;
 }
-// the taken card glows and flies to the Citadel bar, the others drop away, then the run goes on (0.4 s)
+// LAS-71: the pick plays out. The game stays paused. The taken card dims to embers and drifts to the slot it fills (or the Citadel bar for a
+// stat card), the camera eases toward that slot, THEN the sim takes the card and the building rises / levels up (TOWN.rise 1.7 s), and only then the
+// run resumes. An undiscovered combination gets its reveal moment first.
+const PLAY = { drift: 850, take: 1750, hold: 2000, stat: 1100 };
+function playEnd() {
+  U.playing = false; U.playTok = (U.playTok || 0) + 1;
+  const R = root.TWRender && root.TWRender.R; if (R) R.focus = null;
+  $('tw-pick').classList.remove('play'); const rv = document.getElementById('tw-reveal'); if (rv) rv.remove();
+}
 function choose(i) {
   if (!U.S || !U.S.pick || U.paused || U.taking) return;
-  const S = U.S;
-  U.taking = true; snd('take');
-  const tg = $('tw-hp').getBoundingClientRect();
+  const S = U.S, pk = S.pick, d = pk.town && pk.town[i], R = root.TWRender && root.TWRender.R;
+  U.taking = true; U.playing = true; snd('take');
+  const tok = U.playTok = (U.playTok || 0) + 1, live = () => U.playTok === tok && U.S === S;
+  const disc = Object.assign({}, combos, pk.disc), ek = d && d.kind === 'evo' && !disc[d.id] ? d.id : null;
+  // where it goes: the slot (render world -> screen), else the Citadel bar
+  let foc = null, to = null;
+  if (d) {
+    const key = d.kind === 'evo' ? EVO[d.id][1] : d.kind === 'rep' ? d.out : d.id, home = HOME[BLD[d.kind === 'rep' ? d.id : key][1]] === 'inner' ? 'in' : 'out';
+    const p = R && R.townPreview && R.townPreview(key, home);
+    if (p) { foc = { x: p[0], z: p[2] }; const sp = R.screenOf(p[0], p[1] + 1.2, p[2]); to = { x: sp.x, y: sp.y }; }
+    else { foc = { x: 0, z: 0 }; }
+  } else foc = { x: 0, z: 0 };
+  if (!to) { const tg = $('tw-hp').getBoundingClientRect(); to = { x: tg.left + tg.width / 2, y: tg.top + tg.height / 2 }; }
+  $('tw-pick').classList.add('play');
   document.querySelectorAll('#tw-cards .card').forEach((c, j) => {
-    if (j === i) { const r = c.getBoundingClientRect(); c.style.setProperty('--fx', (tg.left + tg.width / 2 - r.left - r.width / 2) + 'px'); c.style.setProperty('--fy', (tg.top + tg.height / 2 - r.top - r.height / 2) + 'px'); }
-    c.classList.add(j === i ? 'took' : 'gone');
+    if (j !== i) { c.classList.add('gone'); return; }
+    const r = c.getBoundingClientRect(); c.classList.add('fly');
+    c.animate([
+      { translate: '0 0', scale: 1, opacity: 1, filter: 'brightness(1) saturate(1)' },
+      { translate: '0 -18px', scale: 1.04, opacity: 1, filter: 'brightness(.85) saturate(1.1)', offset: 0.16 },
+      { translate: (to.x - r.left - r.width / 2) * 0.5 + 'px ' + ((to.y - r.top - r.height / 2) * 0.5 - 40) + 'px', scale: 0.55, opacity: 0.85, filter: 'brightness(.5) sepia(1) saturate(2.4) hue-rotate(-22deg)', offset: 0.6 },
+      { translate: (to.x - r.left - r.width / 2) + 'px ' + (to.y - r.top - r.height / 2) + 'px', scale: 0.1, opacity: 0, filter: 'brightness(.35) sepia(1) saturate(3) hue-rotate(-22deg)' },
+    ], { duration: PLAY.drift, easing: 'cubic-bezier(.45,.05,.55,.95)', fill: 'forwards' });
   });
-  setTimeout(() => { U.taking = false; if (U.S === S && S.pick) { if (S.pick.mock) S.pick = null; else Sim.choosePick(S, i); } }, 400);
+  const at = (ms, f) => setTimeout(() => { if (live()) f(); }, ms);
+  const go = t0 => {   // the camera eases, the sim takes the card, the building rises, the run goes on
+    const R2 = root.TWRender && root.TWRender.R;
+    at(t0 + 40, () => { if (R2) R2.focus = foc; if (d) snd('whoosh'); });
+    at(t0 + PLAY.take - PLAY.drift, () => {
+      U.taking = false;
+      if (S.pick) { if (S.pick.mock) { S.pick = null; mockRise(d, R2); } else Sim.choosePick(S, i); }
+      if (d) snd('rise'); else snd('buy');
+    });
+    at(t0 + PLAY.take - PLAY.drift + (d ? PLAY.hold : PLAY.stat), () => { if (R2) R2.focus = null; });
+    at(t0 + PLAY.take - PLAY.drift + (d ? PLAY.hold : PLAY.stat) + 700, playEnd);
+  };
+  if (ek) at(PLAY.drift - 150, () => reveal(ek, () => { if (live()) go(0); }));
+  else go(PLAY.drift);
+}
+// the dev mock (no sim town): put the building on the island through the render hook so the rise can be seen
+function mockRise(d, R) {
+  const A = R && R.townApi; if (!d || !A) return;
+  const id = d.kind === 'evo' ? EVO[d.id][1] : d.id, home = HOME[BLD[id][1]] === 'inner' ? 'in' : 'out', known = R.townKnows && R.townKnows(id);
+  const rid = known ? id : home === 'in' ? 'brazier' : 'gun';
+  const sl = A.slots().find(s => s.id === rid);
+  if (sl && d.kind !== 'new') { if (sl.lv < 3) A.up(A.slots().indexOf(sl)); } else A.add(rid, 1);
+}
+// the first time a hidden combination fires: the game goes black, its name rises out of the dark, the Codex keeps it (LAS-71)
+function reveal(ek, done) {
+  const e = EVO[ek], a = BLD[e[1]], b = BLD[e[2]];
+  comboFound(ek); snd('reveal');
+  const o = el('div', '', '<s class="sg big"></s><div class="rk">A hidden pairing wakes</div><h2 class="disp">' + escH(e[0]) + '</h2><div class="rp"><span>' + bIcon(e[1]) + escH(a[0]) + '</span><i></i><span>' + bIcon(e[2]) + escH(b[0]) + '</span></div><p>' + numHTML(escH(e[3])) + '</p>');
+  o.id = 'tw-reveal'; U.root.appendChild(o);
+  setTimeout(() => { if (o.isConnected) o.classList.add('out'); }, 4300);
+  setTimeout(() => { o.remove(); done(); }, 5100);
 }
 function pickHot(i) {
   const cs = document.querySelectorAll('#tw-cards .card'); if (!cs.length) return;
@@ -9140,7 +9256,7 @@ function pickHot(i) {
   cs.forEach((c, j) => c.classList.toggle('hot', j === U.hot));
 }
 function setPause(on) {
-  if (U.mode !== 'run' || (U.S && U.S.over)) on = false;
+  if (U.mode !== 'run' || (U.S && U.S.over) || U.playing) on = false;
   if (on !== U.paused) snd('whoosh');
   U.paused = on; $('tw-pause').classList.toggle('on', on);
   const q = $('tw-quit'); q._arm = 0; q.classList.remove('arm'); q.textContent = 'Give up the wall';
@@ -9158,7 +9274,7 @@ function onKey(e) {
   if (e.repeat) return;
   const k = e.key;
   if (k === '`') { U.dev = !U.dev; $('tw-dev').classList.toggle('on', U.dev); document.body.classList.toggle('twdev', U.dev); return; }
-  if (U.set) { if (k === 'Escape') openSet(false); return; }
+  if (U.set) { if (k === 'Escape') { openSet(false); openCodex(false); } return; }
   if (U.mode === 'title') {
     if (k === 'ArrowDown' || k === 's' || k === 'S') menuSel(U.menuSel + 1);
     else if (k === 'ArrowUp' || k === 'w' || k === 'W') menuSel(U.menuSel - 1);
@@ -9521,9 +9637,10 @@ const escH = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const bIcon = id => SVG(TI[id]);
 // what a town pick card shows: the new line of text only, the badge and the partner line, the level pips
 function townCard(d, own, disc) {
-  own = own || {}; disc = disc || {};
+  own = own || {}; disc = Object.assign({}, combos, disc || {});
   if (d.kind === 'evo') {
     const e = EVO[d.id], a = BLD[e[1]], b = BLD[e[2]];
+    if (!disc[d.id]) return { cls: 'evo hid', sig: 'on', kicker: 'Hidden pairing', name: '???', art: TWArt.evo(e[1], e[2]), icons: '', from: 'Two pieces you hold answer each other.', text: 'Take it to find out what wakes.', note: 'It will free a slot.', pips: 0 };
     return { cls: 'evo', kicker: 'Evolution', name: e[0], art: TWArt.evo(e[1], e[2]), icons: `<span class="ev">${bIcon(e[1])}</span><span class="ch"></span><span class="ev">${bIcon(e[2])}</span>`,
       from: `${a[0]} III + ${b[0]}`, text: e[3], note: `${b[0]}${/s$/.test(b[0]) ? '’' : '’s'} slot is freed.`, pips: 0 };
   }
@@ -9535,18 +9652,18 @@ function townCard(d, own, disc) {
   const b = BLD[d.id], r = ROLE[b[1]], lv = d.lv || 1, ek = evoOf(d.id), e = ek && EVO[ek], main = e && e[1] === d.id;
   const other = e && (main ? e[2] : e[1]), has = other && own[other];
   let line = '';
-  if (has) {
+  if (has && disc[ek]) {
     const on = BLD[other][0];
     line = `Answers: <i class="pi">${bIcon(other)}</i><b>${on}</b> (owned)<br><span class="lv">`
       + (disc[ek] ? (main ? `III + ${on}` : `${on} III + this`) + ` = ${e[0]}.` : (main ? 'Raise it to III' : `Raise the ${on} to III`) + ' and see what wakes.') + '</span>';
   }
   return { cls: 'bld', c: r[1], kicker: lv === 1 ? 'New building' : 'Level up', name: `${b[0]} ${RN[lv]}`, art: TWArt.building(d.id), icons: `<span class="ev">${bIcon(d.id)}</span>`, text: d.text || b[1 + lv],
-    pips: lv, role: r[0], home: HOME[b[1]], line, chain: !!has };
+    pips: lv, role: r[0], home: HOME[b[1]], line, chain: !!(has && disc[ek]), sig: e && !disc[ek] ? (has ? 'on' : 'dim') : '' };
 }
 function townHTML(t, i) {
   const pips = t.pips ? `<span class="tp">${[1, 2, 3].map(k => `<i class="${k < t.pips ? 'on' : k === t.pips ? 'nx' : ''}"></i>`).join('')}</span>` : '';
   return `<i class="rv"></i><i class="rv"></i><i class="rv"></i><i class="rv"></i>
-    ${t.role ? `<span class="rt">${t.role}</span>` : ''}${t.chain ? '<s class="cb"></s>' : ''}
+    ${t.role ? `<span class="rt">${t.role}</span>` : ''}${t.chain ? '<s class="cb"></s>' : ''}${t.sig ? `<s class="sg ${t.sig}"></s>` : ''}
     <div class="md ${t.cls}">${t.art}${pips}</div><h3 class="disp">${escH(t.name)}</h3><div class="tg"><div class="br">${escH(t.kicker)}</div>${t.home ? `<span class="sl">${t.home} slot</span>` : t.cls === 'evo' ? '<span class="sl">frees a slot</span>' : ''}</div>
     <div class="mid">${t.from ? `<div class="lb">${escH(t.from)}</div>` : ''}<p>${numHTML(escH(t.text))}</p>${t.note ? `<div class="nt">${escH(t.note)}</div>` : ''}${t.line ? `<div class="pl">${t.line}</div>` : ''}</div>
     <div class="ft"><span class="ck">${i + 1}</span><span class="pp"></span></div>`;
@@ -9554,7 +9671,7 @@ function townHTML(t, i) {
 // dev mock (the #dev panel's "Town cards", and checks/townpick.js): four sets that cover every card kind
 const MOCKS = [
   { own: { brazier: 3, bell: 2 }, disc: {}, c: [{ kind: 'level', id: 'lamp2', lv: 2 }, { kind: 'new', id: 'rocket' }, { kind: 'new', id: 'horn' }] },
-  { own: { brazier: 3, lamp2: 3, well: 1 }, disc: { crown: 1 }, c: [{ kind: 'evo', id: 'crown' }, { kind: 'level', id: 'well', lv: 2 }, { kind: 'new', id: 'spire' }] },
+  { own: { brazier: 3, lamp2: 3, well: 1 }, disc: {}, c: [{ kind: 'evo', id: 'crown' }, { kind: 'level', id: 'well', lv: 2 }, { kind: 'new', id: 'spire' }] },
   { own: { horn: 1, spire: 1, bell: 3 }, disc: { stormbell: 1 }, c: [{ kind: 'evo', id: 'stormbell' }, { kind: 'rep', id: 'well', out: 'horn' }, { kind: 'level', id: 'watch', lv: 3 }] },
   { own: { mortar: 2, beacon: 1, rocket: 1, winch: 1 }, disc: { hooks: 1 }, c: [{ kind: 'level', id: 'mortar', lv: 3 }, { kind: 'level', id: 'winch', lv: 2 }, { kind: 'new', id: 'cave' }] },
 ];
@@ -9568,7 +9685,7 @@ function mockTown(n) {
 
 function tip(S) {
   const t = $('tw-tip'), f = U.tipFor;
-  if (!f || (U.mode === 'run' && (S.pick || U.paused)) || U.set) { t.style.display = 'none'; return; }
+  if (!f || (U.mode === 'run' && (S.pick || U.paused || U.playing)) || U.set) { t.style.display = 'none'; return; }
   let h;
   if (f.node) {
     const M = meta(), I = M && Sim.nodeInfo(M, f.node);
@@ -9808,9 +9925,15 @@ function syncTitle() {
   $('tw-tmeta').innerHTML = on ? `<span class="emb"></span>${fmt(M.embers)} Embers &middot; ${M.nodes.length} of ${Sim.FORGE.length} nodes forged &middot; best wave ${M.bestWave}${M.starlight ? ` &middot; &#x2726; ${fmt(M.starlight)} Starlight` : ''}` : '';
   $('tw-tmeta').style.display = on ? '' : 'none';
   // one line under each menu item says what it leads to (Tropebrawl: "Next: ...")
+  $('tw-m3').textContent = Object.keys(EVO).filter(k => combos[k]).length + ' of ' + Object.keys(EVO).length + ' found';
   $('tw-m0').innerHTML = on ? `Best wave <b>${M.bestWave}</b>` : 'The tide is rising. Hold the wall.';
   $('tw-m1').innerHTML = !on ? 'Every fall pays Embers into the Forge' : can ? `<b>You can forge a node</b> &middot; ${fmt(M.embers)} Embers`
     : `${M.nodes.length} of ${Sim.FORGE.length} forged${nx ? ` &middot; next in ${fmt(nx.cost - M.embers)} Embers` : ''}`;
+}
+function openCodex(on) {
+  U.set = on; $('tw-codex').classList.toggle('on', on); U.tipFor = null; if (!on) return;
+  $('tw-cxl').innerHTML = Object.keys(EVO).map(k => { const e = EVO[k], f = combos[k];
+    return `<div class="cx${f ? ' on' : ''}"><s class="sg"></s><b>${f ? escH(e[0]) : '???'}</b><small>${f ? escH(BLD[e[1]][0]) + ' III + ' + escH(BLD[e[2]][0]) + '. ' + escH(e[3]) : 'Undiscovered.'}</small></div>`; }).join('');
 }
 function openSet(on) { U.set = on; $('tw-set').classList.toggle('on', on); if (on) syncSet(); U.tipFor = null; }
 function syncSet() {
@@ -9833,7 +9956,7 @@ function dev(k) {
     if (live && !S.pick) { U.devPick = U.devPick || S.pickEvery; S.pickEvery = 1; S.pickedAt = -1; S.nextWave = Math.min(S.nextWave, S.t); }
   } else if (k === 'town') { if (live) mockTown();
   } else if (k === 'fall') { if (live) { S.hp = 0; S.over = true; } }
-  else if (k === 'reset') { hints = {}; store('tidewall.hints', '{}'); if (U.cb.resetMeta) U.cb.resetMeta(); renderForges(); syncTitle(); }
+  else if (k === 'reset') { hints = {}; store('tidewall.hints', '{}'); combos = {}; store('tidewall.combos', '{}'); if (U.cb.resetMeta) U.cb.resetMeta(); renderForges(); syncTitle(); }
 }
 function devInfo(S) {
   const M = meta();
@@ -9848,7 +9971,7 @@ function show(mode) {
   $('tw-over').classList.toggle('on', mode === 'over');
   $('tw-forge').classList.toggle('on', mode === 'forge');
   $('tw-hud').style.display = mode === 'run' ? 'block' : 'none';
-  if (mode !== 'run') { try { root.TWFx && root.TWFx.hideBanner && root.TWFx.hideBanner(); } catch (e) {} disarm(); $('tw-pick').classList.remove('on'); setPause(false); U.tipFor = null; $('tw-tip').style.display = 'none'; }
+  playEnd(); if (mode !== 'run') { try { root.TWFx && root.TWFx.hideBanner && root.TWFx.hideBanner(); } catch (e) {} disarm(); $('tw-pick').classList.remove('on'); setPause(false); U.tipFor = null; $('tw-tip').style.display = 'none'; }
   if (mode === 'title') { menuSel(0); syncTitle(); }
   if (mode === 'over' || mode === 'forge') U.fv['tw-' + mode] = null;   // a screen opens centred on what can be forged
   if (mode === 'forge') renderForges();
@@ -9857,7 +9980,7 @@ function setRun(S) {
   const M = S.meta ? meta() : null;   // stress scenes run without the meta: no goals to chase, no hints
   U.best0 = M ? M.bestWave : 0; U.goalNew = false;
   U.teach = M && M.runs === 0 && !(hints.beam && hints.lamp) ? { on: null } : null;
-  U.S = S; U.overAt = 0; U.gd = U.hpG = U.hpLast = U.wPrev = U.emPrev = null; U.taking = false; disarm(); $('tw-pick').classList.remove('on'); $('tw-teach').style.display = 'none'; buildAbs(S); }
+  U.S = S; U.overAt = 0; U.gd = U.hpG = U.hpLast = U.wPrev = U.emPrev = null; U.taking = false; playEnd(); disarm(); $('tw-pick').classList.remove('on'); $('tw-teach').style.display = 'none'; buildAbs(S); }
 // ability buttons: the ones this run owns (S.ab), in TWSim.ABS order. Ring r=40.
 function buildAbs(S) {
   const abs = $('tw-abs'); abs.innerHTML = ''; U.abEls = {};
@@ -9875,7 +9998,7 @@ function buildAbs(S) {
 }
 function init(cb) { U.cb = cb || {}; if (!U.root) build(); syncTitle(); }
 
-root.TWUI = { init, setRun, show, frame, fmt, worldAt, renderForges, get paused() { return U.paused; }, get armed() { return U.armed; }, mockTown };
+root.TWUI = { init, setRun, show, frame, fmt, worldAt, renderForges, get paused() { return U.paused || !!U.playing; }, get armed() { return U.armed; }, mockTown };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
 <script>/* main.js */
