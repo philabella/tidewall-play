@@ -5641,7 +5641,7 @@ function draw(S) {
     const x = (v.x + 1) / 2 * w + n.dx * q, y = (1 - v.y) / 2 * h + n.dy - 42 * q - (n.crit ? 6 : 0);
     n.sx = x; n.sy = y;
     g.globalAlpha = q < 0.6 ? 1 : 1 - (q - 0.6) / 0.4;
-    g.font = (n.crit ? '800 ' : '700 ') + px.toFixed(0) + 'px "Segoe UI",system-ui,sans-serif';
+    g.font = '400 ' + px.toFixed(0) + 'px ' + FELL;
     const s = fmt(n.dmg) + (n.crit ? '!' : ''); n.sw = s.length * px * 0.55;
     g.lineWidth = Math.max(2.5, px / 6); g.strokeStyle = 'rgba(4,12,14,.85)'; g.strokeText(s, x, y);
     g.fillStyle = n.crit ? FX.critCol : FX.numCol; g.fillText(s, x, y);
@@ -5658,7 +5658,7 @@ function bossPlate(S, g, w, h) {
     let x = (v.x + 1) / 2 * w, y = (1 - v.y) / 2 * h, off = false; if (v.z > 1) { x = w - x; y = h - y; }
     const mx = 150, my = intro.age < FX.intro ? 300 : 120; if (x < mx || x > w - mx || y < my || y > h - 150 || v.z > 1) { off = true; x = Math.max(mx, Math.min(w - mx, x)); y = Math.max(my, Math.min(h - 150, y)); }
     const bw = Math.max(200, Math.min(300, w * 0.13)), k = Math.max(0, Math.min(1, e.hp / e.maxHp)), nm = foe(e.kind).name.toUpperCase();
-    g.save(); g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.font = '700 ' + Math.round(Math.max(14, h * 0.017)) + 'px Georgia,serif'; g.lineJoin = 'round';
+    g.save(); g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.font = '400 ' + Math.round(Math.max(14, h * 0.017)) + 'px ' + FELL; g.lineJoin = 'round';
     g.lineWidth = 4; g.strokeStyle = 'rgba(2,8,10,.9)'; g.strokeText(nm, x, y - 10); g.fillStyle = '#ffb59a'; g.fillText(nm, x, y - 10);
     g.fillStyle = 'rgba(2,8,10,.8)'; g.fillRect(x - bw / 2 - 2, y - 4, bw + 4, 12);
     g.fillStyle = '#7a1f16'; g.fillRect(x - bw / 2, y - 2, bw, 8); g.fillStyle = k < 0.25 ? '#ff6a3c' : '#e5533d'; g.fillRect(x - bw / 2, y - 2, bw * k, 8);
@@ -5668,6 +5668,10 @@ function bossPlate(S, g, w, h) {
   }
 }
 
+// LAS-110: damage numbers and plates use the wave banner's face (digits FellNum, letters Fell); canvas needs the faces loaded first
+const FELL = 'FellNum,Fell,Georgia,serif';
+function loadFell() { if (document.fonts) for (const f of ['FellNum', 'Fell']) document.fonts.load('400 40px ' + f, '0123456789KMBT.!%ABC').catch(() => {}); }
+setTimeout(loadFell, 0); window.addEventListener('load', () => setTimeout(loadFell, 50));
 // ---------- banners: one at a time, the newest wins (a boss or milestone outranks a plain wave banner)
 const RANK = { wave: 1, kind: 1.5, boss: 2, mile: 3, fall: 4 };
 function banner(title, sub, dur, col, kind) {
@@ -5675,7 +5679,7 @@ function banner(title, sub, dur, col, kind) {
   F.bnRank = RANK[kind];
   const big = kind !== 'wave';
   F.bn.innerHTML = `<div style="font-size:${big ? 54 : 40}px;letter-spacing:.06em;font-weight:700;color:${col || '#ffd9a0'}">${title}</div>` +
-    `<div style="font-size:${big ? 20 : 17}px;letter-spacing:.22em;text-transform:uppercase;color:#9fd8d2;margin-top:6px;font-family:'Segoe UI',system-ui,sans-serif">${sub}</div>`;
+    `<div style="font-size:${big ? 20 : 17}px;letter-spacing:.22em;text-transform:uppercase;color:#9fd8d2;margin-top:6px">${sub}</div>`;
   // out of the dark (LAS-71): start black and clear, fade up slowly, no slide or bounce; the flicker is ui.js CSS
   F.bn.style.transition = 'none'; F.bn.style.opacity = 0; F.bn.style.filter = 'brightness(0)'; void F.bn.offsetWidth;
   F.bn.style.transition = 'opacity 1s ease-out,filter 1s ease-out'; F.bn.style.opacity = 1; F.bn.style.filter = 'brightness(1)';
@@ -8871,6 +8875,16 @@ function postRender(t) {
   P.finalMat.uniforms.uTime.value = t; pass(P.finalMat, null);
 }
 
+// LAS-106: the end screen's island picture: draw one more frame from a higher, farther camera so the whole city fits, and
+// hand the canvas back while its buffer is still valid (same task). The next frame() resets the camera.
+R.snap = t => {
+  const c = R.cam, p = c.position.clone(), L = RLOOK.camLookY, k = 1.1;
+  c.position.set(p.x * k, L + (p.y - L) * k * 1.12, p.z * k); c.lookAt(0, L, 0); c.updateMatrixWorld();
+  postRender(t); const cv = R.r.domElement;
+  c.position.copy(p); c.lookAt(0, L, 0); c.updateMatrixWorld();
+  return cv;
+};
+
 function resize() {
   const w = root.innerWidth, h = root.innerHeight, a = w / h;
   R.r.setSize(w, h, false);
@@ -10495,6 +10509,7 @@ body.twdev #fps{display:block!important}
 .fg-head .e{color:#c4622d}
 .fg-view .fn,.fg-view .fb{filter:saturate(.5) brightness(.92)}
 /* the banners (fx.js sets the inline style; the skin overrides it) */
+#twbanner{top:max(120px,11.5vh)!important}
 #twbanner{font-family:Cinzel,Georgia,serif!important;color:var(--bone)!important;text-shadow:0 0 2px #000,2px 2px 0 rgba(110,16,16,.5),0 0 28px rgba(142,27,27,.45)!important;
   transform:none!important;letter-spacing:.1em}
 @keyframes twFlick{0%,100%{opacity:1}12%{opacity:.82}14%{opacity:1}47%{opacity:.9}49%{opacity:.7}51%{opacity:1}83%{opacity:.88}85%{opacity:1}}
@@ -10650,6 +10665,8 @@ const LAS82CSS = `
 #tw-obuild img{flex:0 0 46%;min-width:0;height:max(190px,24vh);object-fit:cover;border:1px solid #2c2822;background:#000}
 #tw-obuild .obt{--bs:max(56px,5.4vh);flex:1;display:flex;flex-wrap:wrap;gap:8px 8px;align-content:flex-start;justify-content:flex-start}
 #tw-obuild .be.sm{pointer-events:auto}
+#tw-over.forge #tw-obuild img{height:max(110px,13vh)}
+#tw-obuild .ob:not(:has(.be)) .obt{display:none}#tw-obuild .ob:not(:has(.be)) img{flex-basis:56%}
 #tw-obtns{display:flex;flex-wrap:wrap;justify-content:center;gap:0 4px}#tw-obtns .btn{min-width:0;padding:10px 22px}
 #tw-over:not(.forge) #tw-stats .panel .v{font-size:max(34px,3.6vh)}#tw-over:not(.forge) #tw-stats .panel{min-height:0}
 #tw-obuild .obs{display:flex;gap:10px;justify-content:center;margin-top:10px}
@@ -10912,7 +10929,7 @@ const HORRORCSS = `
 .fg-view{border:0;border-radius:0;background:radial-gradient(ellipse at 50% 50%,rgba(14,14,14,.9),#000 75%)}
 .fg-view .fn,.fg-view .fb{filter:none}
 .fn{border:1.5px solid color-mix(in srgb,var(--c) 45%,#2a2824);background:#030303;box-shadow:none;color:color-mix(in srgb,var(--c) 70%,#6d675d)}
-.fn.own{background:color-mix(in srgb,var(--c) 38%,#050505);border-color:color-mix(in srgb,var(--c) 70%,#2a2824);box-shadow:none;color:var(--bone)}
+.fn.own{background:color-mix(in srgb,var(--c) 12%,#17160f);border-color:color-mix(in srgb,var(--c) 70%,#2a2824);box-shadow:none;color:var(--bone)}
 .fn.rdy{background:#030303;border-color:color-mix(in srgb,var(--c) 70%,#2a2824);box-shadow:none}
 .fn.can{background:#030303;border-color:var(--lantern);box-shadow:0 0 16px rgba(217,228,234,.35);animation:none;color:var(--lantern)}
 .fn.lock{background:#020202;border-color:#25231f;box-shadow:none}
@@ -11962,12 +11979,13 @@ function overWhy(S) {
 }
 // the island as the last frame drew it (toOver runs in the frame that rendered it, so the GL buffer is still there)
 function islandShot() {
-  try { const cv = document.getElementById('tw3d'); if (!cv || !cv.width) return ''; const R = root.TWRender && root.TWRender.R, c = R && R.screenOf ? R.screenOf(0, 4, 0) : { x: innerWidth / 2, y: innerHeight / 2 }, k = cv.width / innerWidth;
-    const cw = Math.min(cv.width, cv.width * 0.46), ch = Math.min(cv.height, cw * 0.625), sx = Math.max(0, Math.min(cv.width - cw, c.x * k - cw / 2)), sy = Math.max(0, Math.min(cv.height - ch, c.y * k - ch * 0.5));
-    const w = 880, h = Math.round(w * ch / cw), o = document.createElement('canvas'); o.width = w; o.height = h;
+  try { const R = root.TWRender && root.TWRender.R; if (!R || !R.snap) return '';
+    const cv = R.snap(performance.now() / 1000); if (!cv || !cv.width) return '';
+    const ch = cv.height * 0.44, cw = ch * 1.6, sx = (cv.width - cw) / 2, sy = cv.height * 0.5 - ch * 0.6;
+    const w = 880, h = Math.round(w / 1.6), o = document.createElement('canvas'); o.width = w; o.height = h;
     const g = o.getContext('2d'); g.drawImage(cv, sx, sy, cw, ch, 0, 0, w, h);
     const px = g.getImageData(0, 0, w, h).data; let sum = 0, n = 0; for (let i = 0; i < px.length; i += 160) { sum += px[i] + px[i + 1] + px[i + 2]; n++; }
-    if (sum / n < 12) return '';   // LAS-99: the GL buffer was already cleared: no snapshot, no empty box
+    if (sum / n < 12) return '';   // blank buffer: no snapshot, no empty box
     return o.toDataURL('image/jpeg', 0.86); } catch (e) { return ''; }
 }
 function toOver(S) {
