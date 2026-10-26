@@ -3752,10 +3752,7 @@ const TUNE = {
     arc: Math.PI,          // spawn arc (rad) at wave 1, centred on the sea side (+y)
     arcTo: 2 * Math.PI, arcBy: 20,          // LAS-24: the arc widens to arcTo by wave arcBy (the tide surrounds the citadel)
     spawnR: 45,            // spawn distance from the citadel
-    maxAlive: 4000,        // above this, fewer but tougher (HP scaled by count / cap)
-    // LAS-52 horde: from wave `from` a wave's count grows x(1 + (max-1) * ramp) over `by` waves; HP, gold and wall hit per
-    // creature shrink by the same factor (as hard a wave, only more of them). max 1 = off.
-    horde: { from: 25, by: 35, max: 12 },
+    maxAlive: 2000,        // above this, fewer but tougher (HP scaled by count / cap)
   },
   creature: { speed: 2.5, hitDmg: 1, hitGrowth: 1.06, hitEvery: 1 },   // Drowned: hits the wall 1 x 1.06^wave per s
   // Creature kinds: multipliers on the Drowned. A wave has (countBase + countPerWave x wave) slots; each slot is a kind
@@ -4330,7 +4327,7 @@ function newRun(opts) {
   const S = {
     T, seed: opts.seed | 0, rs: {}, t: 0, tick: 0, meta, fg, banked: false, tide,
     star: meta ? meta.starlight || 0 : 0, omen: omen(opts.seed).kind, seen: {}, born: [], loud: [],
-    wave: 0, nextWave: T.wave.first, spawnQ: [], peak: {}, hordeMul: 1,        // spawnQ: pending creatures of the current wave
+    wave: 0, nextWave: T.wave.first, spawnQ: [],        // spawnQ: pending creatures of the current wave
     hp, maxHp: hp, over: false,
     gold: T.gold.start + (fg.startGold || 0), goldEarned: 0, goldSpent: 0, kills: 0, bossKills: 0, biggestHit: 0,
     lv, ab, mod: {}, pick: null, picks: [], pickedAt: 0,
@@ -4575,9 +4572,7 @@ function startWave(S) {
     sh.push([k, v]); tot += v;
   }
   if (tot > 0.8) { for (const p of sh) p[1] *= 0.8 / tot; tot = 0.8; }
-  const H = W.horde, hm = H && S.wave >= H.from ? 1 + (H.max - 1) * Math.min(1, (S.wave - H.from + 1) / H.by) : 1;
-  let slots = Math.round((W.countBase + W.countPerWave * S.wave) * hm), hp = W.hpBase * Math.pow(W.hpGrowth, S.wave) / hm;
-  S.hordeMul = hm;
+  let slots = W.countBase + W.countPerWave * S.wave, hp = W.hpBase * Math.pow(W.hpGrowth, S.wave);
   const kinds = [];
   for (let i = 0; i < slots; i++) {
     let r = rnd(S, 'kind'), k = 'drowned';
@@ -4591,11 +4586,11 @@ function startWave(S) {
   for (const k of kinds) {
     const at = S.t + W.arrive * rnd(S, 'arrive');
     const a = Math.PI / 2 + (rnd(S, 'angle') - 0.5) * arc;   // centred on +y (the sea)
-    S.spawnQ.push({ at, a, hp: hp * hpF * K[k].hp, gold: Math.ceil(gold * K[k].gold / hm), kind: k });
+    S.spawnQ.push({ at, a, hp: hp * hpF * K[k].hp, gold: Math.ceil(gold * K[k].gold), kind: k });
   }
   const boss = B.every > 0 && S.wave % B.every === 0, bk = boss ? bossKind(S.wave) : null;
   if (boss) S.spawnQ.push({ at: S.t + W.arrive / 2, a: Math.PI / 2 + (rnd(S, 'angle') - 0.5) * arc * 0.5,
-    hp: hp * hm * B.hpMul * ((B[bk] && B[bk].hpX) || 1), gold: Math.ceil(gold) * B.goldMul, boss: bk, kind: bk });
+    hp: hp * B.hpMul * ((B[bk] && B[bk].hpX) || 1), gold: Math.ceil(gold) * B.goldMul, boss: bk, kind: bk });
   S.spawnQ.sort((p, q) => q.at - p.at);   // pop() takes the earliest
   S.nextWave += W.every;
   if (S.ev) S.ev.push({ k: 'waveStart', wave: S.wave, n, boss, bossKind: bk });
@@ -4613,13 +4608,12 @@ function spawn(S, p) {
     due: 0, litT: -1, gold: p.gold, atWall: false, hitCd: 0, dead: false, slowT: 0, boss: !!p.boss, rad: p.boss ? 1.5 : kd.rad,
     speed: p.boss ? S.T.boss.speedMul : kd.speed, hit: p.boss ? S.T.boss.hitDmg : kd.hit,
     armor: p.boss ? 0 : kd.armor || 0, fly: p.boss ? 0 : kd.fly || 0, sumCd: S.T.boss.siren.every,
-    hitMul: Math.pow(S.T.creature.hitGrowth, S.wave) / (p.boss ? 1 : S.hordeMul || 1) };
+    hitMul: Math.pow(S.T.creature.hitGrowth, S.wave) };
   if (!p.boss && kd.dive) { e.dive = kd.dive; e.under = 0; e.diveAt = -1; }   // Sounders
   if (!p.boss && kd.murk) e.dimR = kd.murk;                                  // Gloams
   if (!p.boss && kd.dark) { e.dark = kd.dark; e.litSp = kd.litSpeed; }        // Shadelings
   if (e.kind === 'mirror') { e.eclOn = true; e.shine = 1; e.eclT = S.T.boss.mirror.on; }   // the Mirror Warden starts dark
   S.enemies.push(e);
-  if (S.enemies.length > (S.peak[S.wave] || 0)) S.peak[S.wave] = S.enemies.length;
   if (e.boss && S.ev) S.ev.push({ k: 'boss', id: e.id, wave: S.wave, hp: e.hp, x: e.x, y: e.y, kind: e.kind, name: FOE[e.kind].name });
   if (!S.seen[e.kind]) {   // the first of a kind this run: a banner with its line
     S.seen[e.kind] = true;
@@ -7123,7 +7117,7 @@ function frame(S, alpha, now) {
   lightFrame(S, t, burning);
   if (SB) {   // LAS-24: the sim's beam drives both lamps; the second (Twin Lamp) points opposite, its lantern riding round the gallery
     const rr0 = SB.len + (R.off || 0), hh = R.LAMP[1] - 0.3, pit = Math.atan2(hh, rr0),   // LAS-43: the cone slopes from the lamp down to the water AT the reach ring (flat, it seemed to run past it from the high camera)
-      sx = Math.tan(SB.w / 2) * 10, sz = Math.hypot(rr0, hh) / 70,   /* LAS-27: drawn R.off further out */ op = 0.38 + (SB.flare > 0 ? 0.25 : 0) + 0.03 * Math.sin(t * 1.7);
+      sx = Math.tan(SB.w / 2) * rr0 / 7,   /* LAS-51: half-width at the tip = reach x tan(w/2) (the mesh is 14 wide; the old x10 was only right at a 70 m reach and drew the wave-1 shaft 1.75x wider than the sim's cone) */ sz = Math.hypot(rr0, hh) / 70,   /* LAS-27: drawn R.off further out */ op = 0.38 + (SB.flare > 0 ? 0.25 : 0) + 0.03 * Math.sin(t * 1.7);
     const rr = SB.len + (R.off || 0); R.reachRing.visible = false;   // LAS-55: no reach ring on the sea
     R.sweep.rotation.set(pit, Math.PI / 2 - SB.a, 0); R.sweep.scale.set(sx, 1, sz); R.sweep.material.opacity = op;
     const two = SB.a2 !== null && SB.a2 !== undefined;
@@ -7310,6 +7304,72 @@ if (typeof document === 'undefined' || !root.TWSim) return;
 const Sim = root.TWSim, T3 = root.TW3;
 
 const AMBER = '#ffb36b', TEAL = '#cdc4ab';   // TEAL is the bone colour now (LAS-60 horror skin)
+const chainURI = (x1, y1, x2, y2, n, w, h, col) => {   // a chain of n links along a line, as a CSS data-URI background
+  let s = '';
+  for (let k = 0; k < n; k++) {
+    const t = (k + .5) / n, x = x1 + (x2 - x1) * t, y = y1 + (y2 - y1) * t, a = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI + (k % 2 ? 90 : 0);
+    s += `<ellipse cx='${x.toFixed(1)}' cy='${y.toFixed(1)}' rx='${k % 2 ? 6 : 13}' ry='6' transform='rotate(${a.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})'/>`;
+  }
+  return `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}' fill='none' stroke='${col}' stroke-width='4'>${s}</svg>`)}")`;
+};
+const TOWNCSS = `
+/* LAS-63 island town cards: role tab, level studs, chain badge, partner line; Evolution (bone frame, rusted chain) and Replace (torn paper) */
+.card.bld,.card.evo,.card.rep{height:440px}
+.card .rt{position:absolute;top:-1px;left:16px;translate:0 -50%;padding:3px 12px;font:700 11px/1.2 Cinzel,Georgia,serif;letter-spacing:.2em;text-transform:uppercase;color:#0d0c0b;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--c) 70%,#6a5a44),color-mix(in srgb,var(--c) 30%,#2a2018));border-radius:1px;box-shadow:0 2px 8px rgba(0,0,0,.7);filter:saturate(.55)}
+.card .cb{position:absolute;top:8px;right:10px;width:34px;height:34px;opacity:.9;filter:drop-shadow(0 0 6px rgba(138,74,34,.6));
+  background:${chainURI(4, 30, 30, 4, 4, 34, 34, '#a8582a')} center/contain no-repeat}
+.card .cb::after{content:'';position:absolute;inset:-3px;animation:twChain 2.6s ease-in-out infinite;border-radius:50%;box-shadow:0 0 12px 2px rgba(168,88,42,.5)}
+@keyframes twChain{0%,100%{opacity:.15}50%{opacity:.7}}
+.card .tp{display:flex;gap:9px;margin:7px 0 2px}
+.card .tp i{width:13px;height:13px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#2a2620,#070606 70%);box-shadow:inset 0 0 0 2px #3d3226,0 1px 2px #000}
+.card .tp i.on{background:radial-gradient(circle at 35% 30%,#e8dcc0,#8a7a66 60%,#3a3028);box-shadow:inset 0 0 0 2px #6a5a44,0 1px 2px #000}
+.card .tp i.nx{background:radial-gradient(circle at 40% 35%,#ffb36b,#c4622d 55%,#4a1c0a);box-shadow:inset 0 0 0 2px #7a3a18,0 0 10px #c4622d;animation:twEmber 1.6s ease-in-out infinite}
+@keyframes twEmber{0%,100%{box-shadow:inset 0 0 0 2px #7a3a18,0 0 5px #c4622d}50%{box-shadow:inset 0 0 0 2px #7a3a18,0 0 14px 2px #ff8a40}}
+.card.bld .mid,.card.evo .mid,.card.rep .mid{justify-content:flex-start;margin-top:10px}
+.card.bld p,.card.evo p,.card.rep p{margin:8px 0 0;font-size:18px;line-height:1.3;color:var(--bone);font-weight:500}
+.card p b.num{color:#fff1d6;font-weight:700;white-space:nowrap}
+.card.rep .rt{display:none}
+.card.bld .ft,.card.evo .ft,.card.rep .ft{margin-top:14px}
+.card .lb{font-family:Cinzel,Georgia,serif;font-size:15px;letter-spacing:.04em}
+.card .nt{margin-top:10px;font-size:14px;line-height:1.3;color:var(--bone2);font-style:italic}
+.card .pl{margin-top:auto;width:100%;padding-top:9px;border-top:1px dashed rgba(138,74,34,.7);font-size:13.5px;line-height:1.4;color:var(--bone2)}
+.card .pl b{color:var(--bone);font-weight:600}
+.card .pl .pi{display:inline-block;width:20px;height:20px;vertical-align:-5px;margin:0 3px 0 5px}
+.card .pl .pi svg{width:100%;height:100%;fill:none;stroke:var(--bone2);stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round}
+.card .pl .pi svg .f{fill:rgba(166,157,134,.25)}
+.card .pl .lv{color:#c4784a}
+.card.chained::before{background:linear-gradient(160deg,#8a6a44,#4a2a1a 40%,#8a4a22 70%,#2a1a10)}
+.card .ev{width:60px;height:60px;display:grid;place-items:center}
+.card .ev svg{width:44px;height:44px;fill:none;stroke:var(--c);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:saturate(.28) sepia(.3) brightness(.9)}
+.card .ev svg .f{fill:color-mix(in srgb,var(--c) 35%,transparent)}
+.card .md.bld .ev{width:auto;height:auto}.card .md.bld .ev svg{width:54px;height:54px}
+.card .md.evo,.card .md.rep{width:auto;min-width:92px;height:80px;padding:0 14px;border-radius:40px;display:flex;align-items:center;gap:0}
+.card .md.evo .ch{width:34px;height:16px;margin:0 -6px;background:${chainURI(0, 8, 34, 8, 3, 34, 16, '#a8582a')};z-index:1}
+.card .md.rep .ar{width:30px;height:14px;margin:0 4px;background:linear-gradient(#a69d86,#a69d86) 0 6px/22px 2px no-repeat;position:relative}
+.card .md.rep .ar::after{content:'';position:absolute;right:0;top:2px;border:5px solid transparent;border-left:8px solid #a69d86;border-right:0}
+.card .md.rep .ev.old{position:relative;opacity:.55}
+.card .md.rep .ev.old::after{content:'';position:absolute;left:4px;right:4px;top:50%;height:4px;background:#8e3a1b;transform:rotate(-38deg);box-shadow:0 0 0 1px #1a0c06}
+/* evolution: the bone-white frame lit from inside, a rusted chain drawn across the whole card */
+.card.evo{--c:#e8dcc0;background:${chainURI(-10, 70, 310, 150, 12, 300, 440, '#6e3a1c')} 0 0/100% 100% no-repeat,radial-gradient(120% 55% at 50% 0%,rgba(232,220,192,.2),transparent 70%),linear-gradient(180deg,#2a251d,#14110d 70%,#0b0908);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.8),inset 0 0 40px rgba(232,220,192,.1),0 16px 38px rgba(0,0,0,.8),0 0 30px rgba(232,220,192,.22)}
+.card.evo::before{padding:5px;background:linear-gradient(160deg,#f1e8d0,#a69d86 45%,#d8cfb8 70%,#8c8470);opacity:1}
+.card.evo .br{color:#f1e8d0;letter-spacing:.3em}
+.card.evo .md{background:radial-gradient(circle at 50% 40%,#3a342a,#0a0908 80%);box-shadow:inset 0 0 0 2px #a69d86,inset 0 0 0 5px rgba(0,0,0,.6)}
+.card.evo h3{color:#fff1d6;font-size:26px}
+.card.evo .lb{color:#d8cfb8}
+.card.evo .nt{color:#e8dcc0}
+/* replace: torn paper, the old building crossed out in rust */
+.card.rep{--grainp:var(--grain);clip-path:polygon(0 2%,6% 0,13% 1.6%,21% .2%,30% 1.8%,39% 0,47% 1.4%,56% .1%,66% 1.7%,75% 0,84% 1.5%,92% .2%,100% 1.4%,100% 97.6%,93% 100%,84% 98.4%,75% 99.9%,64% 98.2%,55% 100%,45% 98.6%,35% 99.9%,26% 98.3%,16% 100%,8% 98.5%,0 99.8%);
+  background:radial-gradient(120% 50% at 50% 0%,rgba(150,120,70,.22),transparent 70%),var(--grain),linear-gradient(180deg,#332b1f,#1d1812 70%,#120e0b)}
+.card.rep .md{background:radial-gradient(circle at 40% 35%,#2e281f,#0a0908 72%)}
+.card.rep .lb{color:#c4784a}
+/* Forge: the node that adds a building to the pick cards */
+.jtag{display:flex;gap:8px;align-items:center;margin-top:7px;padding:5px 8px;border:1px solid rgba(138,74,34,.6);background:rgba(138,74,34,.12);color:var(--bone)}
+.jtag s{flex:none;width:22px;height:22px;background:${chainURI(3, 19, 19, 3, 3, 22, 22, '#a8582a')} center/contain no-repeat}
+.jtag b{color:#fff1d6}
+.fn.bld::after{content:'';position:absolute;right:-3px;top:-3px;width:11px;height:11px;background:${chainURI(1, 10, 10, 1, 2, 11, 11, '#c4784a')} center/contain no-repeat;filter:drop-shadow(0 0 3px #000)}
+`;
 const CSS = `
 #twui{position:fixed;inset:0;z-index:30;pointer-events:none;font:16px/1.3 Barlow,"Segoe UI",system-ui,sans-serif;color:#d8cfb8;
   user-select:none;-webkit-user-select:none}
@@ -7997,7 +8057,7 @@ const AB = {
 };
 
 function build() {
-  const st = el('style'); st.textContent = CSS; document.head.appendChild(st);
+  const st = el('style'); st.textContent = CSS + TOWNCSS; document.head.appendChild(st);
   const ui = el('div'); ui.id = 'twui';
   ui.innerHTML = `
   <canvas id="tw-aim"></canvas>
@@ -8071,6 +8131,7 @@ function build() {
     <div class="r"><button data-d="star" disabled title="Starlight arrives with New Dawn (sim day 7)">+1 Starlight</button></div>
     <div class="r"><input id="tw-dw" type="number" min="1" value="20"><button data-d="wave">Jump to wave</button></div>
     <div class="r"><button data-d="pick">Force a pick</button><button data-d="fall">Fall now</button></div>
+    <div class="r"><button data-d="town">Town cards</button></div>
     <div class="r"><button data-d="reset">Reset meta</button></div>
     <div id="tw-dinfo" class="num" style="color:#7fa9a5;margin-top:4px"></div>
   </div>`;
@@ -8271,7 +8332,7 @@ function choose(i) {
     if (j === i) { const r = c.getBoundingClientRect(); c.style.setProperty('--fx', (tg.left + tg.width / 2 - r.left - r.width / 2) + 'px'); c.style.setProperty('--fy', (tg.top + tg.height / 2 - r.top - r.height / 2) + 'px'); }
     c.classList.add(j === i ? 'took' : 'gone');
   });
-  setTimeout(() => { U.taking = false; if (U.S === S && S.pick) Sim.choosePick(S, i); }, 400);
+  setTimeout(() => { U.taking = false; if (U.S === S && S.pick) { if (S.pick.mock) S.pick = null; else Sim.choosePick(S, i); } }, 400);
 }
 function pickHot(i) {
   const cs = document.querySelectorAll('#tw-cards .card'); if (!cs.length) return;
@@ -8561,7 +8622,15 @@ function openPick(S) {
   disarm();
   $('tw-pw').textContent = S.pick.wave;
   const box = $('tw-cards'); box.innerHTML = '';
-  S.pick.choices.forEach((id, i) => {
+  if (S.pick.town) S.pick.town.forEach((d, i) => {   // LAS-63: building / level / evolution / Replace cards
+    const t = townCard(d, S.pick.own, S.pick.disc), b = el('button', 'card ' + t.cls + (t.chain ? ' chained' : ''), townHTML(t, i));
+    if (t.c) b.style.setProperty('--c', t.c);
+    b.onclick = () => choose(i);
+    b.dataset.i = i; b.style.setProperty('--i', i); const jj = i - (S.pick.town.length - 1) / 2; b.style.setProperty('--j', jj); b.style.setProperty('--aj', Math.abs(jj));
+    box.appendChild(b);
+    setTimeout(() => snd('deal'), 60 + i * 90);
+  });
+  else S.pick.choices.forEach((id, i) => {
     const c = Sim.card(id, S), taken = S.picks.filter(p => p === id).length;
     const m = cardMeta(c), pips = c.max ? Array.from({ length: c.max }, (_, k) => `<i class="${k < taken ? 'on' : ''}"></i>`).join('') : '';
     const b = el('button', 'card' + (c.loud ? ' loud' : ''), `${c.loud ? '<span class="lr">BUILD-BREAKER</span><s class="cfoil"></s>' : ''}<i class="rv"></i><i class="rv"></i><i class="rv"></i><i class="rv"></i>
@@ -8579,6 +8648,124 @@ function openPick(S) {
   $('tw-pick').classList.add('on');
 }
 
+// ---------- LAS-63 island town cards (design: tidewall/design/island-town.md). The sim core (S.town) is not in yet, so a pick may carry
+// S.pick.town = [{kind:'new'|'level'|'evo'|'rep', id, lv, out}] (+ S.pick.own {building: level}, S.pick.disc {evolution: 1}); the mock behind #dev
+// builds it. The catalogue below gives role, icon, partner and the I/II/III new lines until TUNE.town.buildings[].text lands.
+const ROLE = { light: ['Light', '#e8d28a'], kill: ['Kill', '#ff9a5c'], hold: ['Hold', '#9fb0b8'], greed: ['Greed', '#c9a23f'], strange: ['Strange', '#a58fd0'] };
+const SVG = p => `<svg viewBox="0 0 64 64">${p}</svg>`;
+const TI = {
+  brazier: '<path class="f" d="M12 28h40l-6 14H18z"/><path d="M32 6c8 8 10 12 10 18-6-2-6-6-10-6s-4 6-10 6c0-6 2-10 10-18zM24 42v14M40 42v14"/>',
+  lamp2: '<path class="f" d="M24 6h16l4 14H20z"/><path d="M26 20v36M38 20v36M22 56h20M32 20v10"/><path d="M44 12l14-6M44 18l14 2" opacity=".7"/>',
+  rocket: '<path class="f" d="M32 4c8 8 8 20 6 30H26c-2-10-2-22 6-30z"/><path d="M26 34l-6 10 8-4M38 34l6 10-8-4M32 42v14"/>',
+  beacon: '<path class="f" d="M32 6c6 8 8 12 8 18-4-2-4-5-8-5s-4 3-8 5c0-6 2-10 8-18z"/><path d="M16 56l6-24h20l6 24zM22 44h20"/>',
+  battery: '<path class="f" d="M8 36h34v10H8z"/><path d="M42 38h14M42 44h14M14 46v10M36 46v10M16 30h20"/><circle cx="46" cy="22" r="4"/>',
+  ballista: '<path class="f" d="M8 30l24-6 24 6-24 6z"/><path d="M32 24V6M32 36v20M20 28L8 14M44 28L56 14"/>',
+  mortar: '<path class="f" d="M18 26l8-14h12l8 14z"/><path d="M14 26h36v10H14zM20 36v18h24V36"/><circle cx="32" cy="46" r="3"/>',
+  tesla: '<path class="f" d="M26 56V30h12v26z"/><path d="M32 30V16M24 12l8 4 8-4M16 6l6 8-6 8M48 6l-6 8 6 8"/>',
+  winch: '<circle class="f" cx="22" cy="36" r="14"/><path d="M36 36l22 14M36 30l20-20M56 10l-8 2 2 8"/>',
+  mines: '<circle class="f" cx="32" cy="38" r="14"/><path d="M32 18v6M32 52v6M12 38h6M46 38h6M18 24l4 4M46 24l-4 4M18 52l4-4M46 52l-4-4"/>',
+  watch: '<path class="f" d="M24 30h16v8H24z"/><path d="M28 38v18M36 38v18M20 56h24M40 32l16-6M24 30V12M20 12h8"/>',
+  breakwater: '<path class="f" d="M6 36h18v14H6zM28 36h30v14H28zM14 22h22v12H14z"/><path d="M6 50h52M40 22h18v12H40z"/>',
+  bell: '<path class="f" d="M32 10c-10 0-14 10-14 20v8l-6 8h40l-6-8v-8c0-10-4-20-14-20z"/><path d="M26 50a6 6 0 0012 0M32 4v6"/>',
+  pitch: '<path class="f" d="M10 12h44v10H10z"/><path d="M18 22c0 14-4 18-4 28M32 22c0 10-4 16-4 30M46 22c0 14 4 18 4 28"/>',
+  wrecker: '<path class="f" d="M32 8c6 8 10 14 10 22a10 10 0 01-20 0c0-8 4-14 10-22z"/><path d="M6 56l14-14 8 6 10-10 8 6 12-12"/>',
+  boat: '<path class="f" d="M8 40h48l-8 14H16z"/><path d="M32 40V8l16 24H32M10 58h44"/>',
+  cave: '<path class="f" d="M8 56V34c0-14 10-24 24-24s24 10 24 24v22z"/><rect x="22" y="38" width="20" height="14"/><path d="M22 44h20M32 38v6"/>',
+  horn: '<path class="f" d="M8 26h12l22-14v40L20 38H8z"/><path d="M48 22c5 6 5 14 0 20M54 14c9 10 9 26 0 36"/>',
+  well: '<path class="f" d="M12 34h40v22H12z"/><ellipse cx="32" cy="34" rx="20" ry="7"/><path d="M26 34c-4-10 0-18 4-24M36 34c2-8 0-12-2-16"/>',
+  spire: '<path class="f" d="M28 56V24l4-18 4 18v32z"/><path d="M46 4L36 22h10L36 40M16 12l8 10-6 2"/>',
+  choir: '<path class="f" d="M32 8c-9 0-15 7-15 16 0 6 3 9 6 11v9h18v-9c3-2 6-5 6-11 0-9-6-16-15-16z"/><circle cx="26" cy="24" r="3"/><circle cx="38" cy="24" r="3"/><path d="M28 44v6M36 44v6M32 44v6"/>',
+};
+// id: [name, role, new line at I, II, III]
+const BLD = {
+  brazier: ['Braziers', 'light', 'Fire bowls line the rim. The lit ring grows 3 m.', 'The lit ring grows 3 m more.', 'Every 12 s the braziers flare: ring +6 m for 3 s.'],
+  lamp2: ['Lamp Tower', 'light', 'A second beam sweeps the other way: 40°, 70% of the main reach.', 'Both beams are 25% wider.', 'The second beam holds on the toughest lit creature in reach.'],
+  rocket: ['Rocket Rack', 'light', 'Every 10 s a rocket hangs a 6 m light for 4 s over the biggest pack within 30 m.', 'A rocket every 8 s.', 'Two rockets.'],
+  beacon: ['Beacon Stack', 'light', 'A bonfire on a sea stack 18 m out: 7 m light. Creatures crossing it burn 0.3× dmg/s for 3 s.', 'The light grows to 9 m. It burns whale oil: the beam ignores Gloam murk.', 'A second stack on the other side.'],
+  battery: ['Gun Battery', 'kill', 'A second cannon on its own tower, at 40% damage.', 'It hits for 70%, and its hits splash 30%.', 'Splash 100%. Crits deal +100% damage.'],
+  ballista: ['Ballista Tower', 'kill', 'Bolts pin a line of creatures.', 'Bolts hit 1 more creature.', 'Bolts hit 2 more. Last Rites: finish creatures under 10% HP.'],
+  mortar: ['Mortar Pit', 'kill', 'Slow shells, big splash, falling only on lit targets.', 'Splash +1 m.', 'Shells leave burning ground for 3 s.'],
+  tesla: ['Tesla Coil', 'kill', 'A spark leaps from creature to creature.', 'It jumps 2 more times.', 'Jumps keep 90% of the damage (was 70%).'],
+  winch: ['Whaler’s Winch', 'kill', 'Every 8 s it spears the toughest lit creature for 5× dmg and reels it 8 m toward the wall.', 'Every 6 s.', 'Pulls 14 m. Sounders in the beam can’t dive for 2.5 s.'],
+  mines: ['Sea Mines', 'kill', '3 mines drift out on the tide. Light sets one off: 15× dmg in 4 m. A new mine every 6 s.', '5 mines.', 'Blasts reach 6 m.'],
+  watch: ['Watch Posts', 'hold', 'A lantern post with a swivel gun. The guard shouts.', '+1 swivel gun. Case Shot: guard damage +100%.', '+1 gun. A shout and an arrow on the screen edge when a Hulk or boss is within 25 m in the dark.'],
+  breakwater: ['Breakwater', 'hold', 'Stone segments close the ring. Max HP +110 and a full repair.', 'Flood Gate cooldown −25%, arc +30%.', 'Every 15 s a wave breaks off it and throws back every creature at the wall 4 m.'],
+  bell: ['Bell Tower', 'hold', 'Every 12 s a shockwave stops every creature in the brazier ring for 1 s (bosses 0.3 s).', 'Every 9 s.', 'Each ring also hits them for 2× dmg.'],
+  pitch: ['Pitch Chutes', 'hold', 'Every 10 s the most crowded 60° of the wall burns: 0.5× dmg/s for 4 s. Fire jumps to creatures within 1.5 m.', 'Every 7 s.', 'The burning arc is 90°.'],
+  wrecker: ['Wreckers’ Lamp', 'greed', 'A false light on the rocks. Creatures within 20 m drift to a rock 15 m out, take 1× dmg there and drop +40% gold.', '+70% gold. The tide is 10% faster.', 'The rock holds them 1 s.'],
+  boat: ['Boathouse', 'greed', 'Every 12 s a boat brings 5× wave gold if it stays lit. A boat left in the dark is lost.', 'Two boats.', 'Boats are never lost under the Flare and bring 8×.'],
+  cave: ['Smugglers’ Cave', 'greed', 'At each wave’s end 20% of your gold goes in the chest. It pays 10% interest per wave held.', 'Interest 15%.', '25% goes in.'],
+  horn: ['Fog Horn', 'strange', 'Every 20 s every creature within 25 m turns away for 2 s (bosses 0.5 s).', 'Every 16 s.', 'Every 12 s, for 3 s.'],
+  well: ['The Old Well', 'strange', 'Every 8 s a hand drags one lit creature within 15 m under (bosses take 10× dmg instead).', 'Every 6 s.', 'Two hands.'],
+  spire: ['Storm Spire', 'strange', 'Lightning every 4 s: 6× dmg in 3 m on a lit creature. The flash lights a 12 m circle for 0.25 s.', 'Every 3 s.', 'Every 2 s.'],
+  choir: ['Drowned Choir', 'strange', 'Every 20th kill in the brazier ring rises as a drowned gunner on the rim for 10 s (max 3).', 'Max 5.', '20 s.'],
+};
+const HOME = { light: 'inner', hold: 'inner', kill: 'outer', greed: 'outer', strange: 'outer' };
+const EVO = {   // id: [name, main (reaches III), partner (any level), what it does]
+  crown: ['Lighthouse Crown', 'lamp2', 'brazier', 'Three beams in a star, turning together. Each is as wide as the main.'],
+  stars: ['Star Shells', 'mortar', 'rocket', 'Every shell lights 5 m where it lands for 1.5 s, so the next shells find their own targets.'],
+  hooks: ['Burning Hooks', 'winch', 'beacon', 'Reeled creatures burn 0.5× dmg/s and set fire to everything they are dragged through.'],
+  stormbell: ['Storm Bell', 'bell', 'spire', 'Each ring calls 6 strikes on the toughest creatures in reach. The flash lights the whole sea for 0.4 s.'],
+  field: ['Wreckers’ Field', 'mines', 'wrecker', 'The false light pulls creatures into the minefield. Mines return twice as fast; every blast drops +40% gold.'],
+  nightwatch: ['Night Watch', 'watch', 'choir', 'Every guard post gets a drowned twin. A gunner killed at the wall rises again at once.'],
+  harbour: ['Black Harbour', 'boat', 'cave', 'Boats are never lost, bring the cave’s interest, and every 5th boat brings a free building level.'],
+  deep: ['The Hungry Deep', 'horn', 'well', 'The horn wakes what lives under the rock: 6 hands rise and drag every non-boss creature in the brazier ring under.'],
+};
+const RN = ['', 'I', 'II', 'III'];
+const evoOf = id => { for (const k in EVO) if (EVO[k][1] === id || EVO[k][2] === id) return k; return null; };
+// the Forge nodes that add a building to the pick cards (eff.build once the sim has it; this table until then)
+const FORGE_BUILD = { g_drill: 'winch', w_stone: 'pitch', l_lens: 'lamp2', p_salvage: 'wrecker', g_ballista: 'ballista', w_moat: 'mines', p_chest: 'cave', a_fourth: 'well', g_mortar: 'mortar', g_tesla: 'tesla' };
+const forgeBuild = n => { const t = Sim.TUNE.forge.nodes.find(m => m.id === n), b = (t && t.eff && t.eff.build) || FORGE_BUILD[n]; return b && BLD[b] ? b : null; };
+const numHTML = s => s.replace(/([+−]?\d+(?:\.\d+)?(?:[×%°]|[ ](?:m|s)\b)?)/g, (m, t) => `<b class="num">${t.replace(' ', ' ')}</b>`);
+const escH = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const bIcon = id => SVG(TI[id]);
+// what a town pick card shows: the new line of text only, the badge and the partner line, the level pips
+function townCard(d, own, disc) {
+  own = own || {}; disc = disc || {};
+  if (d.kind === 'evo') {
+    const e = EVO[d.id], a = BLD[e[1]], b = BLD[e[2]];
+    return { cls: 'evo', kicker: 'Evolution', name: e[0], icons: `<span class="ev">${bIcon(e[1])}</span><span class="ch"></span><span class="ev">${bIcon(e[2])}</span>`,
+      from: `${a[0]} III + ${b[0]}`, text: e[3], note: `${b[0]}${/s$/.test(b[0]) ? '’' : '’s'} slot is freed.`, pips: 0 };
+  }
+  if (d.kind === 'rep') {
+    const o = BLD[d.out], n = BLD[d.id], r = ROLE[n[1]];
+    return { cls: 'rep', c: r[1], kicker: 'Replace · no more ground', name: `${n[0]} I`, icons: `<span class="ev old">${bIcon(d.out)}</span><span class="ar"></span><span class="ev">${bIcon(d.id)}</span>`,
+      from: `Tear down the ${o[0].replace(/^The /, '')}.`, text: n[2], note: `Raise the ${n[0].replace(/^The /, '')} (I) in its place. The ${o[0].replace(/^The /, '')} goes back into the pool.`, pips: 1, role: r[0] };
+  }
+  const b = BLD[d.id], r = ROLE[b[1]], lv = d.lv || 1, ek = evoOf(d.id), e = ek && EVO[ek], main = e && e[1] === d.id;
+  const other = e && (main ? e[2] : e[1]), has = other && own[other];
+  let line = '';
+  if (has) {
+    const on = BLD[other][0];
+    line = `Answers: <i class="pi">${bIcon(other)}</i><b>${on}</b> (owned)<br><span class="lv">`
+      + (disc[ek] ? (main ? `III + ${on}` : `${on} III + this`) + ` = ${e[0]}.` : (main ? 'Raise it to III' : `Raise the ${on} to III`) + ' and see what wakes.') + '</span>';
+  }
+  return { cls: 'bld', c: r[1], kicker: lv === 1 ? 'New building' : 'Level up', name: `${b[0]} ${RN[lv]}`, icons: `<span class="ev">${bIcon(d.id)}</span>`, text: d.text || b[1 + lv],
+    pips: lv, role: r[0], home: HOME[b[1]], line, chain: !!has };
+}
+function townHTML(t, i) {
+  const pips = t.pips ? `<span class="tp">${[1, 2, 3].map(k => `<i class="${k < t.pips ? 'on' : k === t.pips ? 'nx' : ''}"></i>`).join('')}</span>` : '';
+  return `<i class="rv"></i><i class="rv"></i><i class="rv"></i><i class="rv"></i>
+    ${t.role ? `<span class="rt">${t.role}</span>` : ''}${t.chain ? '<s class="cb"></s>' : ''}
+    <div class="br">${escH(t.kicker)}</div><div class="md ${t.cls}">${t.icons}</div><h3 class="disp">${escH(t.name)}</h3>${pips}
+    <div class="mid">${t.from ? `<div class="lb">${escH(t.from)}</div>` : ''}<p>${numHTML(escH(t.text))}</p>${t.note ? `<div class="nt">${escH(t.note)}</div>` : ''}${t.line ? `<div class="pl">${t.line}</div>` : ''}</div>
+    <div class="ft"><span class="ck">${i + 1}</span><span class="pp">${t.home ? `${t.home} slot` : t.cls === 'evo' ? 'frees a slot' : ''}</span></div>`;
+}
+// dev mock (the #dev panel's "Town cards", and checks/townpick.js): four sets that cover every card kind
+const MOCKS = [
+  { own: { brazier: 3, bell: 2 }, disc: {}, c: [{ kind: 'level', id: 'lamp2', lv: 2 }, { kind: 'new', id: 'rocket' }, { kind: 'new', id: 'horn' }] },
+  { own: { brazier: 3, lamp2: 3, well: 1 }, disc: { crown: 1 }, c: [{ kind: 'evo', id: 'crown' }, { kind: 'level', id: 'well', lv: 2 }, { kind: 'new', id: 'spire' }] },
+  { own: { horn: 1, spire: 1, bell: 3 }, disc: { stormbell: 1 }, c: [{ kind: 'evo', id: 'stormbell' }, { kind: 'rep', id: 'well', out: 'horn' }, { kind: 'level', id: 'watch', lv: 3 }] },
+  { own: { mortar: 2, beacon: 1, rocket: 1, winch: 1 }, disc: { hooks: 1 }, c: [{ kind: 'level', id: 'mortar', lv: 3 }, { kind: 'level', id: 'winch', lv: 2 }, { kind: 'new', id: 'cave' }] },
+];
+let mockN = 0;
+function mockTown(n) {
+  const S = U.S; if (!S || S.pick || S.over) return false;
+  const m = MOCKS[(n == null ? mockN++ : n) % MOCKS.length];
+  S.pick = { wave: S.wave, choices: m.c.map(c => c.id), town: m.c, own: m.own, disc: m.disc, mock: true };
+  return true;
+}
+
 function tip(S) {
   const t = $('tw-tip'), f = U.tipFor;
   if (!f || (U.mode === 'run' && (S.pick || U.paused)) || U.set) { t.style.display = 'none'; return; }
@@ -8586,9 +8773,9 @@ function tip(S) {
   if (f.node) {
     const M = meta(), I = M && Sim.nodeInfo(M, f.node);
     if (!I) { t.style.display = 'none'; return; }
-    const st = !I.owned && I.ready && !I.can ? `Need ${fmt(I.cost - M.embers)} more Embers` : I.status;   // the sim's line, Embers in the number format
+    const fb = forgeBuild(f.node), st = !I.owned && I.ready && !I.can ? `Need ${fmt(I.cost - M.embers)} more Embers` : I.status;   // the sim's line, Embers in the number format
     const tag = (I.key ? 'Keystone · ' : I.bridge ? 'Bridge · ' : I.fork ? 'Choice · ' : '') + I.branchName;
-    h = `<h4>${I.name} <span style="color:#7fa9a5;font-weight:400">${tag}</span></h4><div>${I.text}</div>
+    h = `<h4>${I.name} <span style="color:#7fa9a5;font-weight:400">${tag}</span></h4><div>${I.text}</div>${fb ? `<div class="jtag"><s></s><span><b>${BLD[fb][0]}</b> joins the pick cards.</span></div>` : ''}
       <div class="row">${I.owned ? 'With it' : 'Now'}<b class="num">${I.owned ? I.after : I.now}</b></div>
       ${I.owned ? '' : `<div class="row">After<b class="num">${I.after}</b></div><div class="row">Cost<b class="num">${fmt(I.cost)} Embers</b></div>`}
       <div class="hint">${st}</div>`;
@@ -8708,7 +8895,7 @@ function forgeHTML(M) {
   for (const n of F.nodes) {
     const i = I[n.id], st = i.owned ? 'own' : i.excluded ? 'ex' : i.ready ? 'rdy' + (i.can ? ' can' : '') : 'lock';
     const gl = n.key ? '&#x2726;' : i.owned ? '&#x2713;' : '';
-    dom += `<button class="fn ${st}${n.key ? ' key' : ''}" style="--c:${FG_COL[n.b]}" data-node="${n.id}" data-x="${n.x}" data-y="${n.y}" data-r="${FG_R(n)}">${gl}</button>`;
+    dom += `<button class="fn ${st}${n.key ? ' key' : ''}${forgeBuild(n.id) ? ' bld' : ''}" style="--c:${FG_COL[n.b]}" data-node="${n.id}" data-x="${n.x}" data-y="${n.y}" data-r="${FG_R(n)}">${gl}</button>`;
     const show = n.key || (i.ready && !i.owned) ? '' : ' opt';
     const sub = i.owned ? '' : i.ready ? `<span class="c num"><span class="emb"></span>${fmt(i.cost)}</span>` : n.key ? `<span class="c">Keystone &middot; ${i.gate} nodes</span>` : '';
     dom += `<div class="fl${show}${n.key ? ' key' : ''}${i.can ? ' can' : ''}${i.owned || i.excluded || (!i.ready && !n.key) ? ' dim' : ''}" data-x="${n.x}" data-y="${n.y}" data-r="${FG_R(n)}">${i.name}${sub}</div>`;
@@ -8844,6 +9031,7 @@ function dev(k) {
     if (live) { S.wave = n - 1; S.pickedAt = n - 1; S.nextWave = S.t; S.spawnQ.length = 0; }
   } else if (k === 'pick') {                     // opens a pick at the next step (pickEvery 1 until it is open)
     if (live && !S.pick) { U.devPick = U.devPick || S.pickEvery; S.pickEvery = 1; S.pickedAt = -1; S.nextWave = Math.min(S.nextWave, S.t); }
+  } else if (k === 'town') { if (live) mockTown();
   } else if (k === 'fall') { if (live) { S.hp = 0; S.over = true; } }
   else if (k === 'reset') { hints = {}; store('tidewall.hints', '{}'); if (U.cb.resetMeta) U.cb.resetMeta(); renderForges(); syncTitle(); }
 }
@@ -8887,7 +9075,7 @@ function buildAbs(S) {
 }
 function init(cb) { U.cb = cb || {}; if (!U.root) build(); syncTitle(); }
 
-root.TWUI = { init, setRun, show, frame, fmt, worldAt, renderForges, get paused() { return U.paused; }, get armed() { return U.armed; } };
+root.TWUI = { init, setRun, show, frame, fmt, worldAt, renderForges, get paused() { return U.paused; }, get armed() { return U.armed; }, mockTown };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
 <script>/* main.js */
