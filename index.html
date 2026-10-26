@@ -3795,7 +3795,7 @@ const TUNE = {
     crit:   { base: 15, growth: 1.30, per: 0.03, max: 15 },   // crit chance +3 points per level
     wall:   { base: 10, growth: 1.25, per: 20, regen: 0.25 }, // +20 max HP (and heals 20), +0.25 HP/s regen
     bounty: { base: 12, growth: 1.28, per: 0.10 },   // gold per kill +10% per level
-    rot:    { base: 12, growth: 1.30, per: 0.15, max: 10, wPer: 0.08 },   // Lamp Wick: the lighthouse turns +15% faster and its beam is +8% wider per level (LAS-72)
+    rot:    { base: 12, growth: 1.30, per: 0, max: 10, wPer: 0.16, lampAt: 0 },   // Lamp Wick: the beam is +16% wider per level (LAS-80: no speed, Philippe got dizzy; was +15% speed, +8% width). lampAt N: a second beam at level N (0 = off: 10 took the minute-60 hit over its band)
   },
   // after wave 2, then every 5th wave: choose 1 of 3 cards; the tide waits. The picks after wave 5 and every 20th
   // wave hold one loud card (TUNE.loud) while any is left.
@@ -3852,14 +3852,15 @@ const TUNE = {
   // a faint spill over this full width. LAS-72 (Philippe: "our starting light cone should be smaller"): width 2.2 -> 0.7 rad
   // (126° -> 40°, a real lighthouse beam), turn 4 -> 3 s; widening is earned (Lamp Wick levels, Bright Lens, Broad Flame,
   // the Lamp Tower); the Wall Guard pays for the early gap (design/las72-narrow-beam.md).
-  // LAS-85 hotfix (Philippe: "it is still spinning so fast", headache): turn 3 -> 10 s, and nothing (Lamp Wick, cards,
-  // Forge) turns it faster than minTurn s. LAS-80 does the real rebalance.
-  light: { mode: 'plain', width: 0.7, len: 35, lenPer: 3, turn: 10, minTurn: 6, linger: 0, sweep: 'turn' },   // LAS-72: turn 3 s
+  // LAS-85 hotfix + LAS-80 (Philippe: "the max rotation speed making me dizzy ... upgrade should be wider cone not purely speed"): a slow,
+  // steady turn of `turn` s, and nothing turns it faster than one turn in minTurn s. Upgrades widen the beam or add beams:
+  // like a multi-panel lighthouse lens, 2-4 beams at fixed, even angles turn together (maxLamps); see lampCount().
+  light: { mode: 'plain', width: 0.7, len: 35, lenPer: 3, turn: 10, minTurn: 6, maxLamps: 4, linger: 0, sweep: 'turn' },   // LAS-80: turn 3 -> 10 s
   // LAS-53 the Wall Guard (Philippe: "basic shooters near the base that only shoot within that smaller radius"): braziers
   // light a ring of sea r m out from the wall; n swivel guns on the wall fire only at creatures inside it (dmg x cannon
   // damage, rate shots/s each, no crits, no splash). The big mounts still fire only at what the beam lights.
   // mountsToo: 1 = the ring also lights creatures for the mounts (A/B only).
-  guard: { n: 2, r: 10, dmg: 0.18, rate: 1.5, mountsToo: 0 },   // LAS-72: 0.09 -> 0.18 pays for the narrow 40° beam (LAS-66 had 0.12 -> 0.09 for the wide one)
+  guard: { n: 2, r: 10, dmg: 0.22, rate: 1.5, mountsToo: 0 },   // LAS-80: 0.18 -> 0.22 pays for the slow turn (LAS-72: 0.09 -> 0.18 for the narrow beam)
   // Mount kinds the Forge unlocks (the Cannon is TUNE.cannon). Upgrades, picks and the Forge scale every kind by
   // the same factors: a kind's damage/rate/range = Cannon value x (kind / cannon).
   mountKinds: {
@@ -3928,7 +3929,7 @@ const TUNE = {
       { id: 'w_unbroken', b: 'walls', d: 8, x: 84, y: -27, p: ['w_heart'], key: 1, gate: 45, name: 'Unbroken', eff: { unbroken: 1 }, text: 'Keystone. Once per run, when the wall falls it stands again with {unbrokenHp%} of its max HP, and the sea is thrown back {unbrokenPush} m (bosses {unbrokenBoss%} as far).' },
       // Lighthouse (left). Lane toward Arcana: the lamp (sweep, width, a second lamp, Lantern Eye) and the Flare; lane toward the Guns: Keg, Flood Gate, Harpoon.
       { id: 'l_lens', b: 'light', d: 1, x: -10, y: -3, p: ['g_powder'], name: 'Great Lens', eff: { beamX: 2, len: 10, beamW: 0.25 }, text: 'The lighthouse beam reaches {len} m farther and is {beamW%} wider. Flare damage x{beamX}.' },
-      { id: 'l_clock', b: 'light', d: 2, x: -24, y: 2, p: ['l_lens'], name: "Keeper's Clock", eff: { rot: 0.3 }, text: 'The lighthouse turns {rot%} faster, so its beam comes back sooner.' },
+      { id: 'l_clock', b: 'light', d: 2, x: -24, y: 2, p: ['l_lens'], name: "Keeper's Glass", eff: { beamW: 0.3 }, text: 'Clearer glass in the lantern room: the lighthouse beam is {beamW%} wider.' },   // LAS-80: was Keeper's Clock, +30% turn speed
       { id: 'l_keg', b: 'light', d: 2, x: -18, y: -15, p: ['l_lens'], name: 'Powder Keg', eff: { keg: 1 }, text: 'Unlocks the Powder Keg ability: {kegMul} x cannon damage to every creature within {kegR} m of where it lands. Cooldown {kegCd} s.' },
       { id: 'l_bell', b: 'light', d: 3, x: -31, y: -10, p: ['l_clock', 'l_keg'], name: 'Night Bell', eff: { abCd: 0.2 }, text: 'All ability cooldowns -{abCd%}.' },
       { id: 'l_twin', b: 'light', d: 3, x: -30, y: 0, p: ['l_clock'], fork: 'f_light', name: 'Twin Lamp', eff: { lamp2: 1 }, text: 'A second lamp on the far side of the tower: a {beamDeg}° beam that turns with the first, so two sides are lit at once.' },
@@ -4177,9 +4178,9 @@ function fgShow(T, fg, k) {
     case 'beamX': return 'x' + +(fg.beamX || 1).toFixed(2) + ' Flare damage';
     case 'floodPush': case 'floodSlow': return 'push ' + r1(T.ab.flood.push * (1 + g('floodPush'))) + ' m, slow ' + (T.ab.flood.slowFor + g('floodSlow')) + ' s';
     case 'beamCd': return 'Flare ' + cd('beam');
-    case 'rot': return 'a turn every ' + r1(Math.max(T.light.minTurn || 0, T.light.turn / (1 + g('rot')))) + ' s';
+    case 'rot': return 'a turn every ' + r1(T.light.turn) + ' s';
     case 'ring': return 'ring ' + r1(T.guard.r + g('ring')) + ' m from the wall';
-    case 'lamp2': return g('lamp2') ? 'two lamps' : 'one lamp';
+    case 'lamp2': return g('lamp2') ? 'two beams' : 'one beam';
     case 'keg': return abList(fg);
     case 'abCd': return 'Flare ' + cd('beam') + ', Flood Gate ' + cd('flood');
     case 'gold': return '+' + p(g('gold')) + ' gold per kill';
@@ -4340,7 +4341,7 @@ function newRun(opts) {
     lv, ab, mod: {}, pick: null, picks: [], pickedAt: 0,
     pickEvery: Math.max(2, T.pick.every + (fg.pickEvery || 0)), pickN: T.pick.n + (fg.pickN || 0), rerolls: fg.reroll || 0,
     enemies: [], shots: [], nextId: 1, mounts: [],
-    beam: { a: Math.PI / 2, a2: null, w: T.light.width, len: T.light.len + (fg.len || 0), flare: 0, dir: 1, hold: false }, flareT: -1,
+    beam: { a: Math.PI / 2, a2: null, as: [Math.PI / 2], lamps: 1, w: T.light.width, len: T.light.len + (fg.len || 0), flare: 0, dir: 1, hold: false }, flareT: -1,
     guard: [], ringR: T.citadel.r + T.guard.r + (fg.ring || 0),   // LAS-53: the Wall Guard's guns, the lit ring's radius (m from the centre)
     ev, fx: ev,                                         // S.fx: old name, same array
   };
@@ -4400,8 +4401,8 @@ function upText(S, key) {
     crit:   ['Crit chance +' + pct(U.crit.per) + ' per level.', pct(st.crit) + ' crit'],
     wall:   ['Max HP +' + U.wall.per + ', regen +' + U.wall.regen + ' HP/s per level.', S.maxHp + ' HP, ' + st.regen.toFixed(2) + ' HP/s'],
     bounty: ['Gold per kill +' + pct(U.bounty.per) + ' per level.', 'x' + st.bounty.toFixed(2) + ' gold'],
-    rot:    ['The lighthouse turns +' + pct(U.rot.per) + ' faster and its beam is +' + pct(U.rot.wPer || 0) + ' wider per level. Your guns only shoot what its beam lights.',
-      'a turn every ' + beamTurn(S).toFixed(1) + ' s, ' + Math.round(Math.min(Math.PI, beamWidth(S)) * 180 / Math.PI) + '° beam'],
+    rot:    ['The lighthouse beam is +' + pct(U.rot.wPer || 0) + ' wider per level' + (U.rot.lampAt ? '; at level ' + U.rot.lampAt + ' the lens sends a second beam the other way' : '') + '. Your guns only shoot what its beams light.',
+      Math.round(Math.min(Math.PI, beamWidth(S)) * 180 / Math.PI) + '° beam' + (lampCount(S) > 1 ? ' x' + lampCount(S) : '') + ', a turn every ' + Math.round(beamTurn(S)) + ' s'],
   }[key];
   return { name: UPNAME[key], text: T[0], now: T[1], cost: maxed ? null : cost(S, key), lv: S.lv[key], maxed };
 }
@@ -4714,9 +4715,15 @@ function kindHit(S, s, e, ex, ey) {
 // ---- the lighthouse beam (LAS-24) ----
 // S.beam = { a (rad, 0..2PI, counter-clockwise from +x; the sea is +y), a2 (second lamp, a + PI, or null), w (cone
 // width, rad), len, flare (s of Flare light left) }. The lamp turns counter-clockwise, the full circle in turn s.
-function beamSpeedMul(S) { return 1 + S.T.up.rot.per * S.lv.rot + M(S, 'rot') + G(S, 'rot'); }
-// LAS-85: seconds per full turn, clamped so it is never faster than T.light.minTurn.
+function beamSpeedMul(S) { return 1 + (S.T.up.rot.per || 0) * S.lv.rot + M(S, 'rot') + G(S, 'rot'); }
+// LAS-85: seconds per full turn, clamped so it is never faster than T.light.minTurn (LAS-80: no upgrade adds speed now).
 function beamTurn(S) { const L = S.T.light; return Math.max(L.minTurn || 0, L.turn / beamSpeedMul(S)); }
+// LAS-80: how many beams the lens sends (1..maxLamps), evenly spaced and turning together: Twin Lamp (Forge), Lamp Wick
+// at level up.rot.lampAt (0 = off), and a 'lamps' effect (picks, town buildings). Two sources of the second beam don't add a third.
+function lampCount(S) {
+  const R = S.T.up.rot, two = G(S, 'lamp2') || (R.lampAt && S.lv.rot >= R.lampAt) ? 1 : 0;
+  return Math.max(1, Math.min(S.T.light.maxLamps || 4, 1 + two + M(S, 'lamps') + G(S, 'lamps')));
+}
 function beamWidth(S) { return S.T.light.width * (1 + (S.T.up.rot.wPer || 0) * S.lv.rot + M(S, 'beamW') + G(S, 'beamW')); }
 // LAS-38: the beam's reach (m) starts short and grows: lenPer per Spyglass level, Long Sight cards, Forge nodes.
 function beamLen(S) { const L = S.T.light; return L.len + (L.lenPer || 0) * S.lv.range + M(S, 'len') + G(S, 'len'); }
@@ -4731,20 +4738,25 @@ function moveBeam(S) {
     B.a += B.dir * w * dt;
   } else B.a += (B.dir || 1) * w * dt;
   B.a = ((B.a % TAU) + TAU) % TAU;
-  B.a2 = G(S, 'lamp2') ? (B.a + Math.PI) % TAU : null;
+  const nL = lampCount(S); B.lamps = nL; B.as = [B.a];
+  for (let i = 1; i < nL; i++) B.as.push((B.a + i * TAU / nL) % TAU);
+  B.a2 = nL > 1 ? B.as[1] : null;   // render draws a and a2 (beams 3-4: render follow-up)
   B.flare = Math.max(0, S.flareT - S.t);
   // mark: a creature inside a cone is lit until now (+ linger in the old 'linger' mode, A/B only)
   const lit = S.t + (L.mode === 'plain' ? 0 : L.linger), glow = S.t + M(S, 'glow');
   S.ringR = S.T.citadel.r + S.T.guard.r + M(S, 'ring') + G(S, 'ring');
   const hw = B.w / 2, ch = dcos(hw), ca = dcos(B.a), sa = dsin(B.a), r2 = B.len * B.len;
-  const two = B.a2 !== null, ca2 = two ? dcos(B.a2) : 0, sa2 = two ? dsin(B.a2) : 0;
+  const cs = [], sn = [];
+  for (let i = 1; i < nL; i++) { cs.push(dcos(B.as[i])); sn.push(dsin(B.as[i])); }
   let hold = false, gl = null;   // hold: a Hulk or boss is lit (Lantern Eye slows next step). Living Gloams (LAS-32): their murk hides the creatures around them (and them) beyond near m (Whale Oil: no murk)
   if (!M(S, 'oil')) for (const e of S.enemies) if (e.dimR && !e.dead) (gl = gl || []).push(e);
   for (const e of S.enemies) {
     if (e.under > S.t) continue;   // a Sounder under water: the beam can't find it
     const d2 = e.x * e.x + e.y * e.y; if (d2 > r2) continue;
     const d = Math.sqrt(d2) * ch;
-    if (!(e.x * ca + e.y * sa >= d || (two && e.x * ca2 + e.y * sa2 >= d))) continue;
+    let inCone = e.x * ca + e.y * sa >= d;
+    for (let i = 0; !inCone && i < cs.length; i++) inCone = e.x * cs[i] + e.y * sn[i] >= d;
+    if (!inCone) continue;
     const nr = S.T.kinds.dimmer.near + S.T.citadel.r;
     if (gl && !e.boss && d2 > nr * nr && inMurk(e, gl)) continue;
     e.litT = lit; if (e.boss || e.kind === 'brute') hold = true;
@@ -10205,7 +10217,7 @@ function frame(S, now) {
   if (lamp) {
     if (U.teach && !hints.lamp && S.lv.rot > 0) hintDone('lamp');
     const on = !!U.teach && !hints.lamp;
-    if (on !== lamp._teach) { lamp._teach = on; lamp.classList.toggle('teach', on); lamp.dataset.teach = on ? 'Turn the light faster' : ''; }
+    if (on !== lamp._teach) { lamp._teach = on; lamp.classList.toggle('teach', on); lamp.dataset.teach = on ? 'Widen the light' : ''; }
   }
   // abilities (a hop and a chime when one is ready again)
   for (const k in U.abEls) {
@@ -10270,7 +10282,7 @@ function teach(S, now) {
   if (!O) { if (h.style.display !== 'none') h.style.display = 'none'; return; }
   const e = O.e;
   if (!O.lit && !e.dead && e.litT >= S.t) {
-    O.lit = now; h.className = 'panel lit'; h.innerHTML = '<b>In the light.</b> Now they fire.<small>The Lamp Wick turns it faster and widens it. At the wall, braziers light the sea for the Wall Guard.</small>';
+    O.lit = now; h.className = 'panel lit'; h.innerHTML = '<b>In the light.</b> Now they fire.<small>The Lamp Wick widens the beam. At the wall, braziers light the sea for the Wall Guard.</small>';
   }
   if (e.dead && !O.lit) O.lit = now;
   if ((O.lit && now - O.lit > 2600) || now - O.at > 12000) { T.on = null; h.style.display = 'none'; return; }
@@ -10405,7 +10417,7 @@ const TI = {
 // id: [name, role, new line at I, II, III]
 const BLD = {
   brazier: ['Braziers', 'light', 'Fire bowls line the rim. The lit ring grows 3 m.', 'The lit ring grows 3 m more.', 'Every 12 s the braziers flare: ring +6 m for 3 s.'],
-  lamp2: ['Lamp Tower', 'light', 'A second beam sweeps the other way: 40°, 70% of the main reach.', 'Both beams are 25% wider.', 'The second beam holds on the toughest lit creature in reach.'],
+  lamp2: ['Lamp Tower', 'light', 'A second beam on the far side of the lens, turning with the first: 40°, 70% of the main reach.', 'Both beams are 25% wider.', 'The second beam holds on the toughest lit creature in reach.'],
   rocket: ['Rocket Rack', 'light', 'Every 10 s a rocket hangs a 6 m light for 4 s over the biggest pack within 30 m.', 'A rocket every 8 s.', 'Two rockets.'],
   beacon: ['Beacon Stack', 'light', 'A bonfire on a sea stack 18 m out: 7 m light. Creatures crossing it burn 0.3× dmg/s for 3 s.', 'The light grows to 9 m. It burns whale oil: the beam ignores Gloam murk.', 'A second stack on the other side.'],
   battery: ['Gun Battery', 'kill', 'A second cannon on its own tower, at 40% damage.', 'It hits for 70%, and its hits splash 30%.', 'Splash 100%. Crits deal +100% damage.'],
