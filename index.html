@@ -5478,7 +5478,7 @@ function hideBanner() {
   void F.bn.offsetWidth;
 }
 function reset(S) {
-  F.nums.length = 0; F.byId.clear(); F.bossIds.clear(); F.trauma = 0; F.flash = 0;
+  F.nums.length = 0; F.tags = []; F.byId.clear(); F.bossIds.clear(); F.trauma = 0; F.flash = 0;
   F.mile = S ? rung(S.biggestHit) : 0;
   if (F.beam) F.beam.age = F.flood.age = F.keg.age = F.harp.age = F.flare.age = 9;
   F.bnT = 0; if (F.bn) { F.bn.style.transition = 'none'; F.bn.style.opacity = 0; F.bn.style.filter = 'brightness(0)'; }
@@ -5647,7 +5647,21 @@ function draw(S) {
     g.fillStyle = n.crit ? FX.critCol : FX.numCol; g.fillText(s, x, y);
   }
   F.nums.length = keep; g.globalAlpha = 1;
+  tagsDraw(g, w, h);
   bossPlate(S, g, w, h);
+}
+// LAS-116: a building's name over its hex for a moment after a pick lands (render.js townMark calls TWFx.tag): bone on a dark
+// stroke, in in 0.3 s, out over the last 0.7 s, drifting up a little. World point, so it stays on the building.
+function tag(text, x, y, z, dur) { F.tags = (F.tags || []).filter(q => q.text !== text); F.tags.push({ text, x, y, z, dur: dur || 2.6, t0: F.t || 0 }); }
+function tagsDraw(g, w, h) {
+  if (!F.tags || !F.tags.length) return;
+  const px = Math.round(Math.max(18, h * 0.026)); g.save(); g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineJoin = 'round'; g.font = '400 ' + px + 'px ' + FELL;
+  F.tags = F.tags.filter(q => { const a = (F.t || 0) - q.t0; if (a >= q.dur || a < -1) return false;
+    const v = F.v.set(q.x, q.y, q.z).project(F.cam); if (v.z > 1) return true;
+    const x = (v.x + 1) / 2 * w, y = (1 - v.y) / 2 * h - 8 - 10 * a / q.dur;
+    g.globalAlpha = Math.min(1, a / 0.3, (q.dur - a) / 0.7);
+    g.lineWidth = Math.max(3, px / 5); g.strokeStyle = 'rgba(3,4,5,.92)'; g.strokeText(q.text, x, y); g.fillStyle = '#d9d2c0'; g.fillText(q.text, x, y); return true; });
+  g.restore();
 }
 // LAS-49: the boss's name plate and health bar over its head; off screen it sticks to the screen edge with an arrow toward it
 function bossPlate(S, g, w, h) {
@@ -6212,7 +6226,7 @@ function call(C, o, t, kind, size) {
 
 // ui.js adds its UI voices (hover, buy, deny, deal, count tick...) here: voice(key, (C, o, t, p, synT, synN) => ..., vol)
 function voice(k, fn, vol) { SYN[k] = (C, o, t, p) => fn(C, o, t, p, synT, synN); VOL[k] = vol || 0.5; }
-root.TWFx = { init, reset, hideBanner, frame, draw, fmt, setVolume, sound: k => play(k, 0.03), voice, tap, AMB, B, A, HAB, shake, kick, intro, held, FX, F,
+root.TWFx = { init, reset, hideBanner, frame, draw, fmt, tag, setVolume, sound: k => play(k, 0.03), voice, tap, AMB, B, A, HAB, shake, kick, intro, held, FX, F,
   get volume() { return FX.vol; } };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
@@ -8023,7 +8037,7 @@ function mountsTick(S, t, dt, alpha) {
     if (!g) continue;
     g.ft += dt; let d = g.aim - g.cur; d = Math.atan2(Math.sin(d), Math.cos(d)); g.cur += d * Math.min(1, dt * 14);
     g.yaw.rotation.y = g.cur;
-    const k = Math.min(1, g.ft / 0.35), kick = g.ft < 0.05 ? g.ft / 0.05 : Math.pow(1 - k, 2);   // snap back, ease home
+    const k = Math.min(1, g.ft / (0.35 - 0.04 * ((R.upTier && R.upTier.rate) || 0))), kick = g.ft < 0.05 ? g.ft / 0.05 : Math.pow(1 - k, 2);   // snap back, ease home
     if (g.rec) { g.rec.position.z = -g.kick * kick; if (g.squash) g.rec.scale.set(1 + 0.12 * kick, 1 - 0.18 * kick, 1 + 0.12 * kick); }
     if (g.arms) {   // the bow arms flex forward on the shot, the string follows the arm tips, the bolt is gone for a moment
       const flex = g.ft < 0.06 ? 0.4 : 0.4 * Math.max(0, 1 - (g.ft - 0.06) / 0.5), nutZ = g.ft > 0.45 ? -0.22 : 0.32;
@@ -8042,9 +8056,11 @@ function mountsTick(S, t, dt, alpha) {
       wx = gp.x + Math.sin(ry) * 1.25 * s * (B.ax || 1); wy = gp.y + (B.sp.h - 0.56) * s * (B.ax || 1); wz = gp.z + Math.cos(ry) * 1.25 * s * (B.ax || 1); if (g.fired) B.shotT = t; }
     R.muzzle.set(g.m.x + ',' + g.m.y, [wx, wy, wz]);
     const powder = g.kind === 'cannon' || g.kind === 'mortar' || !MART[g.kind];
-    g.flash.visible = powder && g.ft < 0.07;
-    if (g.flash.visible) { g.flash.position.set(wx, wy, wz); g.flash.quaternion.copy(R.cam.quaternion); g.flash.scale.setScalar((g.kind === 'mortar' ? 1.6 : 1.1) * (1 - g.ft / 0.07 * 0.5)); }
-    if (g.fired && powder && t - (g.lastPuff || 0) > 0.15) { g.lastPuff = t; for (let j = 0; j < (g.kind === 'mortar' ? 4 : 2); j++) puff(wx, wy, wz, 0.9, 0.6 + Math.random() * 0.4, 0.6); }
+    const tp = (R.upTier && R.upTier.dmg) || 0, fl = 0.07 + 0.02 * tp;   // LAS-116 Powder: the flash grows x1.2 and lasts 20 ms longer per tier, x1.5 just after a buy
+    g.flash.visible = powder && g.ft < fl;
+    if (g.flash.visible) { g.flash.position.set(wx, wy, wz); g.flash.quaternion.copy(R.cam.quaternion); g.flash.scale.setScalar((g.kind === 'mortar' ? 1.6 : 1.1) * (1 + 0.2 * tp) * (1 + 0.5 * upPulse('dmg', t)) * (1 - g.ft / fl * 0.5)); }
+    if (g.fired && powder && t - (g.lastPuff || 0) > 0.15) { g.lastPuff = t; for (let j = 0; j < (g.kind === 'mortar' ? 4 : 2) + (tp >> 1); j++) puff(wx, wy, wz, 0.9, 0.6 + Math.random() * 0.4, 0.6); }
+    if (g.fired && powder && !g.bat && R.upTier && R.upTier.rate) for (let j = 0; j < (R.upTier.rate >= 4 ? 2 : 1); j++) casing(g, 0.04 * j);   // LAS-116 Loaders
     g.fired = 0;
   }
 }
@@ -8557,7 +8573,8 @@ function hexInit() {
   const rim = new T3.Mesh(rg, new T3.MeshBasicMaterial({ color: HEX.lamp, transparent: true, opacity: 0, depthWrite: false, blending: T3.AdditiveBlending, fog: false, side: T3.DoubleSide }));
   rim.renderOrder = 5; rim.visible = false;
   const light = new T3.PointLight(HEX.lamp, 0, 6 * TOWN.k, 1.6);   // always in the scene (0 when nothing is hovered): no shader recompile on hover
-  R.scene.add(tiles, rim, light);
+  const mlight = new T3.PointLight(HEX.lamp, 0, 7 * TOWN.k, 1.6);   // LAS-116: the pick's light pool (townMark), same rule
+  R.scene.add(tiles, rim, light, mlight); R.markLight = mlight; R.hexBand = rg;
   const mouse = { x: -1, y: -1, on: false };
   root.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.on = true; });
   root.addEventListener('mouseleave', () => { mouse.on = false; });
@@ -8693,8 +8710,39 @@ function upInit() {
     im.count = 0; im.castShadow = true; im.receiveShadow = true; grp.add(im); P[k] = im; }
   return (R.ups = { P, grp, sig: '' });
 }
-function upTick(S) {
+// LAS-116 (QA np39 risk 2: "24 gold buys changed nothing visible"): each line also shows on the thing it improves, stepping up at
+// levels 1, 3, 5 and 10 (R.upTier 0..4), and every buy gets a moment (R.upT[key] = when): Powder = a bigger, longer muzzle flash;
+// Loaders = snappier recoil + spent casings; Spyglass = a faint ring at the beam's reach; Gunner's Eye = cool crit sparks; Masonry =
+// fresh courses of stone on the outer wall's foot; Salvage = a dull coin glint off kills; Lamp Wick = the lamp and the beam brighter.
+const UPT = { keys: ['dmg', 'rate', 'range', 'crit', 'wall', 'bounty', 'rot'], at: [1, 3, 5, 10], pulse: 1.3, casing: '#6b5634', coin: '#8a7550', crit: '#cfdde6', ring: '#8fa6b6' };
+const upTier = n => UPT.at.filter(x => n >= x).length;
+const upPulse = (k, t) => { const a = t - ((R.upT && R.upT[k]) || -99); return a >= 0 && a < UPT.pulse ? 1 - a / UPT.pulse : 0; };
+function upBuy(S, k, t) {
+  const O = R.isleStep ? R.outer[R.isleStep - 1] : null;
+  if (k === 'range' && S.beam && R.town) { const X = tfxInit(R.town), r = S.beam.len + (R.off || 0), tr = R.upTier.range;
+    tfxRing(X, t, { c: UPT.ring, r0: r * 0.97, r1: r * 1.01, y: 0.25, dur: 1.6, op: 0.2 + 0.05 * tr, add: 1 }); }
+  else if (k === 'wall' && O) for (let j = 0; j < 14; j++) { const a = j / 14 * 6.283 + Math.random() * 0.3; puff(Math.cos(a) * (O.Ro + 0.4), RLOOK.isleTop + 0.3, Math.sin(a) * (O.Ro + 0.4), 0.6, 1.0, 0.5, 1.6); }
+  else if (k === 'rate') for (const g of R.slots) if (g && g.root.visible) for (let j = 0; j < 3; j++) casing(g, 0.2 * j);
+}
+function casing(g, late) {   // a spent casing kicked out of the breech, sideways off the aim, falling (spark pool, dull tarnished brass)
+  if (R.spark.length >= RLOOK.maxSparks) return; const P = g.root.position, c = Math.cos(g.cur), n = Math.sin(g.cur), sd = Math.random() < 0.5 ? 1 : -1, v = 1.2 + Math.random() * 0.8;
+  R.spark.push({ x: P.x, y: P.y + 0.9 * MSCALE, z: P.z, vx: c * sd * v - n * 0.6, vy: 2.2 + Math.random() * 1.2, vz: -n * sd * v - c * 0.6, life: 0.75, age: -(late || 0), kill: false, c: UPT.casing, sz: 0.5 });
+}
+function wallCourses() {   // LAS-116 Masonry: up to 4 fresh courses on each outer wall (3 on the battered foot, 1 string course higher), shown by tier
+  const m = new T3.MeshStandardMaterial({ color: '#8b847a', roughness: 0.85, metalness: 0.02, flatShading: true, emissive: new T3.Color(UPT.ring), emissiveIntensity: 0 }), WS = RLOOK.wallS;
+  R.outer.forEach(O => { const Ro = O.Ro / WS, y0 = RLOOK.isleTop / WS, bA = Math.atan2(O.W.breach.z, O.W.breach.x), bH = 1.0 / Ro, ps = Math.PI / 2 - bA + bH, pl = Math.PI * 2 - 2 * bH;
+    const rb = y => Ro + 0.3 - 0.3 * y / 0.55, d = 0.12;
+    const prof = j => { if (j === 3) return [[Ro - 0.06, 0.98], [Ro + 0.12, 0.98], [Ro + 0.12, 1.12], [Ro - 0.06, 1.12]]; const a = 0.04 + 0.17 * j, b = a + 0.11; return [[rb(a) - 0.03, a], [rb(a) + d, a], [rb(b) + d, b], [rb(b) - 0.03, b]]; };
+    O.courses = [0, 1, 2, 3].map(j => { const me = new T3.Mesh(new T3.LatheGeometry(prof(j).map(q => new T3.Vector2(q[0], q[1] + y0)), 96, ps, pl), m); me.scale.setScalar(WS); me.visible = false; me.receiveShadow = true; R.scene.add(me); return me; }); });
+  R.courseMat = m;
+}
+function upTick(S, t) {
   const U0 = R.ups; if (!U0) return; const lv = (S && S.lv) || {};
+  const prev = U0.lv || (U0.lv = {}); R.upTier = R.upTier || {}; R.upT = R.upT || {};
+  for (const k of UPT.keys) { const n = lv[k] || 0; R.upTier[k] = upTier(n); if (prev[k] !== undefined && n > prev[k]) { R.upT[k] = t; upBuy(S, k, t); } prev[k] = n; }
+  if (R.outer.length && !R.outer[0].courses) wallCourses();
+  const tw = R.upTier.wall || 0, act = R.isleStep - 1; R.outer.forEach((O, i) => O.courses.forEach((m, j) => { m.visible = i === act && j < tw; }));
+  if (R.courseMat) R.courseMat.emissiveIntensity = 0.5 * upPulse('wall', t);
   const sig = Object.keys(UPROP).map(k => lv[k === 'rateShot' ? 'rate' : k] || 0).join(','); if (sig === U0.sig) return; U0.sig = sig;
   for (const k in UPROP) { const n = lv[k === 'rateShot' ? 'rate' : k] || 0; U0.P[k].count = Math.min(UPROP[k].max, k === 'rateShot' ? Math.ceil(n / 2) : n); }
 }
@@ -8765,8 +8813,8 @@ function townTick(S, t, dt) {
     const key = sl.ring * 16 + sl.i; seen.add(key);
     let rec = TW.recs.get(key); const L = slotLv(sl);
     if (rec && (rec.id !== sl.id || rec.mode === 'fall')) { TW.root.remove(rec.g); TW.recs.delete(key); rec = null; }
-    if (!rec) { rec = townRec(TW, key, sl, sl.fresh || (sl.t != null && S.t >= sl.t && S.t - sl.t < 1), t); TW.recs.set(key, rec); sl.fresh = false; }
-    else if (rec.lv !== L && !(rec.mode === 'lvl' && rec.want === L)) { rec.want = L; if (L > rec.lv) townAnim(TW, rec, 'lvl', t); else { rec.lv = L; townBuild(TW, rec); } }
+    if (!rec) { const fr = sl.fresh || (sl.t != null && S.t >= sl.t && S.t - sl.t < 1); rec = townRec(TW, key, sl, fr, t); TW.recs.set(key, rec); sl.fresh = false; if (fr) townMark(S, TW, rec, sl, t); }
+    else if (rec.lv !== L && !(rec.mode === 'lvl' && rec.want === L)) { rec.want = L; if (L > rec.lv) { townAnim(TW, rec, 'lvl', t); townMark(S, TW, rec, sl, t); } else { rec.lv = L; townBuild(TW, rec); } }
   }
   // LAS-86 part 3: a building that leaves (absorbed by an evolution, torn down by Replace) sinks back into the rock in a cloud of dust
   for (const [key, rec] of TW.recs) if (!seen.has(key) && rec.mode !== 'fall') {
@@ -8779,6 +8827,7 @@ function townTick(S, t, dt) {
   const pulse = S.pulseUntil > S.t ? 1 : 0;   // Braziers III: the fires flare while the brazier ring pulses out
   for (const rec of [...TW.recs.values()]) {
     let sy = 1, sxz = 1, lift = 0, heat = 0, gl = 0; rec.cs = cs;
+    if (rec.mk) markTick(TW, rec, t);
     if (rec.mode === 'fall') {
       const k = (t - rec.a0) / 1.2;
       if (k >= 1) { TW.root.remove(rec.g); TW.recs.delete(rec.key); continue; }
@@ -8814,7 +8863,28 @@ function townTick(S, t, dt) {
     rec.lamps.forEach((l, j) => { l.h.quaternion.copy(TQ); l.h.scale.setScalar(0.6 * l.s * (0.9 + 0.1 * Math.sin(t * 3.1 + j + ph))); haloPull(l.h, 0.35 * l.s * cs); });
     if (rec.bell) { const c = S.town ? (rec.bellT != null ? (t - rec.bellT) * 1.4 : 9) : (t + ph) % 9, ring = c < 3 ? Math.exp(-c * 0.9) * Math.sin(c * 9) : 0; rec.bell.g.rotation.z = rec.bell.amp * ring + 0.04 * Math.sin(t * 1.3 + ph); }
   }
+  if (R.markRec && TW.recs.get(R.markRec.key) !== R.markRec) { R.markRec = null; R.markLight.intensity = 0; }   // torn down mid-mark
   townFx(S, TW, t, dt);
+}
+// LAS-116 (QA np39 risk 3: "after a pick the city looked identical"): a pick lands loud for ~3.6 s without moving the camera: a slow
+// lantern-cool glow band round the slot's hex, a cool light pool on the building (R.markLight, one at a time) and its name over it
+// (fx.js tag). Under the lamp: the band is a thin additive line at <= 0.7, the light is the hover's strength.
+const MARK = { dur: 3.6, band: 0.7, light: 60, name: 2.9 };
+function townMark(S, TW, rec, sl, t) {
+  if (TW.dev && TW.dev.line) return;
+  if (!rec.mk) { const m = new T3.Mesh(R.hexBand, new T3.MeshBasicMaterial({ color: HEX.lamp, transparent: true, opacity: 0, depthWrite: false, blending: T3.AdditiveBlending, fog: false, side: T3.DoubleSide }));
+    m.renderOrder = 5; m.position.y = 0.035; const w = TOWN.k * hexS(Math.floor(rec.key / 16)); m.scale.set(w, TOWN.k, w); rec.g.add(m); rec.mk = { m }; }
+  rec.mk.t0 = t; R.markRec = rec;
+  const B = S && S.T && S.T.town && S.T.town.buildings[sl.id], L = slotLv(sl), nm = B ? B.name + (sl.evo ? '' : L > 1 ? ' ' + ['', 'I', 'II', 'III'][L] : '') : null;
+  const F = root.TWFx, p = rec.g.position; if (nm && F && F.tag) F.tag(nm, p.x, p.y + (rec.sp.h * (rec.ax || 1) + 0.15) * TOWN.k, p.z, MARK.name);
+}
+function markTick(TW, rec, t) {
+  const a = t - rec.mk.t0, M = rec.mk.m;
+  if (a >= MARK.dur || a < 0) { rec.g.remove(M); M.material.dispose(); rec.mk = null; if (R.markRec === rec) { R.markRec = null; R.markLight.intensity = 0; } return; }
+  const env = Math.min(1, a / 0.5, (MARK.dur - a) / 1.2);
+  M.material.opacity = MARK.band * env * (0.75 + 0.25 * Math.sin(a * 2.6 - 1.2)); M.scale.x = M.scale.z = TOWN.k * hexS(Math.floor(rec.key / 16)) * (1 + 0.04 * env);
+  if (R.markRec === rec) { const p = rec.g.position, ang = rec.g.rotation.y, L = R.markLight;
+    L.position.set(p.x - Math.sin(ang) * 0.7 * TOWN.k, p.y + 1.6 * TOWN.k, p.z - Math.cos(ang) * 0.7 * TOWN.k); L.intensity = MARK.light * Math.min(1, a / 0.4, (MARK.dur - a) / 1.4); }
 }
 // auto-fill (no placing): inner buildings take the innermost free slot, outer ones the outermost (dev only until the sim core)
 function townAdd(TW, id, lv, fresh) {
@@ -9599,7 +9669,8 @@ function frame(S, alpha, now) {
   // the lantern, strongest when the open side of the shroud (the beam's side) faces the camera, faint through the shroud
   if (S.beam) { const cx = R.cam.position.x, cz = R.cam.position.z, cl = Math.hypot(cx, cz) || 1;
     let fc = 0; for (const a of beamAs(S.beam)) fc = Math.max(fc, (Math.cos(a) * cx + Math.sin(a) * cz) / cl);
-    R.flare.visible = true; R.flare.material.opacity = burning ? 0.9 : 0.9 + 0.1 * Math.max(0, fc); } else R.flare.visible = false;
+    R.flare.visible = true; R.flare.material.opacity = burning ? 0.9 : 0.9 + 0.1 * Math.max(0, fc);
+    const wt = (R.upTier && R.upTier.rot) || 0, wp = upPulse('rot', t); R.flare.scale.multiplyScalar((1 + 0.07 * wt) * (1 + 0.35 * wp)); } else R.flare.visible = false;   // LAS-116 Lamp Wick: the lamp +7% per tier, swells on a buy
   // LAS-24: the sweep is the sim's beam (S.beam: angle a, cone width w, length len; sim x,y = three x,z). The guns
   // only shoot what it lights; while the Flare burns (S.beam.flare s left) it glows brighter.
   const SB = S.beam;
@@ -9607,7 +9678,7 @@ function frame(S, alpha, now) {
   lightFrame(S, t, burning);
   if (SB) {   // LAS-24: the sim's beam drives both lamps; the second (Twin Lamp) points opposite, its lantern riding round the gallery
     const rr0 = SB.len + (R.off || 0), hh = R.LAMP[1] - 0.3, pit = Math.atan2(hh, rr0),   // LAS-43: the cone slopes from the lamp down to the water AT the reach ring (flat, it seemed to run past it from the high camera)
-      sx = Math.tan(SB.w / 2) * rr0 / 7,   /* LAS-51: half-width at the tip = reach x tan(w/2) (the mesh is 14 wide; the old x10 was only right at a 70 m reach and drew the wave-1 shaft 1.75x wider than the sim's cone) */ sz = Math.hypot(rr0, hh) / 70,   /* LAS-27: drawn R.off further out */ op = 0.38 + (SB.flare > 0 ? 0.25 : 0) + 0.03 * Math.sin(t * 1.7);
+      sx = Math.tan(SB.w / 2) * rr0 / 7,   /* LAS-51: half-width at the tip = reach x tan(w/2) (the mesh is 14 wide; the old x10 was only right at a 70 m reach and drew the wave-1 shaft 1.75x wider than the sim's cone) */ sz = Math.hypot(rr0, hh) / 70,   /* LAS-27: drawn R.off further out */ op = 0.38 + (SB.flare > 0 ? 0.25 : 0) + 0.03 * Math.sin(t * 1.7) + 0.02 * ((R.upTier && R.upTier.rot) || 0) + 0.1 * upPulse('rot', t);   // LAS-116 Lamp Wick: +0.02 per tier
     const rr = SB.len + (R.off || 0); R.reachRing.visible = false;   // LAS-55: no reach ring on the sea
     R.sweep.rotation.set(pit, Math.PI / 2 - SB.a, 0); R.sweep.scale.set(sx, 1, sz); R.sweep.material.opacity = op;
     const two = SB.a2 !== null && SB.a2 !== undefined;
@@ -9628,7 +9699,7 @@ function frame(S, alpha, now) {
   }
 
   // the mounts turn, fire and recoil; the citadel shows its damage; smoke drifts
-  flankTick(t); mountsTick(S, t, dtR, alpha); guardsTick(S, t, dtR, alpha); townTick(S, t, dtR); hexTick(S, t, dtR); occTick(S, dtR); upTick(S); growth(S, dtR, t); damage(S, t, dtR); smokeTick(dtR); ringsTick(t);
+  flankTick(t); mountsTick(S, t, dtR, alpha); guardsTick(S, t, dtR, alpha); townTick(S, t, dtR); hexTick(S, t, dtR); occTick(S, dtR); upTick(S, t); growth(S, dtR, t); damage(S, t, dtR); smokeTick(dtR); ringsTick(t);
   const dT = camFrame(S);
   R.camD = R.camD ? R.camD + (dT - R.camD) * Math.min(1, dtR * RLOOK.camEase) : dT; camBase(R.camD);
 
@@ -9661,6 +9732,12 @@ function frame(S, alpha, now) {
       const a = Math.random() * Math.PI * 2, v = kill ? 2.5 + Math.random() * 2 : 1.5 + Math.random();
       R.spark.push({ x: vx, y: y0, z: vz, vx: Math.cos(a) * v, vy: 2 + Math.random() * 3, vz: Math.sin(a) * v, life: kill ? 0.55 : 0.3, age: 0, kill });
     }
+    // LAS-116 Gunner's Eye: a crit throws 2 cool sparks per tier, fast and short; Salvage: a kill lets go 1-3 dull coin glints that rise and tumble
+    const UT = R.upTier || {}, xc = !kill && ev.crit ? 2 * (UT.crit || 0) : 0, xg = kill ? [0, 1, 1, 2, 3][UT.bounty || 0] : 0;
+    for (let j = 0; j < xc && R.spark.length < RLOOK.maxSparks; j++) { const a = Math.random() * 6.283, v = 3.5 + Math.random() * 2.5;
+      R.spark.push({ x: vx, y: y0, z: vz, vx: Math.cos(a) * v, vy: 1 + Math.random() * 3, vz: Math.sin(a) * v, life: 0.3, age: 0, kill: false, c: UPT.crit, sz: 0.55 }); }
+    for (let j = 0; j < xg && R.spark.length < RLOOK.maxSparks; j++) { const a = Math.random() * 6.283, v = 0.6 + Math.random() * 0.6;
+      R.spark.push({ x: vx, y: y0 + 0.3, z: vz, vx: Math.cos(a) * v, vy: 3.2 + Math.random() * 1.2, vz: Math.sin(a) * v, life: 0.8, age: -0.06 * j, kill: false, c: UPT.coin, sz: 0.6, coin: 1 }); }
   }
   // LAS-35: where a creature strikes the wall: a burst of stone dust and grit off the face (the outer ring wall once it
   // stands). At most RLOOK.maxWallFx per frame (a swarm at the wall hits hundreds of times a second); bosses burst bigger.
@@ -9682,10 +9759,11 @@ function frame(S, alpha, now) {
   let nk = 0;
   for (let i = 0; i < R.spark.length; i++) {
     const k = R.spark[i]; k.age += dtR; if (k.age >= k.life) continue;
-    k.vy -= 9 * dtR; k.x += k.vx * dtR; k.y += k.vy * dtR; k.z += k.vz * dtR;
+    if (k.age < 0) { putM(KA, nk, 0, 0, k.x, k.y, k.z); KC[nk * 3] = KC[nk * 3 + 1] = KC[nk * 3 + 2] = 0; R.spark[nk++] = k; continue; }   // LAS-116: a late one (a burst of casings) waits unseen
+    k.vy -= (k.coin ? 6 : 9) * dtR; k.x += k.vx * dtR; k.y += k.vy * dtR; k.z += k.vz * dtR;
     const f = 1 - k.age / k.life;
-    putM(KA, nk, k.age * 9, f * (k.kill ? 1 : 0.7), k.x, k.y, k.z);
-    col.set(k.kill ? RLOOK.splash : RLOOK.spark).multiplyScalar(f);
+    putM(KA, nk, k.age * 9, f * (k.sz || (k.kill ? 1 : 0.7)), k.x, k.y, k.z);
+    col.set(k.c || (k.kill ? RLOOK.splash : RLOOK.spark)).multiplyScalar(k.coin ? f * (0.55 + 0.45 * Math.abs(Math.sin(k.age * 14))) : f);
     KC[nk * 3] = col.r; KC[nk * 3 + 1] = col.g; KC[nk * 3 + 2] = col.b;
     R.spark[nk++] = k;
   }
