@@ -3746,7 +3746,7 @@ const TUNE = {
     first: 2,              // s before wave 1
     arrive: 8,             // creatures of a wave arrive over the first N s
     countBase: 8, countPerWave: 2,          // creatures per wave = 8 + 2 * wave
-    hpBase: 30, hpGrowth: 1.29,             // creature HP = 30 * 1.29^wave (LAS-18: HP and damage x10, same fights, bigger numbers)
+    hpBase: 200, hpGrowth: 1.29,            // creature HP = 200 * 1.29^wave (LAS-18: HP and damage x10, same fights, bigger numbers; LAS-61: 30 -> 200 with cannon dmg 80 -> 400, x5 both, plus 1.33x HP for the town)
     goldGrowth: 1.06,                       // gold per kill = ceil(1.06^wave) before Bounty
     arc: Math.PI,          // spawn arc (rad) at wave 1, centred on the sea side (+y)
     arcTo: 2 * Math.PI, arcBy: 20,          // LAS-24: the arc widens to arcTo by wave arcBy (the tide surrounds the citadel)
@@ -3778,28 +3778,30 @@ const TUNE = {
   },
   omenRise: 2, kindRamp: 8,   // a new kind's share grows to full over its first 8 waves
   // Bosses: one per 10 waves, cycling Leviathan (wave 10, 50, ...), Siren (20, 60, ...), Kraken (30, 70, ...), Mirror Warden (40, 80, ...).
-  boss: { every: 10, hpMul: 30, speedMul: 0.5, hitDmg: 8, goldMul: 25,
+  boss: { every: 10, hpMul: 60,   // LAS-61: 30 -> 60 (the town carried run 1 past the wave-10 boss)
+    speedMul: 0.5, hitDmg: 8, goldMul: 25,
     siren: { every: 4, summon: 6 },          // calls 6 Spawn around her every 4 s
     kraken: { split: 4, splitHp: 0.08 },     // breaks into 4 Hulks with 8% of its HP each
     // LAS-32: the Mirror Warden turns the light back: it shines darkness: a cone w rad wide from the citadel toward it, on for `on` s, then off for
     // `off` s (it blinks). The guns can't shoot anything inside the cone (the Warden too) unless the Flare burns.
     mirror: { hpX: 0.6, on: 6, off: 3, w: 1.0 } },
-  cannon: { dmg: 80, rate: 1.0, range: 30, shotSpeed: 40, crit: 0.05, critMul: 2, extraMul: 0.4, bigMul: 2, shell: 1.6 },   // extra cannons: 40% damage; x2 vs Hulks and bosses; shell: Cannon mounts only (not abilities)
+  cannon: { dmg: 400, rate: 1.0, range: 30, shotSpeed: 40, crit: 0.05, critMul: 2, extraMul: 0.4, bigMul: 2, shell: 1.6 },   // extra cannons: 40% damage; x2 vs Hulks and bosses; shell: Cannon mounts only (not abilities)
   gold: { start: 0 },
   embersX: 1,              // Tide 2 raises it
   // In-run gold upgrades (shop order). cost = base * growth^level; effect per level, applied in stats().
   up: {
-    dmg:    { base: 8,  growth: 1.22, per: 0.15 },   // damage x1.15 per level (compounding)
+    dmg:    { base: 8,  growth: 1.22, per: 0.18 },   // damage x1.18 per level (compounding; LAS-61: was 1.15, Heavy Shot left the picks)
     rate:   { base: 10, growth: 1.24, per: 0.08 },   // fire rate +8% per level
     range:  { base: 12, growth: 1.35, per: 0.05, max: 10 },   // range +5% per level, up to 10 levels
-    crit:   { base: 15, growth: 1.30, per: 0.03, max: 15 },   // crit chance +3 points per level
+    crit:   { base: 15, growth: 1.30, per: 0.03, max: 15, mulPer: 0 },   // crit chance +3 points per level; mulPer = crit damage per level (LAS-61: 0; Killing Blow's crit damage is Gun Battery III)
     wall:   { base: 10, growth: 1.25, per: 20, regen: 0.25 }, // +20 max HP (and heals 20), +0.25 HP/s regen
     bounty: { base: 12, growth: 1.28, per: 0.10 },   // gold per kill +10% per level
     rot:    { base: 12, growth: 1.30, per: 0, max: 10, wPer: 0.16, lampAt: 0 },   // Lamp Wick: the beam is +16% wider per level (LAS-80: no speed, Philippe got dizzy; was +15% speed, +8% width). lampAt N: a second beam at level N (0 = off: 10 took the minute-60 hit over its band)
   },
   // after wave 2, then every 5th wave: choose 1 of 3 cards; the tide waits. The picks after wave 5 and every 20th
   // wave hold one loud card (TUNE.loud) while any is left.
-  pick: { every: 5, n: 3, first: 2, loudAt: 5, loudEvery: 20 },
+  // LAS-61: a pick after wave 2, then every 2nd wave (was every 5th); the loud card comes with the wave-6 pick (the old wave 5 has none now).
+  pick: { every: 2, n: 3, first: 2, loudAt: 6, loudEvery: 20 },
   // Pick cards. eff keys add up in S.mod; stats() reads them. max = how many times one card can be taken,
   // from = first wave it can be offered.
   cards: [
@@ -3861,6 +3863,47 @@ const TUNE = {
   // damage, rate shots/s each, no crits, no splash). The big mounts still fire only at what the beam lights.
   // mountsToo: 1 = the ring also lights creatures for the mounts (A/B only).
   guard: { n: 2, r: 10, dmg: 0.22, rate: 1.5, mountsToo: 0 },   // LAS-80: 0.18 -> 0.22 pays for the slow turn (LAS-72: 0.09 -> 0.18 for the narrow beam)
+  // LAS-61 the island town (design/island-town.md): cards raise buildings in slot rings round the lighthouse, no placing.
+  // rings: slots per ring; ringAt: the boss wave that raises it (0 = standing at wave 1); ringR: slot radius (m, sim space; render draws its own fortress scale, LAS-86);
+  // rimPer: the wall (where creatures stop) is citadel.r + rimPer per ring raised after the first (0 = the wall never moves);
+  // bossPick: free picks per boss killed; wNew/wLevel: how often a new building / a level of one you own is drawn.
+  // buildings: role, home (in = innermost free slot, out = outermost), live (in the pick pool; 0 until its mechanics land),
+  // eff[l] = keys added to the card mods for level l+1 (summed over the levels reached; 'hp' = max HP), run[l] = the building's own
+  // numbers at level l+1 (a later level overrides). evos: key -> [main (needs III), partner (any level)]. unlocks: Forge node -> building.
+  town: {
+    rings: [4, 6, 8, 10], ringAt: [0, 10, 30, 50], ringR: [4.9, 6.8, 8.7, 10.6], maxLv: 3,
+    // hex tiles (Philippe, LAS-13 01:23: the slots are hexagons round the lighthouse, hovered): size = centre-to-centre m (flat top),
+    // hexRing = the hex ring (distance from the lighthouse tile) each slot ring sits on; a slot takes the free tile nearest its angle
+    hex: { size: 1.9, ring: [3, 4, 5, 6] }, bossPick: 1, rimPer: 1.5, wNew: 1, wLevel: 1,
+    fallback: ['tithe', 'mend'],     // Night Wages and Mortar and Stone: when nothing is left to build or level
+    fallbackMax: { mend: 2 },        // LAS-61: Mortar and Stone at most 2x a run (every pick after wave ~40 was a full repair + 110 HP: a wall that never fell)
+    evos: { crown: ['lamp2', 'brazier'], stars: ['mortar', 'rocket'], hooks: ['winch', 'beacon'], stormbell: ['bell', 'spire'], field: ['mines', 'wrecker'],
+      nightwatch: ['watch', 'choir'], harbour: ['boat', 'cave'], deep: ['horn', 'well'] },
+    unlocks: { l_lens: 'lamp2', l_clock: 'beacon', g_drill: 'winch', w_stone: 'pitch', p_salvage: 'wrecker', a_eye: 'spire', g_ballista: 'ballista', w_moat: 'mines',
+      p_chest: 'cave', a_fourth: 'well', g_mortar: 'mortar', a_owl: 'choir', g_tesla: 'tesla' },
+    // runtime numbers: rocket {every s, n rockets, r m, dur s, reach m, climb s}; bell {every, stun s (boss), dmg x cannon}; horn {every, r, dur, boss};
+    // boat {every, trip s, n, mul x gold of one kill, catch m: a creature this close to the boat while it is unlit takes it (LAS-61: the beam turns
+    // 360 in 3 s (10 s since LAS-80), so 'left in the dark' alone would lose every boat; the tide reaching it in the dark is the risk)};
+    // brazier III {pEvery, pAdd m, pDur s}; breakwater III {pushEvery, push m, pushBoss x}; watch III {cue m}
+    buildings: {
+      battery:    { name: 'Gun Battery', role: 'kill', home: 'out', live: 1, eff: [{}, { splash: 0.30 }, { splash: 0.70, critMul: 1 }], run: [{ mount: 0.4 }, { mount: 0.7 }, {}] },
+      brazier:    { name: 'Braziers', role: 'light', home: 'in', live: 1, eff: [{ ring: 3 }, { ring: 3 }, {}], run: [{}, {}, { pEvery: 12, pAdd: 6, pDur: 3 }] },
+      rocket:     { name: 'Rocket Rack', role: 'light', home: 'in', live: 1, eff: [], run: [{ every: 10, n: 1, r: 6, dur: 4, reach: 30, climb: 0.6, glow: 3 }, { every: 8 }, { n: 2 }] },
+      watch:      { name: 'Watch Posts', role: 'hold', home: 'in', live: 1, eff: [{ guard: 1 }, { guard: 1, guardDmg: 1 }, { guard: 1 }], run: [{}, {}, { cue: 25 }] },
+      breakwater: { name: 'Breakwater', role: 'hold', home: 'in', live: 1, eff: [{ hp: 110 }, { flood: 0.25, floodArc: 0.30 }, {}], run: [{}, {}, { pushEvery: 15, push: 4, pushBoss: 0.3 }] },
+      bell:       { name: 'Bell Tower', role: 'hold', home: 'in', live: 1, eff: [], run: [{ every: 12, stun: 1, stunBoss: 0.3, dmg: 0 }, { every: 9 }, { dmg: 2 }] },
+      boat:       { name: 'Boathouse', role: 'greed', home: 'out', live: 1, eff: [], run: [{ every: 12, trip: 6, n: 1, mul: 5, catch: 2 }, { n: 2 }, { mul: 8 }] },
+      horn:       { name: 'Fog Horn', role: 'strange', home: 'out', live: 1, eff: [], run: [{ every: 20, r: 25, dur: 2, boss: 0.5 }, { every: 16 }, { every: 12, dur: 3 }] },
+      // the 13 Forge buildings: names and homes now, mechanics in work-list item 2 (live 0 = not in the pool)
+      lamp2: { name: 'Lamp Tower', role: 'light', home: 'in', live: 0 }, beacon: { name: 'Beacon Stack', role: 'light', home: 'in', live: 0 },
+      ballista: { name: 'Ballista Tower', role: 'kill', home: 'out', live: 0 }, mortar: { name: 'Mortar Pit', role: 'kill', home: 'out', live: 0 },
+      tesla: { name: 'Tesla Coil', role: 'kill', home: 'out', live: 0 }, winch: { name: 'Whaler’s Winch', role: 'kill', home: 'out', live: 0 },
+      mines: { name: 'Sea Mines', role: 'kill', home: 'out', live: 0 }, pitch: { name: 'Pitch Chutes', role: 'hold', home: 'in', live: 0 },
+      wrecker: { name: 'Wreckers’ Lamp', role: 'greed', home: 'out', live: 0 }, cave: { name: 'Smugglers’ Cave', role: 'greed', home: 'out', live: 0 },
+      well: { name: 'The Old Well', role: 'strange', home: 'out', live: 0 }, spire: { name: 'Storm Spire', role: 'strange', home: 'out', live: 0 },
+      choir: { name: 'Drowned Choir', role: 'strange', home: 'out', live: 0 },
+    },
+  },
   // Mount kinds the Forge unlocks (the Cannon is TUNE.cannon). Upgrades, picks and the Forge scale every kind by
   // the same factors: a kind's damage/rate/range = Cannon value x (kind / cannon).
   mountKinds: {
@@ -4192,7 +4235,7 @@ function fgShow(T, fg, k) {
     case 'critMulX': return 'x' + r1(T.cannon.critMul * (fg.critMulX || 1)) + ' crit damage';
     case 'pickN': return (T.pick.n + g('pickN')) + ' cards per pick';
     case 'reroll': return g('reroll') + (g('reroll') === 1 ? ' redraw' : ' redraws') + ' per run';
-    case 'pickEvery': return 'a pick every ' + Math.max(2, T.pick.every + g('pickEvery')) + ' waves';
+    case 'pickEvery': return 'a pick every ' + Math.max(1, T.pick.every + g('pickEvery')) + ' waves';
     case 'startPick': return g('startPick') + (g('startPick') === 1 ? ' free card' : ' free cards') + ' at the start';
     case 'splash': return g('splash') ? p(g('splash')) + ' splash' : 'no splash';
     case 'beamW': return Math.round(T.light.width * (1 + g('beamW')) * 180 / Math.PI) + '° beam';
@@ -4339,23 +4382,27 @@ function newRun(opts) {
     hp, maxHp: hp, over: false,
     gold: T.gold.start + (fg.startGold || 0), goldEarned: 0, goldSpent: 0, kills: 0, bossKills: 0, biggestHit: 0,
     lv, ab, mod: {}, pick: null, picks: [], pickedAt: 0,
-    pickEvery: Math.max(2, T.pick.every + (fg.pickEvery || 0)), pickN: T.pick.n + (fg.pickN || 0), rerolls: fg.reroll || 0,
+    pickEvery: Math.max(1, T.pick.every + (fg.pickEvery || 0)), pickN: T.pick.n + (fg.pickN || 0), rerolls: fg.reroll || 0,
     enemies: [], shots: [], nextId: 1, mounts: [],
     beam: { a: Math.PI / 2, a2: null, as: [Math.PI / 2], lamps: 1, w: T.light.width, len: T.light.len + (fg.len || 0), flare: 0, dir: 1, hold: false }, flareT: -1,
-    guard: [], ringR: T.citadel.r + T.guard.r + (fg.ring || 0),   // LAS-53: the Wall Guard's guns, the lit ring's radius (m from the centre)
+    guard: [], rim: T.citadel.r, ringR: T.citadel.r + T.guard.r + (fg.ring || 0),   // LAS-53: the Wall Guard's guns, the lit ring's radius (m from the centre)
+    // LAS-61 the island town: rim = the wall's radius (creatures stop there); bmod = card-like mods from the buildings; lights = lit patches
+    // { x, y, r, from, until, kind }; boats at sea; bossPicks = free picks waiting
+    town: { rings: 1, slots: [], seq: 0, absorbed: {}, evolved: {}, n: [] }, bmod: {}, townHp: 0, lights: [], boats: [], bossPicks: 0, boatSeq: 0, builds: [], pulseUntil: -1, boatStat: { sent: 0, back: 0, lost: 0, gold: 0 },
     ev, fx: ev,                                         // S.fx: old name, same array
   };
+  townInit(S);
   placeGuard(S);
   const pm = meta ? meta.mounts : [];
   for (let s = 0; s < mountSlots(fg); s++) mountAt(S, fg.unlock.indexOf(pm[s]) >= 0 ? pm[s] : 'cannon', 1);
   for (const k of ABS) if ((k !== 'keg' || fg.keg) && (k !== 'harpoon' || fg.harpoon)) ab[k] = { cd: 0, max: abCd(S, k), uses: 0 };
-  for (let i = 0; i < (fg.startPick || 0); i++) {   // Good Omen: a random card, as if picked before wave 1
-    const pool = pickPool(S); if (pool.length) applyCard(S, pool[Math.floor(rnd(S, 'omen') * pool.length)]);
+  for (let i = 0; i < (fg.startPick || 0); i++) {   // Good Omen: a random level I building, as if picked before wave 1 (LAS-61)
+    const pool = townPool(S); if (pool.length) raise(S, pool[Math.floor(rnd(S, 'omen') * pool.length)]);
   }
   return S;
 }
 
-const M = (S, k) => S.mod[k] || 0;
+const M = (S, k) => (S.mod[k] || 0) + (S.bmod[k] || 0);   // cards + buildings
 const MX = (S, k) => S.mod[k] || 1;   // multiplying card keys (loud cards)
 const G = (S, k) => S.fg[k] || 0;
 // Current stats after upgrades, picks, the Forge and Starlight (Cannon numbers; other kinds scale from these).
@@ -4366,7 +4413,7 @@ function stats(S) {
     rate: c.rate * (1 + u.rate.per * lv.rate + M(S, 'rate') + G(S, 'rate')),
     range: c.range * (1 + u.range.per * lv.range + M(S, 'range') + G(S, 'range')),
     crit: Math.min(1, c.crit + u.crit.per * lv.crit + M(S, 'crit') + G(S, 'crit')),
-    critMul: (c.critMul + M(S, 'critMul')) * (S.fg.critMulX || 1),
+    critMul: (c.critMul + (u.crit.mulPer || 0) * lv.crit + M(S, 'critMul')) * (S.fg.critMulX || 1),   // LAS-61: Gunner's Eye carries Killing Blow's crit damage
     bounty: (1 + u.bounty.per * lv.bounty + M(S, 'bounty') + G(S, 'gold')) * sm,
     regen: u.wall.regen * lv.wall + G(S, 'regen'),
     splash: M(S, 'splash') + G(S, 'splash'), exec: M(S, 'exec'), mounts: S.mounts.length,
@@ -4398,7 +4445,7 @@ function upText(S, key) {
     dmg:    ['Cannon damage x' + (1 + U.dmg.per).toFixed(2) + ' per level.', Math.round(st.dmg) + ' damage'],
     rate:   ['Fire rate +' + pct(U.rate.per) + ' per level.', st.rate.toFixed(2) + ' shots/s'],
     range:  ['Range +' + pct(U.range.per) + ' per level, and the lighthouse beam reaches ' + S.T.light.lenPer + ' m farther.', st.range.toFixed(1) + ' m, beam ' + Math.round(beamLen(S)) + ' m'],
-    crit:   ['Crit chance +' + pct(U.crit.per) + ' per level.', pct(st.crit) + ' crit'],
+    crit:   ['Crit chance +' + pct(U.crit.per) + (U.crit.mulPer ? ' and crit damage +' + pct(U.crit.mulPer) : '') + ' per level.', pct(st.crit) + ' crit, x' + st.critMul.toFixed(1) + ' crit damage'],
     wall:   ['Max HP +' + U.wall.per + ', regen +' + U.wall.regen + ' HP/s per level.', S.maxHp + ' HP, ' + st.regen.toFixed(2) + ' HP/s'],
     bounty: ['Gold per kill +' + pct(U.bounty.per) + ' per level.', 'x' + st.bounty.toFixed(2) + ' gold'],
     rot:    ['The lighthouse beam is +' + pct(U.rot.wPer || 0) + ' wider per level' + (U.rot.lampAt ? '; at level ' + U.rot.lampAt + ' the lens sends a second beam the other way' : '') + '. Your guns only shoot what its beams light.',
@@ -4424,48 +4471,219 @@ function card(id, S) {
 function loudPool(S, skip) {
   return S.T.loud.map(c => c.id).filter(id => S.picks.indexOf(id) < 0 && !(skip && skip.indexOf(id) >= 0));
 }
-function pickPool(S, skip) {
-  const pool = [];
-  for (const c of S.T.cards) {
-    const n = S.picks.filter(p => p === c.id).length;
-    if (c.max && n >= c.max) continue;
-    if (c.from && S.wave < c.from) continue;
-    if (skip && skip.indexOf(c.id) >= 0) continue;
-    pool.push(c.id);
-  }
-  return pool;
-}
-// The loud slot: the picks after wave loudAt and every loudEvery-th wave (every pick with Wild Cards).
+// The loud slot: the picks after wave loudAt and every loudEvery-th wave (every pick with Wild Cards). Boss picks have none.
 function loudSlot(S) {
   const P = S.T.pick; return !!(G(S, 'loudAll') || S.wave === P.loudAt || (P.loudEvery && S.wave % P.loudEvery === 0));
 }
-function drawCards(S, pool, loud) {
-  const choices = [];
-  if (loud && loud.length) choices.push(loud[Math.floor(rnd(S, 'loud') * loud.length)]);
-  while (choices.length < S.pickN && pool.length) choices.push(pool.splice(Math.floor(rnd(S, 'pick') * pool.length), 1)[0]);
-  return choices;
+
+// ---- the island town (LAS-61, design/island-town.md) ----
+// S.town = { rings, n: [slots per ring], slots: [{ ring, i (fill order: sea side first, then left and right), q, r (axial hex tile, hexSlot), id, lv, t (S.t raised or levelled),
+// x, y (sim position), n (order raised), evo (key once evolved), keep ({id, lv} of the absorbed partner), p (this level's run numbers), cd }],
+// absorbed: { id: 1 }, evolved: { key: wave } }. The render reads rings, n, slots (ring, i, id, lv, t); S.rim is the wall's radius.
+// A pick is S.pick = { wave, choices: [token], town: [{ kind: 'new'|'level'|'evo'|'rep'|'card', id, lv?, out? }], own: { id: lv }, disc: { evo: 1 } }.
+const evt = (S, o) => { if (S.ev) S.ev.push(o); };
+function ringN(S, ring) { return S.T.town.rings[ring - 1] + (ring === 1 ? G(S, 'slot2') : 0) + G(S, 'slot3'); }   // Deep Footings, Old Pier
+function townInit(S) { for (let r = 1; r <= S.T.town.rings.length; r++) S.town.n[r - 1] = ringN(S, r); }
+// Hex tiles: axial (q, r), flat top, x = size sqrt(3)/2 q, y = size (r + q/2) (+y = the sea side, a straight column of tiles). Slot i of a ring of n wants the angle
+// pi/2 + o 2pi/n (slot 0 on the sea side, then alternately left and right) and takes the free tile of its hex ring nearest that angle.
+// Pure (no S). Slot order and angles follow the render's townPos (LAS-90), so slot (ring, i) is the same tile in sim, render and UI.
+const HEXC = {};
+function hexSlot(T, ring, i, n) {
+  const H = T.town.hex, d = H.ring[ring - 1], key = d + ':' + n + ':' + H.size;
+  if (!HEXC[key]) {
+    const cells = [], dir = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+    let q = -d, r = d;   // walk the hex ring
+    for (let s = 0; s < 6; s++) for (let k = 0; k < d; k++) { cells.push({ q, r }); q += dir[s][0]; r += dir[s][1]; }
+    for (const c of cells) { c.x = H.size * Math.sqrt(3) / 2 * c.q; c.y = H.size * (c.r + c.q / 2); c.a = datan2(c.y, c.x); }
+    const out = [], used = new Set();
+    for (let j = 0; j < n; j++) {
+      const o = (j % 2 ? -(j + 1) / 2 : j / 2) + 0.5, a = Math.PI / 2 + o * 2 * Math.PI / n;   // LAS-90 (render townPos): half a slot off the sea line, so no slot sits behind the lighthouse
+      let b = -1, bd = 1e9; for (let k = 0; k < cells.length; k++) if (!used.has(k)) { const dd = Math.abs(datan2(dsin(cells[k].a - a), dcos(cells[k].a - a))); if (dd < bd - 1e-9 || (dd < bd + 1e-9 && cells[k].y > cells[b].y)) { bd = dd; b = k; } }   // a tie: the tile nearer the sea
+      used.add(b); out.push({ q: cells[b].q, r: cells[b].r, x: cells[b].x, y: cells[b].y });
+    }
+    HEXC[key] = out;
+  }
+  return HEXC[key][i];
 }
-function openPick(S, extra) {   // extra: a Spoils pick, which leaves the wave's own pick in place
-  const choices = drawCards(S, pickPool(S), loudSlot(S) ? loudPool(S) : null);
+function slotXY(S, ring, i) { return hexSlot(S.T, ring, i, S.town.n[ring - 1]); }
+// Every slot of the rings standing now, built or free: [{ ring, i, q, r, x, y, id|null, lv }] (render tiles, LAS-73; tooltip, LAS-74)
+function townSlots(S) {
+  const out = [];
+  for (let ring = 1; ring <= S.town.rings; ring++) for (let i = 0; i < S.town.n[ring - 1]; i++) {
+    const h = hexSlot(S.T, ring, i, S.town.n[ring - 1]), sl = slotAt(S, ring, i);
+    out.push({ ring, i, q: h.q, r: h.r, x: h.x, y: h.y, id: sl ? sl.id : null, lv: sl ? sl.lv : 0, evo: sl ? sl.evo : null });
+  }
+  return out;
+}
+function slotAt(S, ring, i) { for (const s of S.town.slots) if (s.ring === ring && s.i === i) return s; return null; }
+function slotOf(S, id) { for (const s of S.town.slots) if (s.id === id) return s; return null; }
+function slotsFree(S) { let c = 0; for (let r = 1; r <= S.town.rings; r++) c += S.town.n[r - 1]; return c - S.town.slots.length; }
+// Auto-fill: inner buildings take the innermost free slot, outer ones the outermost; inside a ring, fill order.
+function freeSlot(S, home) {
+  const tw = S.town;
+  for (let k = 0; k < tw.rings; k++) {
+    const ring = home === 'out' ? tw.rings - k : k + 1;
+    for (let i = 0; i < tw.n[ring - 1]; i++) if (!slotAt(S, ring, i)) return { ring, i };
+  }
+  return null;
+}
+function townPool(S) {   // buildings a pick can raise: live, the Forge has opened them, not on the island, not absorbed
+  const T = S.T.town, un = {}, own = {}, r = [];
+  for (const k in T.unlocks) un[T.unlocks[k]] = k;
+  for (const sl of S.town.slots) own[sl.id] = 1;
+  for (const id in T.buildings) {
+    if (!T.buildings[id].live || own[id] || S.town.absorbed[id]) continue;
+    if (un[id] && !(S.meta && S.meta.nodes.indexOf(un[id]) >= 0)) continue;
+    r.push(id);
+  }
+  return r;
+}
+const evry = p => p.every || p.pEvery || p.pushEvery || 0;
+// The card mods and run numbers of every building at its level (an evolved building also keeps its absorbed partner's).
+function rebuild(S) {
+  const T = S.T.town, bm = {}; let hp = 0;
+  const add = (id, lv, run) => {
+    const B = T.buildings[id];
+    for (let l = 0; l < lv; l++) {
+      const e = B.eff && B.eff[l]; if (e) for (const k in e) { if (k === 'hp') hp += e[k]; else bm[k] = (bm[k] || 0) + e[k]; }
+      const r = run && B.run && B.run[l]; if (r) Object.assign(run, r);
+    }
+  };
+  for (const sl of S.town.slots) {
+    const run = {}; add(sl.id, sl.lv, run);
+    if (sl.keep) add(sl.keep.id, sl.keep.lv, null);
+    sl.p = run;
+    if (!sl.on && evry(run) > 0) { sl.on = 1; sl.cd = 0.6 * evry(run); }
+  }
+  S.bmod = bm;
+  const d = hp - S.townHp; S.townHp = hp;
+  if (d) { S.maxHp += d; S.hp = d > 0 ? S.maxHp : Math.min(S.hp, S.maxHp); }   // Breakwater: more HP and a full repair; torn down: the HP goes
+  // Gun Battery: a cannon on its own tower (the mount stands on its slot)
+  const MT = S.mounts;
+  for (let i = MT.length - 1; i >= 0; i--) if (MT[i].b && !S.town.slots.some(s => s.n === MT[i].b && s.p.mount)) MT.splice(i, 1);
+  for (const sl of S.town.slots) if (sl.p.mount) {
+    let m = null; for (const q of MT) if (q.b === sl.n) m = q;
+    if (!m) { m = { kind: 'cannon', x: sl.x, y: sl.y, cd: 0, mul: 0, b: sl.n }; MT.push(m); }
+    m.mul = sl.p.mount;
+  }
+}
+function raise(S, id, at) {   // a new building rises in the next free slot (or at, a vacated one)
+  const B = S.T.town.buildings[id], pos = at || freeSlot(S, B.home); if (!pos) return null;
+  const xy = slotXY(S, pos.ring, pos.i), sl = { ring: pos.ring, i: pos.i, id, lv: 1, t: S.t, q: xy.q, r: xy.r, x: xy.x, y: xy.y, n: ++S.town.seq, evo: null, keep: null, p: {}, cd: 0, on: 0 };
+  S.town.slots.push(sl); rebuild(S);
+  S.builds.push({ wave: S.wave, kind: 'new', id, lv: 1 });
+  evt(S, { k: 'build', kind: 'new', id, ring: sl.ring, i: sl.i, lv: 1, x: sl.x, y: sl.y, wave: S.wave });
+  return sl;
+}
+function levelUp(S, id) {
+  const sl = slotOf(S, id); if (!sl || sl.lv >= S.T.town.maxLv) return false;
+  sl.lv++; sl.t = S.t; rebuild(S);
+  S.builds.push({ wave: S.wave, kind: 'level', id, lv: sl.lv });
+  evt(S, { k: 'build', kind: 'level', id, ring: sl.ring, i: sl.i, lv: sl.lv, x: sl.x, y: sl.y, wave: S.wave });
+  return true;
+}
+function evoReady(S) {
+  const T = S.T.town, r = [];
+  for (const k in T.evos) {
+    if (S.town.evolved[k]) continue;
+    const m = slotOf(S, T.evos[k][0]), p = slotOf(S, T.evos[k][1]);
+    if (m && p && m.lv >= T.maxLv && !m.evo && !p.evo) r.push(k);
+  }
+  return r;
+}
+function evolve(S, key) {   // the partner is absorbed (its effect lives on inside the main) and its slot is free again
+  const T = S.T.town, m = slotOf(S, T.evos[key][0]), p = slotOf(S, T.evos[key][1]); if (!m || !p || m.lv < T.maxLv) return false;
+  m.keep = { id: p.id, lv: p.lv }; m.evo = key; m.t = S.t;
+  S.town.slots.splice(S.town.slots.indexOf(p), 1); S.town.absorbed[p.id] = 1; S.town.evolved[key] = S.wave;
+  rebuild(S);
+  S.builds.push({ wave: S.wave, kind: 'evo', id: key, lv: 3 });
+  evt(S, { k: 'build', kind: 'evo', id: key, main: m.id, partner: p.id, ring: m.ring, i: m.i, freed: { ring: p.ring, i: p.i }, wave: S.wave });
+  return true;
+}
+function replace(S, id, out) {   // tear down `out`, raise `id` in its slot; `out` goes back into the pool
+  const o = slotOf(S, out); if (!o) return false;
+  S.town.slots.splice(S.town.slots.indexOf(o), 1); rebuild(S);
+  S.boats = S.boats.filter(b => b.sl !== o.n);
+  const sl = raise(S, id, { ring: o.ring, i: o.i });
+  evt(S, { k: 'build', kind: 'rep', id, out, ring: o.ring, i: o.i, wave: S.wave });
+  return !!sl;
+}
+function rise(S) {   // a new ring stands: the wall moves out to its rim, creatures inside it are at the wall
+  const tw = S.town, T = S.T.town; tw.rings++;
+  townInit(S);
+  S.rim = S.T.citadel.r + T.rimPer * (tw.rings - 1);
+  for (const e of S.enemies) {
+    if (e.dead) continue;
+    const d = Math.hypot(e.x, e.y);
+    if (d < S.rim) { if (d < 1e-6) { e.x = 0; e.y = S.rim; } else { e.x *= S.rim / d; e.y *= S.rim / d; } e.atWall = true; e.hitCd = 0; }
+  }
+  placeGuard(S);
+  evt(S, { k: 'ring', ring: tw.rings, rim: S.rim, wave: S.wave });
+}
+function bossFell(S, e) {   // a boss killed: a free pick, and the ring its wave opens
+  const T = S.T.town;
+  S.bossPicks += T.bossPick;
+  while (S.town.rings < T.rings.length && e.bw >= T.ringAt[S.town.rings]) rise(S);
+}
+
+const tok = d => d.kind === 'evo' ? 'evo:' + d.id : d.kind === 'rep' ? 'rep:' + d.id : d.id;
+// The cards of one pick: the evolution when ready (card 1), the loud card in its slot, then new buildings (while a slot is free) and levels
+// of what stands, one Replace when every slot is full, and Night Wages / Mortar and Stone when nothing is left. avoid = tokens to leave out if possible.
+function genTown(S, extra, avoid) {
+  const T = S.T.town, n = S.pickN, out = [], ok = d => !avoid || avoid.indexOf(tok(d)) < 0;
+  const ev = evoReady(S).map(k => ({ kind: 'evo', id: k })), evg = ev.filter(ok);
+  if (ev.length) out.push((evg.length ? evg : ev)[Math.floor(rnd(S, 'evo') * (evg.length || ev.length))]);
+  if (!extra && loudSlot(S)) {
+    let lp = loudPool(S, avoid); if (!lp.length) lp = loudPool(S);
+    if (lp.length) out.push({ kind: 'card', id: lp[Math.floor(rnd(S, 'loud') * lp.length)] });
+  }
+  const free = slotsFree(S) > 0, cand = [];
+  for (const sl of S.town.slots) if (sl.lv < T.maxLv && !sl.evo) cand.push({ w: T.wLevel, d: { kind: 'level', id: sl.id, lv: sl.lv + 1 } });
+  if (free) for (const id of townPool(S)) cand.push({ w: T.wNew, d: { kind: 'new', id } });
+  let rep = null;
+  if (!free) {   // Replace: the lowest-level building (the oldest on a tie) for one you don't own
+    let low = null; for (const sl of S.town.slots) if (!sl.evo && (!low || sl.lv < low.lv || (sl.lv === low.lv && sl.n < low.n))) low = sl;
+    const all = townPool(S).map(id => ({ kind: 'rep', id, out: low && low.id })), pool = all.filter(ok), src = pool.length ? pool : all;
+    if (low && src.length) rep = src[Math.floor(rnd(S, 'rep') * src.length)];
+  }
+  let need = Math.max(0, n - out.length - (rep ? 1 : 0));
+  for (const pass of [true, false]) {
+    while (need > 0) {
+      const list = cand.filter(c => !out.some(o => tok(o) === tok(c.d)) && (!pass || ok(c.d)));
+      if (!list.length) break;
+      let tot = 0; for (const c of list) tot += c.w;
+      let r = rnd(S, 'pick') * tot, c = list[list.length - 1];
+      for (const q of list) { if (r < q.w) { c = q; break; } r -= q.w; }
+      out.push(c.d); need--;
+    }
+  }
+  if (rep) out.push(rep);
+  for (const id of T.fallback) if (out.length < n && !out.some(o => o.id === id) && !(T.fallbackMax && T.fallbackMax[id] <= S.picks.filter(p => p === id).length)) out.push({ kind: 'card', id });
+  return out.slice(0, n);
+}
+function ownMap(S) { const o = {}; for (const sl of S.town.slots) o[sl.id] = sl.lv; return o; }
+function townPick(S, town, extra) {
+  const disc = {}; for (const k in S.town.evolved) disc[k] = 1;
+  if (S.meta && S.meta.codex) for (const k in S.meta.codex.evos || {}) disc[k] = 1;
+  return { wave: S.wave, choices: town.map(tok), town, own: ownMap(S), disc, extra: !!extra };
+}
+function openPick(S, extra) {   // extra: a boss pick or a Spoils pick, which leaves the wave's own pick in place
   if (!extra) S.pickedAt = S.wave;
-  if (!choices.length) return;              // every card taken: no pick
-  S.pick = { wave: S.wave, choices };
-  if (S.ev) S.ev.push({ k: 'pick', open: true, wave: S.wave, choices: choices.slice(), extra: !!extra });
+  const town = genTown(S, extra, null);
+  if (!town.length) return;
+  S.pick = townPick(S, town, extra);
+  evt(S, { k: 'pick', open: true, wave: S.wave, choices: S.pick.choices.slice(), town: town.map(d => Object.assign({}, d)), extra: !!extra });
 }
 // Second Thoughts (Forge): redraw the open pick, other cards first. S.rerolls = redraws left this run.
 function rerollPick(S) {
   if (!S.pick || S.over || S.rerolls <= 0) return false;
-  let pool = pickPool(S, S.pick.choices);
-  if (pool.length < S.pickN) pool = pickPool(S);
-  let lp = null;
-  if (loudSlot(S)) { lp = loudPool(S, S.pick.choices); if (!lp.length) lp = loudPool(S); }
-  S.rerolls--; S.pick.choices = drawCards(S, pool, lp);
-  if (S.ev) S.ev.push({ k: 'pick', open: true, wave: S.pick.wave, choices: S.pick.choices.slice(), reroll: true });
+  S.rerolls--; S.pick = townPick(S, genTown(S, S.pick.extra, S.pick.choices), S.pick.extra);
+  evt(S, { k: 'pick', open: true, wave: S.pick.wave, choices: S.pick.choices.slice(), town: S.pick.town.map(d => Object.assign({}, d)), reroll: true });
   return true;
 }
 function applyCard(S, id) {
   const c = cardDef(S.T, id);
-  for (const k in c.eff) S.mod[k] = /X$/.test(k) ? MX(S, k) * c.eff[k] : M(S, k) + c.eff[k];
+  for (const k in c.eff) S.mod[k] = /X$/.test(k) ? MX(S, k) * c.eff[k] : (S.mod[k] || 0) + c.eff[k];
   // loud cards: remember the biggest hit before, to measure the jump (result().loud: after = two full waves later)
   if (isLoud(S.T, id)) S.loud.push({ id, wave: S.wave, before: S.biggestHit, after: null });
   if (c.eff.hp) { S.maxHp += c.eff.hp; S.hp = S.maxHp; }
@@ -4477,9 +4695,13 @@ function applyCard(S, id) {
 }
 function choosePick(S, i) {
   if (!S.pick || S.over) return false;
-  const id = S.pick.choices[i]; if (id === undefined) return false;
-  applyCard(S, id);
-  if (S.ev) S.ev.push({ k: 'pick', id, wave: S.pick.wave });
+  const d = S.pick.town[i]; if (d === undefined) return false;
+  if (d.kind === 'card') applyCard(S, d.id);
+  else if (d.kind === 'new') { if (!raise(S, d.id)) return false; }
+  else if (d.kind === 'level') { if (!levelUp(S, d.id)) return false; }
+  else if (d.kind === 'evo') { if (!evolve(S, d.id)) return false; }
+  else if (d.kind === 'rep') { if (!replace(S, d.id, d.out)) return false; }
+  evt(S, { k: 'pick', id: S.pick.choices[i], kind: d.kind, wave: S.pick.wave });
   S.pick = null;
   return true;
 }
@@ -4602,7 +4824,7 @@ function startWave(S) {
   }
   const boss = B.every > 0 && S.wave % B.every === 0, bk = boss ? bossKind(S.wave) : null;
   if (boss) S.spawnQ.push({ at: S.t + W.arrive / 2, a: Math.PI / 2 + (rnd(S, 'angle') - 0.5) * arc * 0.5,
-    hp: hp * Math.pow(hm, H ? H.hpPow : 1) * B.hpMul * ((B[bk] && B[bk].hpX) || 1), gold: Math.ceil(gold) * B.goldMul, boss: bk, kind: bk });
+    hp: hp * Math.pow(hm, H ? H.hpPow : 1) * B.hpMul * ((B[bk] && B[bk].hpX) || 1), gold: Math.ceil(gold) * B.goldMul, boss: bk, kind: bk, bw: S.wave });
   S.spawnQ.sort((p, q) => q.at - p.at);   // pop() takes the earliest
   S.nextWave += W.every;
   if (S.ev) S.ev.push({ k: 'waveStart', wave: S.wave, n, boss, bossKind: bk });
@@ -4614,7 +4836,7 @@ function spawn(S, p) {
   // Shadelings rise on the beam's dark side (decided when they surface, not when the wave starts)
   const pa = kd.fromDark && p.x === undefined ? S.beam.a + Math.PI + (rnd(S, 'dark') - 0.5) * kd.fromDark : p.a;
   let x = p.x !== undefined ? p.x : dcos(pa) * r, y = p.y !== undefined ? p.y : dsin(pa) * r;
-  const d0 = Math.hypot(x, y), wr = S.T.citadel.r;   // Kraken pieces / Siren calls born inside the wall start at it
+  const d0 = Math.hypot(x, y), wr = S.rim;   // Kraken pieces / Siren calls born inside the wall start at it
   if (d0 < wr) { if (d0 < 1e-6) { x = 0; y = wr; } else { x *= wr / d0; y *= wr / d0; } }
   const e = { id: S.nextId++, x, y, hp: p.hp, maxHp: p.hp, kind: p.kind || 'drowned',
     due: 0, litT: -1, gold: p.gold, atWall: false, hitCd: 0, dead: false, slowT: 0, boss: !!p.boss, rad: p.boss ? 1.5 : kd.rad,
@@ -4622,7 +4844,7 @@ function spawn(S, p) {
     armor: p.boss ? 0 : kd.armor || 0, fly: p.boss ? 0 : kd.fly || 0, sumCd: S.T.boss.siren.every,
     hitMul: Math.pow(S.T.creature.hitGrowth, S.wave) / (p.boss || p.solo ? 1 : S.hordeHit || 1),
     // one hidden class for every creature (LAS-52: thousands alive, megamorphic property loads were the CPU cost)
-    dive: null, under: 0, diveAt: -1, dimR: 0, dark: 0, litSp: 0, glowT: 0, eclOn: false, shine: 0, eclT: 0 };
+    dive: null, under: 0, diveAt: -1, dimR: 0, dark: 0, litSp: 0, glowT: 0, eclOn: false, shine: 0, eclT: 0, bw: p.bw || 0, stunT: 0, fearT: 0, cued: 0 };
   if (!p.boss && kd.dive) { e.dive = kd.dive; e.under = 0; e.diveAt = -1; }   // Sounders
   if (!p.boss && kd.murk) e.dimR = kd.murk;                                  // Gloams
   if (!p.boss && kd.dark) { e.dark = kd.dark; e.litSp = kd.litSpeed; }        // Shadelings
@@ -4638,6 +4860,7 @@ function spawn(S, p) {
 
 function kill(S, e) {
   e.dead = true; S.kills++; if (e.boss) S.bossKills++;
+  if (e.boss) bossFell(S, e);
   const sp = e.boss && G(S, 'spoils');   // Spoils of the Deep (keystone): boss gold x spoilsGold and an extra pick
   if (sp && S.bossKills % S.T.forge.key.spoilsEvery === 0) S.spoils = (S.spoils || 0) + 1;
   const g = Math.ceil(e.gold * stats(S).bounty * (sp ? S.T.forge.key.spoilsGold : 1) - 1e-9); S.gold += g; S.goldEarned += g;
@@ -4744,7 +4967,7 @@ function moveBeam(S) {
   B.flare = Math.max(0, S.flareT - S.t);
   // mark: a creature inside a cone is lit until now (+ linger in the old 'linger' mode, A/B only)
   const lit = S.t + (L.mode === 'plain' ? 0 : L.linger), glow = S.t + M(S, 'glow');
-  S.ringR = S.T.citadel.r + S.T.guard.r + M(S, 'ring') + G(S, 'ring');
+  S.ringR = S.rim + S.T.guard.r + M(S, 'ring') + G(S, 'ring') + (S.pulseUntil > S.t ? S.pulseAdd : 0);   // Braziers III flare the ring
   const hw = B.w / 2, ch = dcos(hw), ca = dcos(B.a), sa = dsin(B.a), r2 = B.len * B.len;
   const cs = [], sn = [];
   for (let i = 1; i < nL; i++) { cs.push(dcos(B.as[i])); sn.push(dsin(B.as[i])); }
@@ -4764,6 +4987,7 @@ function moveBeam(S) {
     if (e.dive && e.diveAt < 0 && !e.atWall) e.diveAt = S.t + e.dive.react + M(S, 'hook');   // lit: it dives soon
   }
   B.hold = hold;
+  if (S.lights.length) markLights(S, lit);
 }
 function inMurk(e, gl) {
   for (const g of gl) { const dx = e.x - g.x, dy = e.y - g.y; if (dx * dx + dy * dy <= g.dimR * g.dimR) return true; }
@@ -4799,7 +5023,7 @@ function inRing(S, e) { return !(e.under > S.t) && e.x * e.x + e.y * e.y <= S.ri
 function guardN(S) { return Math.max(0, Math.round(S.T.guard.n + M(S, 'guard') + G(S, 'guard'))); }
 // The Wall Guard's guns stand evenly round the wall (the first faces the sea); placed again when a card adds one.
 function placeGuard(S) {
-  const n = guardN(S), r = S.T.citadel.r, old = S.guard; S.guard = [];
+  const n = guardN(S), r = S.rim, old = S.guard; S.guard = [];
   for (let i = 0; i < n; i++) { const a = Math.PI / 2 + i * 2 * Math.PI / n; S.guard.push({ x: r * dcos(a), y: r * dsin(a), cd: old[i] ? old[i].cd : 0 }); }
 }
 
@@ -4825,10 +5049,135 @@ function unbroken(S) {
   if (S.ev) S.ev.push({ k: 'unbroken', wave: S.wave, hp: S.hp });
 }
 
+// ---- the town at work (LAS-61): what the 8 starter buildings do each step ----
+const angDiff = (a, b) => datan2(dsin(a - b), dcos(a - b));
+// the k densest packs of creatures within reach m: grid cells of cell m; { x, y } = the mean position of the pack
+function packSpots(S, reach, cell, k) {
+  const w = 2 * Math.ceil(reach / cell) + 1, c0 = Math.ceil(reach / cell), cnt = new Float64Array(w * w), sx = new Float64Array(w * w), sy = new Float64Array(w * w), r2 = reach * reach;
+  for (const e of S.enemies) {
+    if (e.dead || e.under > S.t) continue;
+    if (e.x * e.x + e.y * e.y > r2) continue;
+    const ix = Math.floor(e.x / cell) + c0, iy = Math.floor(e.y / cell) + c0; if (ix < 0 || iy < 0 || ix >= w || iy >= w) continue;
+    const q = iy * w + ix; cnt[q]++; sx[q] += e.x; sy[q] += e.y;
+  }
+  const out = [];
+  for (let j = 0; j < k; j++) {
+    let b = -1, bc = 0; for (let q = 0; q < cnt.length; q++) if (cnt[q] > bc) { bc = cnt[q]; b = q; }
+    if (b < 0) break;
+    out.push({ x: sx[b] / cnt[b], y: sy[b] / cnt[b], n: cnt[b] }); cnt[b] = 0;
+  }
+  return out;
+}
+// Is a point at angle a, r m out, in some light? (the cones, the Flare, the brazier ring, a lit patch)
+function litAt(S, a, r) {
+  const B = S.beam;
+  if (S.flareT > S.t || r <= S.ringR) return true;
+  if (r <= B.len && (Math.abs(angDiff(a, B.a)) <= B.w / 2 || (B.a2 !== null && Math.abs(angDiff(a, B.a2)) <= B.w / 2))) return true;
+  const x = r * dcos(a), y = r * dsin(a);
+  for (const L of S.lights) if (L.from <= S.t && L.until > S.t) { const dx = x - L.x, dy = y - L.y; if (dx * dx + dy * dy <= L.r * L.r) return true; }
+  return false;
+}
+// lit patches (Rocket Rack): a creature inside one is lit for this step (drawn like under the beam, and the guns may fire at it)
+function markLights(S, lit) {
+  for (const L of S.lights) {
+    if (L.from > S.t || L.until <= S.t) continue;
+    const r2 = L.r * L.r;
+    for (const e of S.enemies) {
+      if (e.under > S.t) continue;
+      const dx = e.x - L.x, dy = e.y - L.y; if (dx * dx + dy * dy > r2) continue;
+      e.litT = lit;
+      if (e.dark && L.glow) e.glowT = Math.max(e.glowT, S.t + L.glow);   // Shadelings in a rocket's light stay slow
+      if (e.dive && e.diveAt < 0 && !e.atWall) e.diveAt = S.t + e.dive.react + M(S, 'hook');
+    }
+  }
+}
+function townTick(S, st) {
+  const tw = S.town, dt = S.T.dt, E = S.enemies, B = S.beam;
+  if (!tw.slots.length) return;
+  if (S.lights.length) { let j = 0; for (const L of S.lights) if (L.until > S.t) S.lights[j++] = L; S.lights.length = j; }
+  for (const sl of tw.slots) {
+    const p = sl.p; if (!sl.on) { if (sl.id === 'watch' && p.cue) watchCue(S, p.cue); continue; }
+    if (sl.id === 'watch') { if (p.cue) watchCue(S, p.cue); continue; }
+    sl.cd -= dt; if (sl.cd > 0) continue;
+    if (sl.id === 'brazier') {   // III: the braziers flare, the lit ring grows for a few seconds
+      sl.cd += p.pEvery; S.pulseUntil = S.t + p.pDur; S.pulseAdd = p.pAdd; evt(S, { k: 'brazier', r: S.ringR + p.pAdd, dur: p.pDur });
+    } else if (sl.id === 'rocket') {   // a signal rocket hangs a light over the biggest pack
+      const spots = packSpots(S, p.reach, p.r, p.n);
+      if (!spots.length) { sl.cd = 0; continue; }
+      sl.cd += p.every;
+      for (const sp of spots) {
+        S.lights.push({ x: sp.x, y: sp.y, r: p.r, from: S.t + p.climb, until: S.t + p.climb + p.dur, kind: 'rocket', glow: p.glow });
+        evt(S, { k: 'rocket', x: sp.x, y: sp.y, r: p.r, dur: p.dur, climb: p.climb, sx: sl.x, sy: sl.y });
+      }
+    } else if (sl.id === 'bell') {   // the bell rings: everything in the brazier ring stops (III: and takes a hit)
+      const R2 = S.ringR * S.ringR; let hits = 0;
+      for (const e of E) {
+        if (e.dead || e.under > S.t || e.x * e.x + e.y * e.y > R2) continue;
+        hits++; const t = e.boss ? p.stunBoss : p.stun; if (t > e.stunT) e.stunT = t;
+        if (p.dmg > 0) damage(S, e, p.dmg * st.dmg, false, false);
+      }
+      if (!hits) { sl.cd = 0; continue; }
+      sl.cd += p.every; evt(S, { k: 'bell', r: S.ringR, hits, x: sl.x, y: sl.y });
+    } else if (sl.id === 'horn') {   // the horn: every creature near turns away
+      const R2 = p.r * p.r; let hits = 0;
+      for (const e of E) {
+        if (e.dead || e.x * e.x + e.y * e.y > R2) continue;
+        hits++; const t = e.boss ? p.boss : p.dur; if (t > e.fearT) e.fearT = t;
+      }
+      if (!hits) { sl.cd = 0; continue; }
+      sl.cd += p.every; evt(S, { k: 'horn', r: p.r, hits, dur: p.dur, x: sl.x, y: sl.y });
+    } else if (sl.id === 'breakwater') {   // III: a wave breaks off the rim and throws back everything at the wall
+      let hits = 0;
+      for (const e of E) {
+        if (e.dead || !e.atWall) continue;
+        const d = Math.hypot(e.x, e.y) || 1, nd = Math.min(S.T.wave.spawnR, d + p.push * (e.boss ? p.pushBoss : 1)), f = nd / d;
+        e.x *= f; e.y *= f; e.atWall = false; hits++;
+      }
+      if (!hits) { sl.cd = 0; continue; }
+      sl.cd += p.pushEvery; evt(S, { k: 'breakwater', hits, push: p.push });
+    } else if (sl.id === 'boat') {   // the boat rows out along the beam and back
+      sl.cd += p.every;
+      for (let j = 0; j < p.n; j++) {
+        const t0 = S.t + j * 0.8;
+        S.boats.push({ sl: sl.n, a: B.a + (j ? 0.35 : 0), t0, ret: t0 + p.trip, mul: p.mul, catch: p.catch, r: S.rim, id: ++S.boatSeq });
+        S.boatStat.sent++;
+      }
+    }
+  }
+  // boats: row straight out where the beam pointed at launch and back; pay when back; lost when the tide reaches one in the dark
+  for (let i = S.boats.length - 1; i >= 0; i--) {
+    const b = S.boats[i];
+    if (!slotOf(S, 'boat')) { S.boats.splice(i, 1); continue; }
+    if (S.t < b.t0) continue;
+    const f = Math.min(1, (S.t - b.t0) / (b.ret - b.t0));
+    b.r = S.rim + (Math.min(B.len, 20) - S.rim) * (f < 0.5 ? 2 * f : 2 * (1 - f));
+    if (!litAt(S, b.a, b.r) && near(S, b.r * dcos(b.a), b.r * dsin(b.a), b.catch)) {
+      S.boatStat.lost++; evt(S, { k: 'boat', id: b.id, ok: false, a: b.a, r: b.r }); S.boats.splice(i, 1); continue;
+    }
+    if (f >= 1) {
+      const g = Math.ceil(Math.ceil(Math.pow(S.T.wave.goldGrowth, S.wave)) * b.mul * st.bounty - 1e-9);
+      S.gold += g; S.goldEarned += g; S.boatStat.back++; S.boatStat.gold += g;
+      evt(S, { k: 'boat', id: b.id, ok: true, gold: g, a: b.a, r: b.r }); S.boats.splice(i, 1);
+    }
+  }
+}
+function near(S, x, y, r) { const r2 = r * r; for (const e of S.enemies) if (!e.dead && e.under <= S.t && (e.x - x) * (e.x - x) + (e.y - y) * (e.y - y) <= r2) return true; return false; }
+// Watch Posts III: a Hulk or boss within cue m of the wall and in the dark shouts once (an arrow on the screen edge)
+function watchCue(S, cue) {
+  if (S.tick % 5) return;
+  const c2 = cue * cue;
+  for (const e of S.enemies) {
+    if (e.dead || e.cued || !(e.boss || e.kind === 'brute')) continue;
+    if (e.x * e.x + e.y * e.y > c2 || isLit(S, e)) continue;
+    e.cued = 1; evt(S, { k: 'watch', id: e.id, kind: e.kind, boss: e.boss, a: datan2(e.y, e.x), d: Math.hypot(e.x, e.y) });
+  }
+}
+
 function step(S) {
   if (S.over || S.pick) return;
   const T = S.T, dt = T.dt;
   if (S.spoils > 0) { S.spoils--; openPick(S, true); if (S.pick) return; }   // Spoils of the Deep
+  if (S.bossPicks > 0) { S.bossPicks--; openPick(S, true); if (S.pick) return; }   // LAS-61: a boss killed pays one free pick
   if (S.t + dt >= S.nextWave && S.wave > 0 && (S.wave === T.pick.first || S.wave % S.pickEvery === 0) && S.pickedAt !== S.wave) {
     openPick(S); if (S.pick) return;      // the tide waits for the choice
   }
@@ -4836,12 +5185,13 @@ function step(S) {
   while (S.t >= S.nextWave) startWave(S);
   while (S.spawnQ.length && S.spawnQ[S.spawnQ.length - 1].at <= S.t) spawn(S, S.spawnQ.pop());
   for (const k in S.ab) { const ab = S.ab[k]; if (ab.cd > 0) ab.cd = Math.max(0, ab.cd - dt); }
-  moveBeam(S); moveDark(S);
   const st = stats(S);
+  townTick(S, st);
+  moveBeam(S); moveDark(S);
   if (st.regen > 0 && S.hp < S.maxHp) S.hp = Math.min(S.maxHp, S.hp + st.regen * dt);
 
   // creatures walk to the wall, then hit it (Forge: the Moat slows them near it, Iron Spikes bleed them at it)
-  const C = T.creature, B = T.boss, wallR = T.citadel.r, E = S.enemies;
+  const C = T.creature, B = T.boss, wallR = S.rim, E = S.enemies;
   const moat = G(S, 'moat'), moatD = wallR + T.forge.moatR, spikes = G(S, 'spikes');
   for (let i = 0; i < E.length; i++) {
     const e = E[i];
@@ -4862,6 +5212,12 @@ function step(S) {
           if (S.ev) S.ev.push({ k: 'dive', id: e.id, x: e.x, y: e.y, up: false });
         }
       }
+    }
+    if (e.stunT > 0) { e.stunT -= dt; continue; }   // Bell Tower: stopped, no move, no hit
+    if (e.fearT > 0) {   // Fog Horn: turns away from the wall
+      e.fearT -= dt; e.atWall = false;
+      const d = Math.hypot(e.x, e.y) || 1, nd = Math.min(T.wave.spawnR, d + C.speed * e.speed * dt), f = nd / d; e.x *= f; e.y *= f;
+      continue;
     }
     if (!e.atWall) {
       let sp = C.speed * e.speed;
@@ -4996,14 +5352,16 @@ function result(S) {
   const loud = S.loud.map(L => ({ id: L.id, wave: L.wave, before: L.before, after: L.after === null ? S.biggestHit : L.after }));
   return { seed: S.seed, wave: S.wave, time: S.t, kills: S.kills, bossKills: S.bossKills, gold: S.goldEarned, spent: S.goldSpent,
     biggestHit: S.biggestHit, embers, nextNodeIn, lv: Object.assign({}, S.lv), picks: S.picks.slice(),
-    mounts: S.mounts.map(m => m.kind), abUses, capped: S.hp > 0, omen: S.omen, tide: S.tide, starlight: S.star, loud };
+    mounts: S.mounts.map(m => m.kind), abUses, rings: S.town.rings, rim: S.rim, builds: S.builds.slice(), boats: Object.assign({}, S.boatStat),
+    town: S.town.slots.map(q => ({ id: q.id, lv: q.lv, ring: q.ring, i: q.i, evo: q.evo })), evolved: Object.assign({}, S.town.evolved), capped: S.hp > 0, omen: S.omen, tide: S.tide, starlight: S.star, loud };
 }
 
 const FORGE = TUNE.forge.nodes.map(n => n.id), FORGE_FULL = forgeFull(TUNE);   // FORGE_FULL: nodes in a full Forge (forks hold one side)
 const TWSim = { TUNE, UPS, ABS, KINDS, KINDNAME, FOES, FOE, BOSSES, FORGE, FORGE_FULL, forgeFull, newRun, step, stats, kindStats, cost, canBuy, buy, upText, card,
   choosePick, rerollPick, useAbility, abInfo, play, result, rnd, rsHash, merge, fmt, omen, bossKind,
   newMeta, nodeInfo, newDawnInfo, newDawn, starMul, tideInfo, setTide, mountSlots, nodeCost, canBuyNode, buyNode, nextNode, setMount,
-  forgeMods, embersFor, bank, serialize, deserialize };
+  forgeMods, embersFor, bank, serialize, deserialize,
+  townApi: { hexSlot, townSlots, raise, levelUp, evolve, replace, rise, genTown, townPool, evoReady, slotsFree, freeSlot, rebuild } };   // LAS-61: checks and the render's dev hook
 root.TWSim = TWSim;
 if (typeof module !== 'undefined' && module.exports) module.exports = TWSim;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
@@ -7007,6 +7365,7 @@ function guardsTick(S, t, dt, alpha) {
 const TOWN = { r: [5.6, 10.0, 14.4, 18.8], n: [4, 6, 8, 10], step: [1, 2, 3, 4], y: [0.9, 0.7, 0.5, 0.32], k: 2.2, rise: 1.7, lvl: 1.3, ember: '#ff6a20' };
 const TOWN_HOME = { brazier: 'in', rocket: 'in', watch: 'in', breakwater: 'in', bell: 'in', gun: 'out', boathouse: 'out', horn: 'out' };
 const TOWN_IDS = Object.keys(TOWN_HOME);
+const TOWN_ALIAS = { battery: 'gun', boat: 'boathouse' };   // LAS-61: the sim's ids (design/island-town.md) for the two the models named differently
 const TC = { stone: '#5a5651', stoneD: '#38393b', stoneL: '#77716a', iron: '#26292c', rust: '#7a3f26', rustD: '#4d2a1e', wood: '#4d3b2c', woodD: '#33281f', bone: '#cdc3a4', boneD: '#9a917a', brass: '#8f6a35', ember: '#ff8a3a', coal: '#a8431a', lamp: '#ffc27a', black: '#0b0b0c', cloth: '#141112' };
 const hj = i => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 const TOWNC = {}, TQ = new T3.Quaternion();
@@ -7337,9 +7696,33 @@ TOWN_DRESS.battery = TOWN_DRESS.gun; TOWN_DRESS.boat = TOWN_DRESS.boathouse;
 function townLook(id, lv, q = 2, plinth) {   // the cached geometry for (id, lv) at detail q (LAS-73: on the island the slot's hex is the plinth; portraits ask for one)
   const k = id + lv + '|' + q + (plinth ? 'p' : ''); let C = TOWNC[k]; if (C) return C;
   const S = model(true), G = model(true), H = townPen(S, G, q);
-  if (plinth) { hexStone(S, q, G); H.gn++; }
   const sp = (TOWN_BUILD[id] || TOWN_BUILD.brazier)(lv, H); if (TOWN_DRESS[id]) TOWN_DRESS[id](lv, H, sp);
-  return (TOWNC[k] = { solid: S.geo(), glow: H.gn ? G.geo() : null, sp });
+  // LAS-86: the level reads as a silhouette for every building: I stands on its hex, II on a stone tower, III on a fortified keep
+  const B = model(true), BG = model(true), HB = townPen(B, BG, q); let nb = 0;
+  if (plinth) { hexStone(B, q, BG); HB.gn++; nb++; }
+  const ph = townPodium(lv, HB); if (ph) nb++;
+  const solid = S.geo(); if (ph) { solid.translate(0, ph, 0); sp.h += ph; for (const f of sp.fires.concat(sp.lamps)) f[1] += ph; if (sp.bell) sp.bell.y += ph; }
+  let glow = H.gn ? G.geo() : null; if (glow && ph) glow.translate(0, ph, 0);
+  const bg = HB.gn ? BG.geo() : null; if (bg) glow = glow ? T3.mergeGeometries([glow, bg]) : bg;
+  return (TOWNC[k] = { solid: nb ? T3.mergeGeometries([solid, B.geo()]) : solid, glow, sp });
+}
+// the level podium under a building (into pen H, y 0 = the hex top); returns its height (0 at level I)
+function townPodium(lv, H) {
+  if (lv === 2) {   // II: a round stone tower: battered drum, a ledge, arrow slits, a lit window on the sea and town faces
+    H.cyl(0.9, 1.0, 0.95, 10, TC.stone, [0, 0.475, 0]).courses(1.0, 0.9, 0.05, 0.9, 3, TC.stoneD, [0, 0, 0]).cyl(1.0, 0.95, 0.1, 10, TC.stoneD, [0, 0.95, 0]);
+    H.ring(6, 0.96, (x, z, ry) => H.box(0.07, 0.3, 0.04, TC.black, [x, 0.5, z], [0, ry, 0]));
+    H.gbox(0.13, 0.22, 0.05, TC.lamp, [0, 0.55, 0.95]).gbox(0.13, 0.22, 0.05, TC.lamp, [0, 0.55, -0.95]);
+    return 0.95;
+  }
+  if (lv === 3) {   // III: a fortified keep: an 8-sided drum, a machicolated ledge with battlements, four corner turrets, lit windows, a banner
+    H.cyl(1.0, 1.1, 1.5, 8, TC.stone, [0, 0.75, 0]).courses(1.1, 1.0, 0.05, 1.45, 4, TC.stoneD, [0, 0, 0]).cyl(1.12, 1.02, 0.16, 8, TC.stoneD, [0, 1.5, 0]);
+    H.ring(10, 1.04, (x, z, ry) => H.box(0.22, 0.26, 0.16, TC.stone, [x, 1.71, z], [0, ry, 0]));
+    H.ring(4, 1.06, (x, z) => { H.cyl(0.25, 0.28, 2.0, 8, TC.stoneL, [x, 1.0, z]).cone(0.33, 0.62, 8, TC.black, [x, 2.31, z]); H.gbox(0.07, 0.16, 0.07, TC.lamp, [x * 1.22, 1.45, z * 1.22]); });
+    for (const s of [1, -1]) H.gbox(0.15, 0.26, 0.05, TC.lamp, [0, 0.85, s * 1.06]).gbox(0.15, 0.26, 0.05, TC.lamp, [s * 1.06, 0.85, 0], [0, Math.PI / 2, 0]);
+    H.box(0.34, 0.7, 0.02, '#4a1414', [0.42, 1.0, 1.1]);
+    return 1.5;
+  }
+  return 0;
 }
 // ---------- LAS-73 the slot hexes. Every slot of the open rings is a hexagon of dark dressed stone set in the rock, a faint
 // outline cut into its top; a building stands on its own hex, an empty one waits, barely lit. Hover: the hex under the mouse
@@ -7541,6 +7924,8 @@ function townBuild(TW, rec) {   // (re)fills rec.pv with the look of (id, lv)
 }
 function townAnim(TW, rec, mode, t) {
   rec.mode = mode; rec.a0 = t; rec.dust = 0; rec.swapped = mode === 'rise';
+  // LAS-86: a pick is loud: stone grinding up out of the rock (a deep thud + a camera kick), a level-up rings iron on stone
+  const F = !(TW.dev && TW.dev.line) && root.TWFx; if (F) { if (F.kick) F.kick(mode === 'rise' ? 0.16 : 0.08); if (F.sound) { F.sound('wallboss'); if (mode === 'lvl') F.sound('clank'); } }
   if (!rec.hot) { rec.hot = TW.tm.clone(); rec.hot.emissive = new T3.Color(TOWN.ember); }
   rec.solid.material = rec.hot;
   if (!rec.glowPlane) { rec.glowPlane = new T3.Mesh(TW.plane, new T3.MeshBasicMaterial({ color: TOWN.ember, map: haloTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false })); rec.g.add(rec.glowPlane); }
@@ -7553,6 +7938,7 @@ function townDust(rec, n, big) {   // grey stone dust thrown off the plinth edge
 function townTick(S, t, dt) {
   const src = S.town && S.town.slots ? S.town : (R.town && R.town.dev), TW = R.town || (src ? townInit() : null);
   R.townStep = src ? TOWN.step[Math.max(0, Math.min(3, (src.rings || 1) - 1))] : 0; R.townSrc = src;
+  if (S.town && S.town.n) for (let k = 0; k < 4; k++) if (S.town.n[k]) TOWN.n[k] = S.town.n[k];   // LAS-61: Deep Footings / Old Pier add slots
   if (!TW) return;
   const slots = src ? src.slots : [], seen = new Set();
   for (const sl of slots) {
@@ -7596,7 +7982,7 @@ function townTick(S, t, dt) {
 function townAdd(TW, id, lv, fresh) {
   const D = TW.dev, taken = new Set(D.slots.map(s => s.ring * 16 + s.i)), nSl = D.slots.length + 1;
   for (let r = 2, cap = TOWN.n[0]; r <= 4; r++, cap += TOWN.n[r - 2]) if (nSl > cap && D.rings < r) D.rings = r;
-  const rings = []; for (let r = 1; r <= D.rings; r++) rings.push(r); if (TOWN_HOME[id] === 'out') rings.reverse();
+  const rings = []; for (let r = 1; r <= D.rings; r++) rings.push(r); if (TOWN_HOME[TOWN_ALIAS[id] || id] === 'out') rings.reverse();
   for (const r of rings) for (let i = 0; i < TOWN.n[r - 1]; i++) if (!taken.has(r * 16 + i)) { const sl = { ring: r, i, id, lv, fresh: !!fresh }; D.slots.push(sl); return sl; }
   return null;
 }
@@ -7923,7 +8309,7 @@ const hAt = d => R.off > 0.05 ? RLOOK.isleTop * Math.min(1, Math.max(0, (U.shore
 // LAS-27 sim -> view radius (render only, the sim never sees it): beyond the sim's wall every creature is drawn R.off
 // metres further out, so the Tide breaks on the outer wall; inside it the disc is stretched to meet (abilities drawn
 // from the centre stay whole). toSim() is the inverse (the aim overlay reads the sea under the cursor with it).
-const SIMW = 3;
+let SIMW = 3;   // the sim's wall radius: S.rim (LAS-61: it moves out with each ring)
 const radK = r => r <= SIMW ? (SIMW + (R.off || 0)) / SIMW : (r + (R.off || 0)) / r;
 function toView(x, y) { const k = radK(Math.hypot(x, y)); return [x * k, y * k]; }
 function toSim(x, y) { const r = Math.hypot(x, y), o = R.off || 0, k = r <= SIMW + o ? SIMW / (SIMW + o) : (r - o) / r; return [x * k, y * k]; }
@@ -7991,6 +8377,7 @@ function growth(S, dt, t) {
     R.slots.forEach(g => { if (g) g.m = null; });   // mountsTick puts the guns back on their towers
   }
   R.outer.forEach((o, i) => o.houses.forEach(m => { m.visible = i === step - 1 && !R.townStep; }));   // the bailey houses give way to the island town
+  SIMW = S.rim || 3;
   const offT = O ? O.Ro + 0.25 - SIMW : 0;
   R.off = R.off === undefined ? offT : R.off + (offT - R.off) * Math.min(1, dt * 2);
   U.shore.value += (RLOOK.isleR[step] - 0.2 - U.shore.value) * Math.min(1, dt * 2);
@@ -10593,15 +10980,7 @@ function openPick(S) {
   disarm();
   $('tw-pw').textContent = S.pick.wave;
   const box = $('tw-cards'); box.innerHTML = '';
-  if (S.pick.town) S.pick.town.forEach((d, i) => {   // LAS-63: building / level / evolution / Replace cards
-    const t = townCard(d, S.pick.own, S.pick.disc), b = el('button', 'card ' + t.cls + (t.chain ? ' chained' : ''), townHTML(t, i));
-    if (t.c) b.style.setProperty('--c', t.c);
-    b.onclick = () => choose(i);
-    b.dataset.i = i; b.style.setProperty('--torn', torn(i + 3 + (S.pick.wave || 0))); b.style.setProperty('--i', i); const jj = i - (S.pick.town.length - 1) / 2; b.style.setProperty('--j', jj); b.style.setProperty('--aj', Math.abs(jj));
-    box.appendChild(b);
-    setTimeout(() => snd('deal'), 60 + i * 90);
-  });
-  else S.pick.choices.forEach((id, i) => {
+  const legacy = (id, i, len) => {   // a plain card (the loud cards, Night Wages, Mortar and Stone)
     const c = Sim.card(id, S), taken = S.picks.filter(p => p === id).length;
     const m = cardMeta(c), pips = c.max ? Array.from({ length: c.max }, (_, k) => `<i class="${k < taken ? 'on' : ''}"></i>`).join('') : '';
     const b = el('button', 'card' + (c.loud ? ' loud' : ''), `${c.loud ? '<span class="lr">BUILD-BREAKER</span><s class="cfoil"></s>' : ''}<div class="md">${m.art}</div><h3 class="disp"></h3><div class="tg"><div class="br"></div></div><div class="mid"><div class="chip"><b class="bn num"></b><span class="lb"></span></div><p></p></div>
@@ -10610,9 +10989,24 @@ function openPick(S) {
     b.querySelector('h3').textContent = c.name; b.querySelector('.bn').textContent = m.big; b.querySelector('.lb').textContent = m.lb;
     b.querySelector('p').textContent = m.desc;
     b.onclick = () => choose(i);
-    b.dataset.i = i; b.style.setProperty('--torn', torn(i + 3 + (S.pick.wave || 0))); b.style.setProperty('--i', i); const jj = i - (S.pick.choices.length - 1) / 2; b.style.setProperty('--j', jj); b.style.setProperty('--aj', Math.abs(jj));
+    b.dataset.i = i; b.style.setProperty('--torn', torn(i + 3 + (S.pick.wave || 0))); b.style.setProperty('--i', i); const jj = i - (len - 1) / 2; b.style.setProperty('--j', jj); b.style.setProperty('--aj', Math.abs(jj));
+    return b;
+  };
+  if (S.pick.town) S.pick.town.forEach((d, i) => {   // LAS-63: building / level / evolution / Replace cards (LAS-61: and plain cards)
+    let b;
+    if (d.kind === 'card') b = legacy(d.id, i, S.pick.town.length);
+    else {
+      const t = townCard(d, S.pick.own, S.pick.disc); b = el('button', 'card ' + t.cls + (t.chain ? ' chained' : ''), townHTML(t, i));
+      if (t.c) b.style.setProperty('--c', t.c);
+      b.onclick = () => choose(i);
+      b.dataset.i = i; b.style.setProperty('--torn', torn(i + 3 + (S.pick.wave || 0))); b.style.setProperty('--i', i); const jj = i - (S.pick.town.length - 1) / 2; b.style.setProperty('--j', jj); b.style.setProperty('--aj', Math.abs(jj));
+    }
     box.appendChild(b);
     setTimeout(() => snd('deal'), 60 + i * 90);   // dealt from below, one by one (Tropebrawl's pkIn)
+  });
+  else S.pick.choices.forEach((id, i) => {
+    box.appendChild(legacy(id, i, S.pick.choices.length));
+    setTimeout(() => snd('deal'), 60 + i * 90);
   });
   U.hot = null; U.taking = false;
   $('tw-pick').classList.add('on');
@@ -10663,7 +11057,7 @@ const BLD = {
   bell: ['Bell Tower', 'hold', 'Every 12 s a shockwave stops every creature in the brazier ring for 1 s (bosses 0.3 s).', 'Every 9 s.', 'Each ring also hits them for 2× dmg.'],
   pitch: ['Pitch Chutes', 'hold', 'Every 10 s the most crowded 60° of the wall burns: 0.5× dmg/s for 4 s. Fire jumps to creatures within 1.5 m.', 'Every 7 s.', 'The burning arc is 90°.'],
   wrecker: ['Wreckers’ Lamp', 'greed', 'A false light on the rocks. Creatures within 20 m drift to a rock 15 m out, take 1× dmg there and drop +40% gold.', '+70% gold. The tide is 10% faster.', 'The rock holds them 1 s.'],
-  boat: ['Boathouse', 'greed', 'Every 12 s a boat brings 5× wave gold if it stays lit. A boat left in the dark is lost.', 'Two boats.', 'Boats are never lost under the Flare and bring 8×.'],
+  boat: ['Boathouse', 'greed', 'Every 12 s a boat rows out and brings 5× wave gold. If the tide reaches it in the dark, it is lost.', 'Two boats.', 'Boats bring 8× wave gold.'],
   cave: ['Smugglers’ Cave', 'greed', 'At each wave’s end 20% of your gold goes in the chest. It pays 10% interest per wave held.', 'Interest 15%.', '25% goes in.'],
   horn: ['Fog Horn', 'strange', 'Every 20 s every creature within 25 m turns away for 2 s (bosses 0.5 s).', 'Every 16 s.', 'Every 12 s, for 3 s.'],
   well: ['The Old Well', 'strange', 'Every 8 s a hand drags one lit creature within 15 m under (bosses take 10× dmg instead).', 'Every 6 s.', 'Two hands.'],
