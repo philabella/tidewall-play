@@ -6499,10 +6499,11 @@ function buildScene() {
   const flare2 = new T3.Mesh(flare.geometry, flare.material); flare2.renderOrder = 6; flare2.visible = false; scene.add(flare2);
   // every static mesh merged per material: ~300 meshes -> a few dozen draw calls. The wall stages and island steps
   // are baked per piece so they can be shown one at a time.
+  rocks.userData.clip = 'rock'; cit.userData.clip = 'keep'; lh.userData.clip = 'lighthouse';   // LAS-94: owner names for checks/clipcheck.js
   bakeStatic(scene, [rocks, cit, lh]);
-  for (const g of D.stages) g.baked = bakeStatic(scene, [g]);
-  for (const g of R.isle) g.baked = bakeStatic(scene, [g]);
-  for (const o of R.outer) { o.baked = bakeStatic(scene, [o.g]); o.houses = bakeStatic(scene, [o.hz]); }
+  for (const g of D.stages) { g.userData.clip = 'keepwall'; g.baked = bakeStatic(scene, [g]); }
+  for (const g of R.isle) { g.userData.clip = 'isle'; g.baked = bakeStatic(scene, [g]); }
+  R.outer.forEach((o, i) => { o.g.userData.clip = 'wall' + (i + 1); o.hz.userData.clip = 'bailey' + (i + 1); o.baked = bakeStatic(scene, [o.g]); o.houses = bakeStatic(scene, [o.hz]); });
 
   // the Tide: per creature kind one InstancedMesh for the body (vertex colours x instance colour) and one for the eyes,
   // each with that kind's walk/swim shader; the Nightgaunts add two wing meshes (they flap) and a soft shadow on the water
@@ -6789,10 +6790,11 @@ function buildOuter(scene, i) {
   const nm = Math.round(Math.PI * 2 * Ro / 0.6);
   for (let k = 0; k < nm; k++) { const a = (k + 0.5) / nm * Math.PI * 2; if (isGate(a)) continue;
     MER.push({ p: [Math.cos(a) * (Ro - 0.14), y0 + OH + 0.17, Math.sin(a) * (Ro - 0.14)], ry: -a, s: [0.34, 0.34, 0.22], th: inBreach(a) ? RLOOK.breachAt : 0.12 + jr() * 0.8 }); }
-  // flanking towers, spaced round the ring (the gate between two of them), clear of the gun towers
+  // flanking towers, spaced round the ring (the gate between two of them), clear of the gun towers. LAS-94: they stand out of the
+  // curtain (centre Ro + 0.4: their inner face is the curtain's), so nothing of them reaches into the town's terrace
   const fires = new T3.Group(); fires.scale.setScalar(WS); scene.add(fires); const beacons = [];
   for (const a of tA) {
-    const x = Math.cos(a) * (Ro - 0.3), z = Math.sin(a) * (Ro - 0.3);
+    const x = Math.cos(a) * (Ro + 0.4), z = Math.sin(a) * (Ro + 0.4);
     mk(g, new T3.CylinderGeometry(1.0, 1.25, 0.8, 12), st, { p: [x, y0 + 0.4, z], cast: true });
     mk(g, new T3.CylinderGeometry(0.92, 1.0, TH - 0.8, 12), st, { p: [x, y0 + 0.8 + (TH - 0.8) / 2, z], cast: true });
     mk(g, new T3.CylinderGeometry(1.08, 0.98, 0.18, 12), sd, { p: [x, y0 + TH + 0.09, z], cast: true });
@@ -6805,7 +6807,7 @@ function buildOuter(scene, i) {
     beacons.push([x, y0 + TH + 0.62, z]);
   }
   // the gatehouse (-z, toward the camera): two square towers, a dark arch with a portcullis, a walk over it
-  for (const s of [-1, 1]) { const a = GA + s * gateHalf, x = Math.cos(a) * (Ro - 0.3), z = Math.sin(a) * (Ro - 0.3);
+  for (const s of [-1, 1]) { const a = GA + s * gateHalf, x = Math.cos(a) * (Ro - 0.2), z = Math.sin(a) * (Ro - 0.2);   // LAS-94: inner face = the curtain's
     mk(g, new T3.BoxGeometry(1.2, TH + 0.2, 1.3), st, { p: [x, y0 + (TH + 0.2) / 2, z], r: [0, -a, 0], cast: true });
     mk(g, new T3.BoxGeometry(1.36, 0.18, 1.46), sd, { p: [x, y0 + TH + 0.29, z], r: [0, -a, 0] });
     for (const [dx, dz] of [[-0.48, -0.5], [0.48, -0.5], [-0.48, 0.5], [0.48, 0.5]])
@@ -6837,7 +6839,9 @@ function buildOuter(scene, i) {
     mk(g, new T3.BoxGeometry(0.16, 0.2, 0.16), RLOOK.lamp, { glow: 1, p: [Math.cos(a) * (Ro - 0.75), y0 + OH + 0.25, Math.sin(a) * (Ro - 0.75)] }); }
   for (const p of beacons) {
     mk(fires, new T3.ConeGeometry(0.26, 0.7, 5), '#ffb25a', { glow: 1, p });
-    const h = new T3.Mesh(new T3.PlaneGeometry(1, 1), new T3.MeshBasicMaterial({ color: RLOOK.fire, map: haloTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, opacity: 0.6, fog: false }));
+    // LAS-94: the beacon's glow is soft light drawn over what stands round it (no depth test, like the bloom's bleed): as a depth-tested
+    // quad the tower's merlons cut it into a hard orange dome (Philippe, wave 5)
+    const h = new T3.Mesh(new T3.PlaneGeometry(1, 1), new T3.MeshBasicMaterial({ color: RLOOK.fire, map: haloTex(), transparent: true, depthWrite: false, depthTest: false, blending: T3.AdditiveBlending, opacity: 0.45, fog: false }));
     h.position.set(...p); h.renderOrder = 5; fires.add(h);
   }
   fires.visible = false;
@@ -6863,12 +6867,14 @@ function buildOuter(scene, i) {
   const wr = Ro - 0.5, wy = y0 + OH + 0.15, hr = (rings[0] || Ro - 1.5) + 0.1, hy = y0 + 1.0;
   [[0.35, wr, wy, 0.62], [1.6, wr, wy, 0.44], [-1.1, wr, wy, 0.36], [2.6, wr, wy, 0.3], [-2.3, wr, wy, 0.2], [Math.PI, wr, wy, 0.12],
    [-0.5, hr, hy, 0.55], [1.0, hr, hy, 0.27], [-1.7, hr, hy, 0.15], [2.1, hr, hy, 0.5], [Math.PI + 0.6, hr, hy, 0.1]]
-    .forEach(([o, r, y, th]) => FIRE.push({ p: [Math.cos(GA + o) * r, y, Math.sin(GA + o) * r], th, s: 2.6, sm: 2.2 }));
+    .forEach(([o, r, y, th]) => { let a = GA + o;
+      if (r === wr) for (let it = 0; it < 3; it++) for (const [b, w] of tA.map(q => [q, 1.6]).concat(MA.map(q => [q, 1.9]))) { const d = Math.atan2(Math.sin(a - b), Math.cos(a - b)); if (Math.abs(d) < w / wr) a = b + (d < 0 ? -1 : 1) * w / wr; }   // LAS-94: not in a tower
+      FIRE.push({ p: [Math.cos(a) * r, y, Math.sin(a) * r], th, s: 2.6, sm: 2.2, bailey: r === hr }); });   // LAS-94: bailey = on a house roof
   FIRE.push({ p: [Math.cos(bA) * (Ro - 0.3), y0 + 0.75, Math.sin(bA) * (Ro - 0.3)], th: RLOOK.breachAt, s: 3.2, sm: 2.6 });
   const fireG = T3.mergeGeometries([new T3.ConeGeometry(0.17, 0.5, 5), (() => { const c = new T3.ConeGeometry(0.1, 0.36, 4); c.translate(0.08, -0.04, 0.05); return c; })()]);
   for (const f of FIRE) {
     f.mesh = mk(dyn, fireG, '#ffb25a', { glow: 1, p: f.p }); f.mesh.scale.setScalar(f.s);
-    f.halo = new T3.Mesh(new T3.PlaneGeometry(1, 1), new T3.MeshBasicMaterial({ color: RLOOK.fire, map: haloTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, opacity: 0.55, fog: false }));
+    f.halo = new T3.Mesh(new T3.PlaneGeometry(1, 1), new T3.MeshBasicMaterial({ color: RLOOK.fire, map: haloTex(), transparent: true, depthWrite: false, depthTest: false, blending: T3.AdditiveBlending, opacity: 0.55, fog: false }));   // LAS-94: soft light (see the beacons)
     f.halo.position.set(...f.p); f.halo.renderOrder = 5; dyn.add(f.halo); f.ph = jr() * 6.28; f.puff = 0;
   }
   return { g, hz, fires, Ro: Ro * WS, walkY: (y0 + OH) * WS, tA, dyn, W };
@@ -7092,10 +7098,11 @@ function wreck(W, k, st, t, dt) {
   // fires flicker and smoke
   let lit = 0;
   for (const f of W.FIRE) {
-    const on = k < f.th && (f.st || 0) <= st, fl = 0.75 + 0.25 * Math.sin(t * 17 + f.ph) * Math.sin(t * 7.3 + f.ph * 2);
+    const on = k < f.th && (f.st || 0) <= st && !(f.bailey && R.townStep), fl = 0.75 + 0.25 * Math.sin(t * 17 + f.ph) * Math.sin(t * 7.3 + f.ph * 2);   // LAS-94: no roof fire floating in the town
     f.mesh.visible = f.halo.visible = on; if (!on) continue; if (!f.gate) lit++;
     f.mesh.scale.set(f.s * (0.9 + 0.2 * fl), f.s * (0.8 + 0.5 * fl), f.s * (0.9 + 0.2 * fl)); f.mesh.rotation.y = t * 2 + f.ph;
-    f.halo.quaternion.copy(R.cam.quaternion); f.halo.scale.setScalar(f.s * (1.6 + 0.4 * fl)); f.halo.material.opacity = 0.35 + 0.25 * fl;
+    const hs = W.s > 1 ? 1.0 + 0.25 * fl : 1.6 + 0.4 * fl;   // LAS-94: the outer walls' fires (x 1.8 already, soft light: no depth test) glow tighter: a 9 m glow washed over the town
+    f.halo.quaternion.copy(R.cam.quaternion); f.halo.scale.setScalar(f.s * hs); f.halo.material.opacity = (W.s > 1 ? 0.8 : 1) * (0.35 + 0.25 * fl); if (!(W.s > 1)) haloPull(f.halo, 0.5 * f.s * hs);
     const sm = f.sm || 1;
     if (!f.gate && (f.puff -= dt) <= 0) { f.puff = (0.12 + Math.random() * 0.1) * (sm > 1 ? 1.6 : 1); const ws = W.s || 1; puff(f.p[0] * ws + (Math.random() - 0.5) * 0.2 * sm, f.p[1] * ws + W.y + 0.3 * sm, f.p[2] * ws, 0.35, (2.2 + Math.random()) * (sm > 1 ? 1.5 : 1), 0.9 * Math.sqrt(sm), sm); }
   }
@@ -7277,7 +7284,7 @@ function mountsTick(S, t, dt, alpha) {
     const c = Math.cos(g.cur) * MSCALE, n = Math.sin(g.cur) * MSCALE, mz = g.muz, P = g.root.position;
     let wx = P.x + mz[0] * c + mz[2] * n, wy = P.y + mz[1] * MSCALE, wz = P.z - mz[0] * n + mz[2] * c;
     if (g.bat) { const B = g.bat, gp = B.g.position, ry = B.g.rotation.y, s = B.cs || TOWN.k;   // the battery's barrel mouth: out along its facing, at the gun's height
-      wx = gp.x + Math.sin(ry) * 1.25 * s; wy = gp.y + (B.sp.h - 0.56) * s; wz = gp.z + Math.cos(ry) * 1.25 * s; if (g.fired) B.shotT = t; }
+      wx = gp.x + Math.sin(ry) * 1.25 * s * (B.ax || 1); wy = gp.y + (B.sp.h - 0.56) * s; wz = gp.z + Math.cos(ry) * 1.25 * s * (B.ax || 1); if (g.fired) B.shotT = t; }
     R.muzzle.set(g.m.x + ',' + g.m.y, [wx, wy, wz]);
     const powder = g.kind === 'cannon' || g.kind === 'mortar' || !MART[g.kind];
     g.flash.visible = powder && g.ft < 0.07;
@@ -7289,6 +7296,16 @@ function mountsTick(S, t, dt, alpha) {
 // ---------- LAS-51/53: the Wall Guard and the brazier ring. S.guard[i] = {x, y} on the wall (sim), S.ringR = the lit ring (m from the
 // centre). Guard shots are S.shots kind 'guard' (events { k:'shot', guard:true, from }). The braziers stand on posts in the sea at
 // the ring's edge: the ring the Wall Guard shoots into is drawn, and they light the wall stones and what moves inside.
+// LAS-94: an angle on the outer wall's walk (world radius r) moved clear of the flanking towers (3.4 m), the gun towers and the wall guns
+// (3 m: the swivel gun's barrel sweeps 2.5 m) and the gatehouse (3.8 m), to the nearer side
+function wallClear(a, r) {
+  const O = R.isleStep ? R.outer[R.isleStep - 1] : null; if (!O) return a;
+  const L = O.tA.map(b => [b, 3.4]).concat([[-Math.PI / 2, 3.8]], (R.wallGunA || []).map(b => [b, 3.0])); (R.towers || []).forEach(g => { if (g && g.visible) L.push([Math.atan2(g.position.z, g.position.x), 3.0]); });
+  // the keep-out arcs round a (merged where they overlap, so a guard between a tower and a gun can't bounce from one into the other)
+  const I = L.map(([b, w]) => { const d = Math.atan2(Math.sin(b - a), Math.cos(b - a)), h = w / r; return [d - h, d + h]; }).sort((p, q) => p[0] - q[0]), M = [];
+  for (const q of I) { const m = M[M.length - 1]; if (m && q[0] <= m[1]) m[1] = Math.max(m[1], q[1]); else M.push(q.slice()); }
+  const hit = M.find(q => q[0] < 0 && q[1] > 0); return hit ? a + (-hit[0] < hit[1] ? hit[0] : hit[1]) : a;
+}
 const GUARD_S = 3.2;
 function makeGuard() {
   const root = new T3.Group(), yaw = new T3.Group(); root.add(yaw); root.scale.setScalar(GUARD_S);
@@ -7324,7 +7341,8 @@ function guardsTick(S, t, dt, alpha) {
     if (!g) g = G[i] = makeGuard();
     g.root.visible = true;
     const gs = S.guard[i], [vx, vz] = toView(gs.x, gs.y), r = Math.hypot(vx, vz) || 1, wr = R.off > 0.05 && R.towerR ? R.towerR : r;
-    g.root.position.set(vx / r * wr, y0, vz / r * wr);
+    const ga = R.off > 0.05 && R.towerR ? wallClear(Math.atan2(vz, vx), wr) : Math.atan2(vz, vx);   // LAS-94: not inside a tower or the gatehouse
+    g.root.position.set(Math.cos(ga) * wr, y0, Math.sin(ga) * wr);
     if (g.aim === 0 && g.cur === 0) g.aim = g.cur = Math.atan2(vx, vz);
     g.ft += dt;
   }
@@ -7346,12 +7364,14 @@ function guardsTick(S, t, dt, alpha) {
     g.fired = 0;
   }
   // LAS-65: four small rust lamps mark the town's edge, and (once the Wall Guard stands) the ring it shoots into: they ease out to S.ringR
-  const rl = n > 0 && ringV > 0 ? ringV - 2.5 : U.shore.value - 0.7;
+  const OW = R.isleStep ? R.outer[R.isleStep - 1] : null, rl0 = n > 0 && ringV > 0 ? ringV - 2.5 : U.shore.value - 0.7;
+  const rl = OW && rl0 > OW.Ro - 2.2 ? Math.max(rl0, OW.Ro + 1.3) : rl0;   // LAS-94: a lamp post never stands in the outer wall: outside its foot
   R.lampR = R.lampR ? R.lampR + (rl - R.lampR) * Math.min(1, dt * 2.5) : rl;
   for (let i = 0; i < 4; i++) {
     let b = BR[i]; if (!b) b = BR[i] = makeBrazier();
     const a = (i + 0.5) / 4 * Math.PI * 2 + 0.3;
-    b.g.position.set(Math.cos(a) * R.lampR, hAt(R.lampR) * 0.9, Math.sin(a) * R.lampR);
+    let lr = R.lampR; if (OW && lr > OW.Ro - 2.2 && lr < OW.Ro + 1.3) lr = lr > OW.Ro - 0.45 ? OW.Ro + 1.3 : OW.Ro - 2.2;   // LAS-94: off the wall even while easing
+    b.g.position.set(Math.cos(a) * lr, hAt(lr) * 0.9, Math.sin(a) * lr);
     const f = 0.8 + 0.2 * Math.sin(t * 11 + i * 2.7) * Math.sin(t * 5.3 + i) + 0.08 * Math.sin(t * 23 + i * 5);
     b.fl.scale.set(f, 0.8 + 0.5 * f, f); b.L.intensity = 9 * (0.85 + 0.3 * f);
     R.brazU.value[i].set(b.g.position.x, 1, b.g.position.z);
@@ -7367,7 +7387,15 @@ function guardsTick(S, t, dt, alpha) {
 // R.townStep: the island needs its outer wall for the rings to stand inside (growth() reads it); the sim's rim (item 1) replaces this.
 // LAS-86 the fortress city: every building, its hex and its dust x k (a building must read at 88-200 m); the rings spread out to match
 // (r), each on its own terrace (y = the terrace top, stepping down to the harbour), one walled island step per ring (step)
-const TOWN = { r: [5.6, 10.0, 14.4, 18.8], n: [4, 6, 8, 10], step: [1, 2, 3, 4], y: [0.9, 0.7, 0.5, 0.32], k: 2.2, rise: 1.7, lvl: 1.3, ember: '#ff6a20' };
+// LAS-94 (Philippe: "check for clipping"; checks/clipcheck.js): each ring's slots sit in the middle of the free band of their terrace,
+// from the ring inside (the keep's towers, r 3.9, for ring 1; else the inner parapet's cap) to the foot of this ring's wall (the
+// curtain's inner face; the parapet now stands just inside that line). r, hex (the tile's top circumradius, m) and fit (how far, m, a
+// building may reach from its slot below 5.3 m: wider ones are narrowed, never lowered) all follow RLOOK.outerR, so wider terraces
+// (LAS-92) give the buildings their width back. Ring 1 sits higher, clear of the keep's rock.
+const TOWN = { r: [], n: [4, 6, 8, 10], step: [1, 2, 3, 4], y: [1.05, 0.7, 0.5, 0.32], hex: [], fit: [], fitHi: 2.1, keepR: 3.9, k: 2.2, rise: 1.7, lvl: 1.3, ember: '#ff6a20' };
+const wallFoot = k => RLOOK.outerR[k] - 0.85 * RLOOK.wallS, parapetB = k => wallFoot(k) + 0.4;   // the curtain's inner face; the city parapet's line (its cap reaches 0.4 in)
+for (let k = 1; k <= 4; k++) { const hi = wallFoot(k), lo = k === 1 ? TOWN.keepR : parapetB(k - 1) + 0.12, c = (lo + hi) / 2, h = (hi - lo) / 2;
+  TOWN.r[k - 1] = c; TOWN.fit[k - 1] = h - 0.1; TOWN.hex[k - 1] = (k === 1 ? hi - c - 0.05 : h - 0.1) / Math.cos(Math.PI / 6); }   // ring 1's tile may run under the keep's foot
 const TOWN_HOME = { brazier: 'in', rocket: 'in', watch: 'in', breakwater: 'in', bell: 'in', gun: 'out', boathouse: 'out', horn: 'out' };
 const TOWN_IDS = Object.keys(TOWN_HOME);
 const TOWN_ALIAS = { battery: 'gun', boat: 'boathouse' };   // LAS-61: the sim's ids (design/island-town.md) for the two the models named differently
@@ -7709,7 +7737,9 @@ function townLook(id, lv, q = 2, plinth) {   // the cached geometry for (id, lv)
   const solid = S.geo(); if (ph) { solid.translate(0, ph, 0); sp.h += ph; for (const f of sp.fires.concat(sp.lamps)) f[1] += ph; if (sp.bell) sp.bell.y += ph; }
   let glow = H.gn ? G.geo() : null; if (glow && ph) glow.translate(0, ph, 0);
   const bg = HB.gn ? BG.geo() : null; if (bg) glow = glow ? T3.mergeGeometries([glow, bg]) : bg;
-  return (TOWNC[k] = { solid: nb ? T3.mergeGeometries([solid, B.geo()]) : solid, glow, sp });
+  const all = nb ? T3.mergeGeometries([solid, B.geo()]) : solid;
+  let rxz = 0.5, rhi = 0.5; for (const G of [all, glow]) { const P = G && G.getAttribute('position'); if (P) for (let i = 0; i < P.count; i++) { const r = Math.hypot(P.getX(i), P.getZ(i)); rhi = Math.max(rhi, r); if (P.getY(i) < 2.4) rxz = Math.max(rxz, r); } }   // LAS-94: its reach below 5.3 m (x k), and at any height
+  return (TOWNC[k] = { solid: all, glow, sp, rxz, rhi });
 }
 // the level podium under a building (into pen H, y 0 = the hex top); returns its height (0 at level I)
 function townPodium(lv, H) {
@@ -7720,22 +7750,22 @@ function townPodium(lv, H) {
     return 0.95;
   }
   if (lv === 3) {   // III: a fortified keep: an 8-sided drum, a machicolated ledge with battlements, four corner turrets, lit windows, a banner
-    H.cyl(1.0, 1.1, 1.5, 8, TC.stone, [0, 0.75, 0]).courses(1.1, 1.0, 0.05, 1.45, 4, TC.stoneD, [0, 0, 0]).cyl(1.12, 1.02, 0.16, 8, TC.stoneD, [0, 1.5, 0]);
-    H.ring(10, 1.04, (x, z, ry) => H.box(0.22, 0.26, 0.16, TC.stone, [x, 1.71, z], [0, ry, 0]));
-    H.ring(4, 1.06, (x, z) => { H.cyl(0.25, 0.28, 2.0, 8, TC.stoneL, [x, 1.0, z]).cone(0.33, 0.62, 8, TC.black, [x, 2.31, z]); H.gbox(0.07, 0.16, 0.07, TC.lamp, [x * 1.22, 1.45, z * 1.22]); });
-    for (const s of [1, -1]) H.gbox(0.15, 0.26, 0.05, TC.lamp, [0, 0.85, s * 1.06]).gbox(0.15, 0.26, 0.05, TC.lamp, [s * 1.06, 0.85, 0], [0, Math.PI / 2, 0]);
-    H.box(0.34, 0.7, 0.02, '#4a1414', [0.42, 1.0, 1.1]);
+    H.cyl(0.92, 1.0, 1.5, 8, TC.stone, [0, 0.75, 0]).courses(1.0, 0.92, 0.05, 1.45, 4, TC.stoneD, [0, 0, 0]).cyl(1.02, 0.94, 0.16, 8, TC.stoneD, [0, 1.5, 0]);   // LAS-94: slimmer
+    H.ring(10, 0.95, (x, z, ry) => H.box(0.22, 0.26, 0.16, TC.stone, [x, 1.71, z], [0, ry, 0]));
+    H.ring(4, 0.82, (x, z) => { H.cyl(0.22, 0.25, 2.0, 8, TC.stoneL, [x, 1.0, z]).cone(0.29, 0.62, 8, TC.black, [x, 2.31, z]); H.gbox(0.07, 0.16, 0.07, TC.lamp, [x * 1.25, 1.45, z * 1.25]); });
+    for (const s of [1, -1]) H.gbox(0.15, 0.26, 0.05, TC.lamp, [0, 0.85, s * 0.98]).gbox(0.15, 0.26, 0.05, TC.lamp, [s * 0.98, 0.85, 0], [0, Math.PI / 2, 0]);
+    H.box(0.34, 0.7, 0.02, '#4a1414', [0.42, 1.0, 1.0]);
     return 1.5;
   }
   if (lv === 4) {   // the landmark (an evolution): a great keep twice as tall, two tiers of battlements, four tall spired towers, a crown of lit windows
-    H.cyl(1.0, 1.15, 2.5, 8, TC.stone, [0, 1.25, 0]).courses(1.15, 1.0, 0.05, 2.45, 6, TC.stoneD, [0, 0, 0]).cyl(1.16, 1.04, 0.18, 8, TC.stoneD, [0, 2.5, 0]);
-    H.cyl(1.2, 1.2, 0.12, 8, TC.stoneD, [0, 1.25, 0]);
-    H.ring(12, 1.08, (x, z, ry) => H.box(0.22, 0.28, 0.16, TC.stone, [x, 2.73, z], [0, ry, 0]));
-    H.ring(12, 1.2, (x, z, ry) => H.box(0.2, 0.22, 0.14, TC.stone, [x, 1.42, z], [0, ry, 0]));
-    H.ring(4, 1.14, (x, z) => { H.cyl(0.3, 0.34, 3.3, 8, TC.stoneL, [x, 1.65, z]).cyl(0.36, 0.3, 0.12, 8, TC.stoneD, [x, 3.3, z]).cone(0.38, 1.3, 8, TC.black, [x, 4.0, z]);
-      H.gbox(0.08, 0.2, 0.08, TC.lamp, [x * 1.27, 2.9, z * 1.27]).gbox(0.08, 0.2, 0.08, TC.lamp, [x * 1.27, 1.9, z * 1.27]); });
-    H.ring(8, 1.03, (x, z, ry) => H.gbox(0.13, 0.26, 0.05, TC.lamp, [x, 2.15, z], [0, ry, 0]));
-    for (const s of [1, -1]) H.box(0.4, 1.0, 0.02, '#4a1414', [s * 0.45, 1.7, 1.17]).box(0.4, 1.0, 0.02, '#4a1414', [s * 0.45, 1.7, -1.17]);
+    H.cyl(0.95, 1.05, 2.5, 8, TC.stone, [0, 1.25, 0]).courses(1.05, 0.95, 0.05, 2.45, 6, TC.stoneD, [0, 0, 0]).cyl(1.06, 0.96, 0.18, 8, TC.stoneD, [0, 2.5, 0]);   // LAS-94: slimmer
+    H.cyl(1.1, 1.1, 0.12, 8, TC.stoneD, [0, 1.25, 0]);
+    H.ring(12, 0.99, (x, z, ry) => H.box(0.22, 0.28, 0.16, TC.stone, [x, 2.73, z], [0, ry, 0]));
+    H.ring(12, 1.1, (x, z, ry) => H.box(0.2, 0.22, 0.14, TC.stone, [x, 1.42, z], [0, ry, 0]));
+    H.ring(4, 0.86, (x, z) => { H.cyl(0.26, 0.3, 3.3, 8, TC.stoneL, [x, 1.65, z]).cyl(0.32, 0.26, 0.12, 8, TC.stoneD, [x, 3.3, z]).cone(0.33, 1.3, 8, TC.black, [x, 4.0, z]);
+      H.gbox(0.08, 0.2, 0.08, TC.lamp, [x * 1.3, 2.9, z * 1.3]).gbox(0.08, 0.2, 0.08, TC.lamp, [x * 1.3, 1.9, z * 1.3]); });
+    H.ring(8, 0.96, (x, z, ry) => H.gbox(0.13, 0.26, 0.05, TC.lamp, [x, 2.15, z], [0, ry, 0]));
+    for (const s of [1, -1]) H.box(0.4, 1.0, 0.02, '#4a1414', [s * 0.45, 1.7, 1.07]).box(0.4, 1.0, 0.02, '#4a1414', [s * 0.45, 1.7, -1.07]);
     return 2.5;
   }
   return 0;
@@ -7744,7 +7774,9 @@ function townPodium(lv, H) {
 // outline cut into its top; a building stands on its own hex, an empty one waits, barely lit. Hover: the hex under the mouse
 // gets a soft rim of lantern light and TWRender.hoverSlot = { ring, slot, id, lv, empty, home, x, y } (UI tooltip, LAS-74).
 // Flat sides face the centre and the sea, so the hexes of neighbouring rings (1.9 m apart) touch like a honeycomb.
-const HEX = { r: 1.1, h: 0.8, top: 0.1, col: '#4a4743', cut: '#a8794a', lamp: '#ffcf9c', pick: 1.5 };   // cut: the outline's own faint glow (unlit colour)
+const HEX = { r: 1.1, h: 0.8, top: 0.1, col: '#4a4743', cut: '#a8794a', lamp: '#ffcf9c', pick: 1.5 };
+const hexS = ring => TOWN.hex[ring - 1] / (HEX.r * 0.97 * TOWN.k);   // LAS-94: a ring's tile width (x TOWN.k), from TOWN.hex
+R.hexR = ring => TOWN.hex[ring - 1];   // cut: the outline's own faint glow (unlit colour)
 // LAS-81: r 1.1 = the full honeycomb (flat to flat 1.905 m = the rings' 1.9 m step); the glowing cut runs right at the rim (not inset), so the
 // whole tile reads at the game camera (88 m) in the dark; pick: hover takes the nearest slot within 1.5 x r (easy to hit at that distance)
 function hexStone(S, q = 2, G = S) {   // into model S: the hex block (top at y HEX.top), a bevelled lip, cracks; into G: the cut outline
@@ -7786,7 +7818,7 @@ function hexTick(S, t, dt) {
   const src = R.townSrc, L = hexSlots(src), key = L.length + ':' + TOWN.n.join(','), show = !(R.town && R.town.dev && R.town.dev.line);
   X.tiles.visible = show;
   if (key !== X.key) { X.key = key; X.list = L; const d = X.d0;
-    L.forEach((s, j) => { d.position.set(s.x, s.y, s.z); d.rotation.set(0, s.a, 0); d.scale.setScalar(TOWN.k); d.updateMatrix(); X.tiles.setMatrixAt(j, d.matrix); X.tiles.cuts.setMatrixAt(j, d.matrix); });
+    L.forEach((s, j) => { const w = TOWN.k * hexS(s.ring); d.position.set(s.x, s.y, s.z); d.rotation.set(0, s.a, 0); d.scale.set(w, TOWN.k, w); d.updateMatrix(); X.tiles.setMatrixAt(j, d.matrix); X.tiles.cuts.setMatrixAt(j, d.matrix); });
     X.tiles.count = X.tiles.cuts.count = L.length; X.tiles.instanceMatrix.needsUpdate = X.tiles.cuts.instanceMatrix.needsUpdate = true; }
   // hover: the mouse ray against each ring's top plane, then the nearest slot centre inside the hex
   let hit = null;
@@ -7795,7 +7827,7 @@ function hexTick(S, t, dt) {
     let best = 1e9;
     for (const s of X.list) { const tt = (s.y + HEX.top * TOWN.k - o.y) / dv.y; if (!(tt > 0)) continue;
       const px = o.x + dv.x * tt - s.x, pz = o.z + dv.z * tt - s.z, dd = Math.hypot(px, pz);
-      if (dd < HEX.r * TOWN.k * 1.25 && dd < best) { best = dd; hit = s; } }
+      if (dd < HEX.r * TOWN.k * hexS(s.ring) * 1.25 && dd < best) { best = dd; hit = s; } }
   }
   const slots = src ? src.slots : [], sl = hit && slots.find(q => q.ring === hit.ring && q.i === hit.i);
   if (hit) { const sc = R.screenOf(hit.x, hit.y + HEX.top * TOWN.k, hit.z), home = hit.ring <= 2 ? 'inner' : 'outer';
@@ -7804,7 +7836,7 @@ function hexTick(S, t, dt) {
   R.hover = X.hov;
   // the lantern rim eases in and out
   X.k += ((hit ? 1 : 0) - X.k) * Math.min(1, dt * 10);
-  if (hit) { const k = TOWN.k; X.rim.position.set(hit.x, hit.y + HEX.top * k + 0.03, hit.z); X.rim.rotation.y = hit.a; X.rim.scale.setScalar(k); X.light.position.set(hit.x - Math.sin(hit.a) * 0.6 * k, hit.y + 1.4 * k, hit.z - Math.cos(hit.a) * 0.6 * k); X.last = hit; }
+  if (hit) { const k = TOWN.k, w = k * hexS(hit.ring); X.rim.position.set(hit.x, hit.y + HEX.top * k + 0.03, hit.z); X.rim.rotation.y = hit.a; X.rim.scale.set(w, k, w); X.light.position.set(hit.x - Math.sin(hit.a) * 0.6 * k, hit.y + 1.4 * k, hit.z - Math.cos(hit.a) * 0.6 * k); X.last = hit; }
   X.rim.visible = X.k > 0.01; X.rim.material.opacity = 0.6 * X.k * (0.92 + 0.08 * Math.sin(t * 3.3));
   X.light.intensity = 40 * X.k;
 }
@@ -7891,7 +7923,7 @@ const UPROP = {   // lv key -> what each level adds: kind, how many at most, whe
 // land's left, the crew at the gate (camera side), the shoring on the sea side (where the Tide hits), the salvage at the right
 const UP_TURN = Math.PI / 4, UP_GROUND = new Set(['dmg', 'rate', 'rateShot', 'wall', 'bounty']);
 function upAt(k, j) { const p = UPROP[k].at(j); if (!UP_GROUND.has(k)) return p; const c = Math.cos(UP_TURN), s = Math.sin(UP_TURN);
-  return [p[0] * c + p[2] * s, p[1], p[2] * c - p[0] * s, p[3] + UP_TURN]; }
+  return [p[0] * c + p[2] * s, p[1] + TOWN.y[0] - 0.9, p[2] * c - p[0] * s, p[3] + UP_TURN]; }   // LAS-94: on ring 1's raised ground
 function upInit() {
   if (R.ups) return R.ups;
   const m = new T3.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.15 }), geos = {}, d = new T3.Object3D(), grp = new T3.Group(); R.scene.add(grp);
@@ -7935,11 +7967,12 @@ function townRec(TW, key, sl, fresh, t) {
 function townBuild(TW, rec) {   // (re)fills rec.pv with the look of (id, lv)
   for (const c of rec.pv.children.slice()) rec.pv.remove(c);
   const C = townLook(townId(rec.id), rec.lv), sp = C.sp; rec.sp = sp; rec.fires = []; rec.lamps = []; rec.bell = null;
-  const sm = new T3.Mesh(C.solid, TW.tm); sm.castShadow = sm.receiveShadow = true; rec.pv.add(sm); rec.solid = sm;
-  if (C.glow) rec.pv.add(new T3.Mesh(C.glow, TW.gm));
-  for (const f of sp.fires) { const m = new T3.Mesh(TW.flame, TW.fm), h = new T3.Mesh(TW.plane, TW.hm); m.position.set(f[0], f[1], f[2]); h.position.set(f[0], f[1] + 0.05, f[2]); h.renderOrder = 5; rec.pv.add(m, h); rec.fires.push({ m, h, s: f[3] }); }
-  for (const l of sp.lamps) { const h = new T3.Mesh(TW.plane, TW.hm); h.position.set(l[0], l[1], l[2]); h.renderOrder = 5; rec.pv.add(h); rec.lamps.push({ h, s: l[3] }); }
-  if (sp.bell) { const b = new T3.Group(); b.position.set(0, sp.bell.y, 0); b.add(new T3.Mesh(sp.bell.geo, TW.tm)); rec.pv.add(b); rec.bell = { g: b, amp: sp.bell.amp }; }
+  const ring = Math.floor(rec.key / 16), ax = rec.ax = TW.dev && TW.dev.line ? 1 : Math.min(1, TOWN.fit[ring - 1] / (C.rxz * TOWN.k), TOWN.fitHi / (C.rhi * TOWN.k));   // LAS-94: fit the band (and clear the neighbours higher up)
+  const sm = new T3.Mesh(C.solid, TW.tm); sm.castShadow = sm.receiveShadow = true; sm.scale.set(ax, 1, ax); rec.pv.add(sm); rec.solid = sm;
+  if (C.glow) { const gm = new T3.Mesh(C.glow, TW.gm); gm.scale.set(ax, 1, ax); rec.pv.add(gm); }
+  for (const f of sp.fires) { const m = new T3.Mesh(TW.flame, TW.fm), h = new T3.Mesh(TW.plane, TW.hm); m.position.set(f[0] * ax, f[1], f[2] * ax); h.position.set(f[0] * ax, f[1] + 0.05, f[2] * ax); h.renderOrder = 5; rec.pv.add(m, h); rec.fires.push({ m, h, s: f[3] }); }
+  for (const l of sp.lamps) { const h = new T3.Mesh(TW.plane, TW.hm); h.position.set(l[0] * ax, l[1], l[2] * ax); h.renderOrder = 5; rec.pv.add(h); rec.lamps.push({ h, s: l[3] }); }
+  if (sp.bell) { const b = new T3.Group(); b.position.set(0, sp.bell.y, 0); b.scale.set(ax, 1, ax); b.add(new T3.Mesh(sp.bell.geo, TW.tm)); rec.pv.add(b); rec.bell = { g: b, amp: sp.bell.amp }; }
 }
 function townAnim(TW, rec, mode, t) {
   rec.mode = mode; rec.a0 = t; rec.dust = 0; rec.swapped = mode === 'rise';
@@ -8009,8 +8042,8 @@ function townTick(S, t, dt) {
     // life: flames flicker (and flare with the brazier pulse), lanterns breathe, the bell swings when it tolls (S.ev 'bell')
     TQ.copy(rec.q).multiply(R.cam.quaternion); const ph = rec.ph, fl = pulse && townId(rec.id) === 'brazier' ? 1.8 : 1;
     rec.fires.forEach((f, j) => { const k = fl * (0.8 + 0.2 * Math.sin(t * 11 + j * 2.7 + ph) * Math.sin(t * 5.3 + j + ph) + 0.08 * Math.sin(t * 23 + j * 5));
-      f.m.scale.set(f.s * k, f.s * (0.8 + 0.5 * k), f.s * k); f.h.quaternion.copy(TQ); f.h.scale.setScalar(1.4 * f.s * k); });   // LAS-86: inside pv (already x cs): no second cs
-    rec.lamps.forEach((l, j) => { l.h.quaternion.copy(TQ); l.h.scale.setScalar(0.7 * l.s * (0.9 + 0.1 * Math.sin(t * 3.1 + j + ph))); });
+      f.m.scale.set(f.s * k, f.s * (0.8 + 0.5 * k), f.s * k); f.h.quaternion.copy(TQ); const kh = k * (1 + 0.3 * (fl - 1)) / fl; f.h.scale.setScalar(1.15 * f.s * kh); haloPull(f.h, 0.6 * f.s * kh * cs); });   // LAS-94: the pulse flares the flame 1.8x, its glow 1.24x (it reached the keep's roofs)   // LAS-86: inside pv (already x cs): no second cs
+    rec.lamps.forEach((l, j) => { l.h.quaternion.copy(TQ); l.h.scale.setScalar(0.6 * l.s * (0.9 + 0.1 * Math.sin(t * 3.1 + j + ph))); haloPull(l.h, 0.35 * l.s * cs); });
     if (rec.bell) { const c = S.town ? (rec.bellT != null ? (t - rec.bellT) * 1.4 : 9) : (t + ph) % 9, ring = c < 3 ? Math.exp(-c * 0.9) * Math.sin(c * 9) : 0; rec.bell.g.rotation.z = rec.bell.amp * ring + 0.04 * Math.sin(t * 1.3 + ph); }
   }
   townFx(S, TW, t, dt);
@@ -8043,26 +8076,30 @@ R.screenOf = (x, y, z) => { const v = new T3.Vector3(x, y, z).project(R.cam); re
 // with its wall (3 s, water sheeting off as spray), so the run's growth spurt is something you see.
 const CITY = { rise: 3.2, depth: 5, house: ['#3f3a35', '#4a433b', '#38352f', '#463d36', '#2f2d2b'], roof: ['#24201e', '#2b2422', '#1d1b1b', '#33261f'], pave: '#3a3835', face: '#4b4844', win: '#ffb466' };
 function cityRing(k) {   // the land and the town of ring k (1..4), into a fresh group
-  const g = new T3.Group(); R.scene.add(g); jseed = 101 + k * 17;
-  const top = TOWN.y[k - 1], a = k === 1 ? 4.6 : RLOOK.outerR[k - 1] - 1.0, b = RLOOK.outerR[k] - 1.25, chim = [];
+  const g = new T3.Group(); R.scene.add(g); jseed = 101 + k * 17; g.userData.clip = 'city' + k;
+  // LAS-94: the parapet (gp) stands just inside the foot of this ring's outer wall (Ro - 1.53) and shows only once that wall has given
+  // way to the next ring's (cityTick): while the wall stands, the wall is the edge
+  const gp = new T3.Group(); R.scene.add(gp); gp.userData.clip = 'parapet' + k;
+  const top = TOWN.y[k - 1], a = k === 1 ? 4.6 : parapetB(k - 1) + 0.13, b = parapetB(k), chim = [];
   const lathe = (pts, c, o) => mk(g, new T3.LatheGeometry(pts.map(q => new T3.Vector2(q[0], q[1])), 72), c, o || {});
-  lathe([[b + 0.7, -0.4], [b, top], [a, top], [a, -0.4]], CITY.pave);                                   // the terrace (its sea face battered)
-  lathe([[b + 0.06, top], [b + 0.06, top + 1.1], [b - 0.34, top + 1.1], [b - 0.34, top]], CITY.face, { cast: true });   // the parapet
-  lathe([[b + 0.12, top + 1.1], [b + 0.12, top + 1.22], [b - 0.4, top + 1.22], [b - 0.4, top + 1.1]], '#2c2b29');
+  lathe([[b + 0.7, -0.4], [b, top], [a, top], [a, -0.4]], CITY.pave).userData.ground = true;            // the terrace (its sea face battered)
+  const plathe = (pts, c, o) => mk(gp, new T3.LatheGeometry(pts.map(q => new T3.Vector2(q[0], q[1])), 72), c, o || {});
+  plathe([[b + 0.06, top], [b + 0.06, top + 1.1], [b - 0.34, top + 1.1], [b - 0.34, top]], CITY.face, { cast: true });   // the parapet
+  plathe([[b + 0.12, top + 1.1], [b + 0.12, top + 1.22], [b - 0.4, top + 1.22], [b - 0.4, top + 1.1]], '#2c2b29');
   const nm = Math.round(Math.PI * 2 * b / 1.1);
-  for (let j = 0; j < nm; j++) { const t = (j + 0.5) / nm * Math.PI * 2; mk(g, new T3.BoxGeometry(0.5, 0.42, 0.4), CITY.face, { p: [Math.cos(t) * (b - 0.14), top + 1.43, Math.sin(t) * (b - 0.14)], r: [0, Math.PI / 2 - t, 0] }); }
+  for (let j = 0; j < nm; j++) { const t = (j + 0.5) / nm * Math.PI * 2; mk(gp, new T3.BoxGeometry(0.5, 0.42, 0.4), CITY.face, { p: [Math.cos(t) * (b - 0.14), top + 1.43, Math.sin(t) * (b - 0.14)], r: [0, Math.PI / 2 - t, 0] }); }
   const nl = Math.round(Math.PI * 2 * b / 7);
-  for (let j = 0; j < nl; j++) { const t = (j + 0.3) / nl * Math.PI * 2; mk(g, new T3.BoxGeometry(0.2, 0.26, 0.2), CITY.win, { glow: 1, p: [Math.cos(t) * (b - 0.5), top + 1.4, Math.sin(t) * (b - 0.5)] }); }
+  for (let j = 0; j < nl; j++) { const t = (j + 0.3) / nl * Math.PI * 2; mk(gp, new T3.BoxGeometry(0.2, 0.26, 0.2), CITY.win, { glow: 1, p: [Math.cos(t) * (b - 0.14), top + 1.4, Math.sin(t) * (b - 0.14)] }); }   // LAS-94: lanterns on the parapet's line, not in the street
   // the town: rows of houses round the ring, clear of the hexes, the gate road (toward the camera) and the gun towers
   const slots = []; for (let i = 0; i < TOWN.n[k - 1]; i++) slots.push(townPos(k, i));
   const GA = -Math.PI / 2, MA = TOWER_A.concat(TOWER_A.map(q => q + 0.5)), dA = (p, q) => Math.abs(Math.atan2(Math.sin(p - q), Math.cos(p - q)));
-  const clear = HEX.r * TOWN.k + 0.35, hi = 0.5 * (4 - k);
-  for (let r = a + 1.1; k > 1 && r < b - 0.9; r += 2.1) {   // ring 1 is the keep's rock (its gaps hold the gold upgrades' stores)
+  const clear = TOWN.hex[k - 1] + 0.3, hi = 0.5 * (4 - k);   // LAS-94: a house (half-diagonal up to 1.2 m with its roof) stays off the tiles, the inner parapet and the wall's foot
+  for (let r = a + 1.3; k > 1 && r < b - 1.6; r += 2.1) {   // ring 1 is the keep's rock (its gaps hold the gold upgrades' stores)
     let t = jr() * 0.3;
     while (t < Math.PI * 2) {
       const w = 1.6 + jr() * 1.1, dd = 1.5 + jr() * 0.6, tw = w / r, c = t + tw / 2; t += tw + (0.25 + jr() * 0.5) / r;
       const x = Math.cos(c) * r, z = Math.sin(c) * r;
-      if (dA(c, GA) < 1.7 / r || MA.some(q => dA(c, q) < 2.6 / r) || slots.some(p => Math.hypot(p[0] - x, p[2] - z) < clear + w * 0.3) || jr() < 0.08) continue;
+      if (dA(c, GA) < 1.7 / r || MA.some(q => dA(c, q) < 2.6 / r) || slots.some(p => Math.hypot(p[0] - x, p[2] - z) < clear + Math.hypot(w + 0.2, dd + 0.28) / 2) || jr() < 0.08) continue;
       const ry = Math.PI / 2 - c, out = [Math.cos(c), Math.sin(c)], tall = jr() < 0.1;
       if (tall) {   // a watch tower: a drum, a lit slit, a steep spire
         const h = 4.2 + jr() * 1.6 + hi;
@@ -8083,16 +8120,16 @@ function cityRing(k) {   // the land and the town of ring k (1..4), into a fresh
       if (jr() < 0.35) { const cx = x - out[1] * w * 0.3, cz = z + out[0] * w * 0.3, ch = h + rh + 0.3; mk(g, new T3.BoxGeometry(0.3, 1.0, 0.3), '#2a2725', { p: [cx, top + ch - 0.4, cz], cast: true }); chim.push([cx, top + ch + 0.15, cz]); }
     }
   }
-  return { g, chim, top };
+  return { g, gp, chim, top };
 }
 function cityTick(TW, src, t, dt) {
   const C = TW.city || (TW.city = { rings: [], shown: 0, rise: null, smoke: 0 }), n = Math.max(1, Math.min(4, src.rings || 1)), line = TW.dev && TW.dev.line;
-  for (let k = C.rings.length + 1; k <= 4; k++) { const c = cityRing(k); c.baked = bakeStatic(R.scene, [c.g]); C.rings.push(c); }
+  for (let k = C.rings.length + 1; k <= 4; k++) { const c = cityRing(k); c.baked = bakeStatic(R.scene, [c.g]); c.pbaked = bakeStatic(R.scene, [c.gp]); C.rings.push(c); }
   if (n !== C.shown) {
     if (n > C.shown && C.shown > 0) { C.rise = { k: n, t0: t }; if (root.TWFx) { if (root.TWFx.kick) root.TWFx.kick(0.3); if (root.TWFx.sound) root.TWFx.sound('wallboss'); } }
     C.shown = n;
   }
-  C.rings.forEach((c, i) => c.baked.forEach(m => { m.visible = !line && i < n; }));
+  C.rings.forEach((c, i) => { c.baked.forEach(m => { m.visible = !line && i < n; }); c.pbaked.forEach(m => { m.visible = !line && i < n && (R.isleStep || 0) > i + 1; }); });   // LAS-94: a parapet once its wall is gone
   // the newest ring (and its outer wall) rises out of the sea; spray sheets off its rim while it comes up
   let dy = 0;
   if (C.rise) { const q = (t - C.rise.t0) / CITY.rise;
@@ -8101,7 +8138,7 @@ function cityTick(TW, src, t, dt) {
       const ro = RLOOK.outerR[C.rise.k]; for (let j = 0; j < 6; j++) { const a = Math.random() * 6.283; puff(Math.cos(a) * ro, 0.3 + Math.random() * 1.5 * e, Math.sin(a) * ro, 0.85, 1.2 + Math.random(), 1.4 - q, 2.4); }
     } }
   const c = C.rise ? C.rings[C.rise.k - 1] : null, O = C.rise ? R.outer[TOWN.step[C.rise.k - 1] - 1] : null;
-  C.rings.forEach(r => { const y = r === c ? dy : 0; if (r.y !== y) { r.y = y; r.baked.forEach(m => { m.position.y = y; }); } });
+  C.rings.forEach(r => { const y = r === c ? dy : 0; if (r.y !== y) { r.y = y; r.baked.concat(r.pbaked).forEach(m => { m.position.y = y; }); } });
   R.outer.forEach(o => { const y = o === O ? dy : 0; if (o.y !== y) { o.y = y; o.baked.forEach(m => { m.position.y = y; }); o.dyn.position.y = o.fires.position.y = y; } });
   // chimney smoke from the open rings
   if (!line && (C.smoke -= dt) <= 0) { C.smoke = 0.18; const r = C.rings[Math.floor(Math.random() * n)], p = r.chim[Math.floor(Math.random() * r.chim.length)];
@@ -8193,7 +8230,7 @@ const i0 = g => g.root.position.x * 3.1;
 
 // merge every mesh under the given groups into one mesh per (material, casts shadow), world transforms baked in
 function bakeStatic(scene, groups) {
-  const B = new Map();
+  const B = new Map(), CL = clipLog();
   for (const grp of groups) {
     grp.updateMatrixWorld(true);
     grp.traverse(o => {
@@ -8204,16 +8241,34 @@ function bakeStatic(scene, groups) {
       const k = o.material.uuid + (o.castShadow ? '+' : '');
       if (!B.has(k)) B.set(k, { m: o.material, cast: o.castShadow, gs: [] });
       B.get(k).gs.push(g); o.geometry.dispose();
+      if (CL) CL.push(Object.assign(clipShape(g, o.geometry), { own: grp.userData.clip || 'static', ground: !!o.userData.ground, glow: !!o.material.isMeshBasicMaterial, b: B.get(k) }));
     });
     grp.parent.remove(grp);
   }
   const out = [];
   for (const b of B.values()) {
     const m = new T3.Mesh(T3.mergeGeometries(b.gs), b.m); m.castShadow = b.cast; m.receiveShadow = true;
-    b.gs.forEach(g => g.dispose()); scene.add(m); out.push(m);
+    b.gs.forEach(g => g.dispose()); scene.add(m); out.push(m); b.mesh = m;
   }
   return out;
 }
+// LAS-94 (checks/clipcheck.js, only with #clip in the URL): every baked piece's world footprint before it is merged, so a check can
+// test the walls, the keep and the city's houses one stone at a time. A lathe (a wall, a terrace, a parapet) is a ring: r0..r1 over
+// its arc; anything else is the convex hull of its vertices on the ground plane (xz) and its height range.
+function clipLog() { if (R.clipLog === undefined) R.clipLog = root.location && /[?&#]clip(\b|=)/.test(root.location.search + root.location.hash) ? [] : null; return R.clipLog; }
+function clipShape(g, src) {
+  const P = g.getAttribute('position'), n = P.count; let y0 = 1e9, y1 = -1e9, r0 = 1e9, r1 = 0; const pts = [];
+  for (let i = 0; i < n; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i); if (y < y0) y0 = y; if (y > y1) y1 = y; const r = Math.hypot(x, z); if (r < r0) r0 = r; if (r > r1) r1 = r; pts.push([x, z]); }
+  if (src && src.type === 'LatheGeometry') { const q = src.parameters || {}; return { kind: 'ring', y0, y1, r0, r1, ps: q.phiStart || 0, pl: q.phiLength == null ? Math.PI * 2 : q.phiLength }; }
+  return { kind: 'hull', y0, y1, hull: hull2(pts) };
+}
+function hull2(pts) {   // Andrew's monotone chain, counter-clockwise, no repeated end point
+  const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]), cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]), lo = [], up = [];
+  for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 1e-9) lo.pop(); lo.push(q); }
+  for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 1e-9) up.pop(); up.push(q); }
+  lo.pop(); up.pop(); return lo.concat(up);
+}
+R.clipShape = clipShape; R.hull2 = hull2;
 
 // the sweep's gradient: v = 1 at the lamp (narrow, bright), v = 0 far out (wide, faded)
 function shaftTex() {
@@ -8248,6 +8303,15 @@ function wakeTex() {
   x.putImageData(im, 0, 0); const t = new T3.CanvasTexture(c); t.colorSpace = T3.SRGBColorSpace; return t;
 }
 
+// LAS-94: a fire's glow is a camera-facing quad; the roof, bowl or merlons right round the fire cut it into a hard-edged dome. Each frame
+// the quad moves toward the camera by `pull` (world m, half its size) along the line of sight: same place on screen, but what stands
+// round the fire is behind it now; only what is truly in front still hides it.
+const HV = new T3.Vector3(), HD = new T3.Vector3();
+function haloPull(h, pull) {
+  const u = h.userData, P = h.parent; if (!P) return; if (!u.p0) u.p0 = h.position.clone();
+  HV.copy(u.p0); P.localToWorld(HV); HD.copy(R.cam.position).sub(HV); const L = HD.length(); if (L < 1e-6) return;
+  HV.addScaledVector(HD, Math.min(pull, L * 0.5) / L); P.worldToLocal(HV); h.position.copy(HV);
+}
 function haloTex() {
   const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
   const g = x.createRadialGradient(64, 64, 2, 64, 64, 64); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.5, 'rgba(255,255,255,.3)'); g.addColorStop(1, 'rgba(255,255,255,0)');
@@ -8486,14 +8550,15 @@ function growth(S, dt, t) {
   R.off = R.off === undefined ? offT : R.off + (offT - R.off) * Math.min(1, dt * 2);
   U.shore.value += (RLOOK.isleR[step] - 0.2 - U.shore.value) * Math.min(1, dt * 2);
   if (O) O.fires.children.forEach((m, j) => { const fl = 0.8 + 0.2 * Math.sin(t * 15 + j) * Math.sin(t * 6.1 + j * 1.7);
-    if (m.geometry.type === 'PlaneGeometry') { m.quaternion.copy(R.cam.quaternion); m.scale.setScalar(2.2 + 0.6 * fl); } else m.scale.set(fl, 0.8 + 0.4 * fl, fl); });
+    if (m.geometry.type === 'PlaneGeometry') { m.quaternion.copy(R.cam.quaternion); m.scale.setScalar(1.8 + 0.5 * fl); } else m.scale.set(fl, 0.8 + 0.4 * fl, fl); });   // LAS-94: soft light, a little tighter
   // wall guns: one per gunPer Loaders levels, on the inner curtain, or on the outer wall's walk once it stands
   const G = D.guns, n = Math.min(G.a.length, Math.floor((lv.rate || 0) / RLOOK.gunPer));
   if (n !== G.n || st !== G.st || step !== G.step) {
     G.n = n; G.st = st; G.step = step; const o = new T3.Object3D();
     const r = O ? O.Ro - 0.5 : st === 2 ? 2.56 : st ? 2.86 : 2.74, y = O ? O.walkY - RLOOK.plateau : st === 2 ? RLOOK.walk + 1.05 : st ? RLOOK.walk : 1.08;
-    const free = O ? G.a.filter(a => !O.tA.some(b => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) < 1.3 / O.Ro)) : G.a;
-    G.car.count = G.bar.count = Math.min(n, free.length);
+    const dA = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));   // LAS-94: clear of the flanking towers (now out of the curtain) and the gatehouse
+    const free = O ? G.a.filter(a => !O.tA.some(b => dA(a, b) < 2.6 / O.Ro) && dA(a, -Math.PI / 2) > 3.4 / O.Ro) : G.a;
+    G.car.count = G.bar.count = Math.min(n, free.length); R.wallGunA = O ? free.slice(0, G.car.count) : [];   // LAS-94: wallClear() keeps the Wall Guard off them
     for (let i = 0; i < G.car.count; i++) { const a = free[i]; o.position.set(Math.cos(a) * r, y, Math.sin(a) * r); o.rotation.set(0, Math.PI / 2 - a, 0); o.scale.setScalar(O ? 1.6 : 1.3); o.updateMatrix();
       G.car.setMatrixAt(i, o.matrix); G.bar.setMatrixAt(i, o.matrix); }
     G.car.instanceMatrix.needsUpdate = G.bar.instanceMatrix.needsUpdate = true;
@@ -10008,6 +10073,15 @@ body.twdev #fps{display:block!important}
 #twbanner>div[style*="ffb59a"]{color:#c4786a!important}
 `;
 
+const LAS95CSS = `
+/* LAS-95: first-run lines sit under the wave line, off the city; Codex/Settings backdrop near black */
+#tw-first{left:50%!important;top:max(150px,15vh)!important}
+#tw-teach{left:50%!important;top:max(250px,26vh)!important;transform:translateX(-50%)!important}
+#tw-teach::after{display:none}
+#tw-teach.lit{animation:twFade95 2.6s ease-in forwards}
+@keyframes twFade95{0%,40%{opacity:1}100%{opacity:0}}
+#tw-codex.dim,#tw-set.dim{background:rgba(0,0,0,.97)}
+`;
 const LAS83CSS = `
 /* LAS-83 new-player clarity: a readable citadel bar, hit pulse + low-HP vignette, ability hints, named plaques, first goal, end summary */
 #tw-hp{width:min(32vw,600px)}
@@ -10511,7 +10585,7 @@ function build() {
   const digits = () => { const ff = document.getElementById('tw-fonts'), bf = ff && ff.textContent.match(/@font-face{font-family:'Barlow';font-style:normal;font-weight:400[^}]*}/);
     if (bf) { const f = el('style'); f.textContent = bf[0].replace("'Barlow'", "'FellNum'").replace(/}$/, ';unicode-range:U+30-39,U+25,U+2B,U+2212}'); document.head.appendChild(f); } };
   if (document.readyState === 'complete') digits(); else root.addEventListener('load', digits);
-  const st = el('style'); st.textContent = CSS + TOWNCSS + CARTCSS + HORRORCSS + LAS83CSS + LAS87CSS + LAS82CSS; document.body.insertAdjacentHTML('afterbegin', TWArt.DEFS); document.head.appendChild(st);
+  const st = el('style'); st.textContent = CSS + TOWNCSS + CARTCSS + HORRORCSS + LAS83CSS + LAS87CSS + LAS82CSS + LAS95CSS; document.body.insertAdjacentHTML('afterbegin', TWArt.DEFS); document.head.appendChild(st);
   const ui = el('div'); ui.id = 'twui';
   ui.innerHTML = `
   <canvas id="tw-aim"></canvas><div id="tw-vig"></div><div id="tw-hit"></div>
