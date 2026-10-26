@@ -7701,7 +7701,7 @@ function mountsTick(S, t, dt, alpha) {
     const c = Math.cos(g.cur) * MSCALE, n = Math.sin(g.cur) * MSCALE, mz = g.muz, P = g.root.position;
     let wx = P.x + mz[0] * c + mz[2] * n, wy = P.y + mz[1] * MSCALE, wz = P.z - mz[0] * n + mz[2] * c;
     if (g.bat) { const B = g.bat, gp = B.g.position, ry = B.g.rotation.y, s = B.cs || TOWN.k;   // the battery's barrel mouth: out along its facing, at the gun's height
-      wx = gp.x + Math.sin(ry) * 1.25 * s * (B.ax || 1); wy = gp.y + (B.sp.h - 0.56) * s; wz = gp.z + Math.cos(ry) * 1.25 * s * (B.ax || 1); if (g.fired) B.shotT = t; }
+      wx = gp.x + Math.sin(ry) * 1.25 * s * (B.ax || 1); wy = gp.y + (B.sp.h - 0.56) * s * (B.ax || 1); wz = gp.z + Math.cos(ry) * 1.25 * s * (B.ax || 1); if (g.fired) B.shotT = t; }
     R.muzzle.set(g.m.x + ',' + g.m.y, [wx, wy, wz]);
     const powder = g.kind === 'cannon' || g.kind === 'mortar' || !MART[g.kind];
     g.flash.visible = powder && g.ft < 0.07;
@@ -7807,7 +7807,7 @@ function guardsTick(S, t, dt, alpha) {
 // LAS-94 (Philippe: "check for clipping"; checks/clipcheck.js): each ring's slots sit in the middle of the free band of their terrace,
 // from the ring inside (the keep's towers, r 3.9, for ring 1; else the inner parapet's cap) to the foot of this ring's wall (the
 // curtain's inner face; the parapet now stands just inside that line). r, hex (the tile's top circumradius, m) and fit (how far, m, a
-// building may reach from its slot below 5.3 m: wider ones are narrowed, never lowered) all follow RLOOK.outerR, so wider terraces
+// building may reach from its slot below 5.3 m: wider ones are scaled down whole, LAS-108) all follow RLOOK.outerR, so wider terraces
 // (LAS-92) give the buildings their width back. Ring 1 sits higher, clear of the keep's rock.
 const TOWN = { r: [], n: [4, 6, 8, 10], step: [1, 2, 3, 4], y: [1.05, 0.7, 0.5, 0.32], hex: [], fit: [], fitHi: 2.1, keepR: 3.9, k: 2.2, rise: 1.7, lvl: 1.3, ember: '#ff6a20', pool: '#8fa6b6' };   // LAS-98: pool = the rise's light on its slot (cool, small)
 const wallFoot = k => RLOOK.outerR[k] - 0.85 * RLOOK.wallS, parapetB = k => wallFoot(k) + 0.4;   // the curtain's inner face; the city parapet's line (its cap reaches 0.4 in)
@@ -8155,8 +8155,10 @@ function townLook(id, lv, q = 2, plinth) {   // the cached geometry for (id, lv)
   let glow = H.gn ? G.geo() : null; if (glow && ph) glow.translate(0, ph, 0);
   const bg = HB.gn ? BG.geo() : null; if (bg) glow = glow ? T3.mergeGeometries([glow, bg]) : bg;
   const all = nb ? T3.mergeGeometries([solid, B.geo()]) : solid;
-  let rxz = 0.5, rhi = 0.5; for (const G of [all, glow]) { const P = G && G.getAttribute('position'); if (P) for (let i = 0; i < P.count; i++) { const r = Math.hypot(P.getX(i), P.getZ(i)); rhi = Math.max(rhi, r); if (P.getY(i) < 2.4) rxz = Math.max(rxz, r); } }   // LAS-94: its reach below 5.3 m (x k), and at any height
-  return (TOWNC[k] = { solid: all, glow, sp, rxz, rhi });
+  let rxz = 0.5, rhi = 0.5; const yr = []; for (const G of [all, glow]) { const P = G && G.getAttribute('position'); if (P) for (let i = 0; i < P.count; i++) { const r = Math.hypot(P.getX(i), P.getZ(i)); rhi = Math.max(rhi, r); yr.push([P.getY(i), r]); if (P.getY(i) < 2.4) rxz = Math.max(rxz, r); } }
+  yr.sort((p, q) => p[0] - q[0]); for (let i = 1; i < yr.length; i++) yr[i][1] = Math.max(yr[i][1], yr[i - 1][1]);   // LAS-108: reach(y) = its reach below model height y   // LAS-94: its reach below 5.3 m (x k), and at any height
+  const reach = y => { let lo = 0, hi = yr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (yr[m][0] < y) lo = m + 1; else hi = m; } return lo ? yr[lo - 1][1] : 0.5; };
+  return (TOWNC[k] = { solid: all, glow, sp, rxz, rhi, reach });
 }
 // the level podium under a building (into pen H, y 0 = the hex top); returns its height (0 at level I)
 function townPodium(lv, H) {
@@ -8291,7 +8293,7 @@ function occMeshes() {
 function occTick(S, dt) {
   const cyls = occCyls(), TW = R.town; let hid = !!R.occForce;
   const behind = (x, y, z, h) => R.occBehind(x, y, z, cyls) || (h > 0 && (R.occBehind(x, y + h * 0.5, z, cyls) || R.occBehind(x, y + h, z, cyls)));
-  const recH = rec => rec && rec.sp ? (rec.sp.h || 1) * (rec.cs || 1) : 0;
+  const recH = rec => rec && rec.sp ? (rec.sp.h || 1) * (rec.cs || 1) * (rec.ax || 1) : 0;   // LAS-108: x the fit
   const hv = R.hover, X = R.hex;
   if (!hid && hv && X) { const s = X.list.find(q => q.ring === hv.ring && q.i === hv.slot), rec = TW && TW.recs.get(hv.ring * 16 + hv.slot);
     if (s) hid = behind(s.x, s.y + HEX.top * TOWN.k, s.z, recH(rec)); }
@@ -8384,15 +8386,23 @@ function townRec(TW, key, sl, fresh, t) {
   townBuild(TW, rec); if (fresh) townAnim(TW, rec, 'rise', t);
   return rec;
 }
+// LAS-94: fit the band below 5.3 m (and clear the neighbours higher up). LAS-108: a uniform scale, so what stood above 5.3 m may come
+// below it: re-measure the reach under 5.3 m / the scale until it holds
+function townFit(C, ring) {
+  let a = Math.min(1, TOWN.fitHi / (C.rhi * TOWN.k));
+  for (let it = 0; it < 8; it++) { const b = Math.min(a, TOWN.fit[ring - 1] / (Math.max(0.5, C.reach(2.4 / a)) * TOWN.k)); if (b > a - 1e-4) break; a = b; }
+  return a;
+}
 function townBuild(TW, rec) {   // (re)fills rec.pv with the look of (id, lv)
   for (const c of rec.pv.children.slice()) rec.pv.remove(c);
   const C = townLook(townId(rec.id), rec.lv), sp = C.sp; rec.sp = sp; rec.fires = []; rec.lamps = []; rec.bell = null;
-  const ring = Math.floor(rec.key / 16), ax = rec.ax = TW.dev && TW.dev.line ? 1 : Math.min(1, TOWN.fit[ring - 1] / (C.rxz * TOWN.k), TOWN.fitHi / (C.rhi * TOWN.k));   // LAS-94: fit the band (and clear the neighbours higher up)
-  const sm = new T3.Mesh(C.solid, TW.tm); sm.castShadow = sm.receiveShadow = true; sm.scale.set(ax, 1, ax); rec.pv.add(sm); rec.solid = sm;
-  if (C.glow) { const gm = new T3.Mesh(C.glow, TW.gm); gm.scale.set(ax, 1, ax); rec.pv.add(gm); }
-  for (const f of sp.fires) { const m = new T3.Mesh(TW.flame, TW.fm), h = new T3.Mesh(TW.plane, TW.hm); m.position.set(f[0] * ax, f[1], f[2] * ax); h.position.set(f[0] * ax, f[1] + 0.05, f[2] * ax); h.renderOrder = 5; rec.pv.add(m, h); rec.fires.push({ m, h, s: f[3] }); }
-  for (const l of sp.lamps) { const h = new T3.Mesh(TW.plane, TW.hm); h.position.set(l[0] * ax, l[1], l[2] * ax); h.renderOrder = 5; rec.pv.add(h); rec.lamps.push({ h, s: l[3] }); }
-  if (sp.bell) { const b = new T3.Group(); b.position.set(0, sp.bell.y, 0); b.scale.set(ax, 1, ax); b.add(new T3.Mesh(sp.bell.geo, TW.tm)); rec.pv.add(b); rec.bell = { g: b, amp: sp.bell.amp }; }
+  const ring = Math.floor(rec.key / 16), ax = rec.ax = TW.dev && TW.dev.line ? 1 : townFit(C, ring);
+  // LAS-108 (Philippe: "stretched card buildings"): the fit scales the whole building (x = y = z), never its width alone, so it keeps its card's proportions
+  const sm = new T3.Mesh(C.solid, TW.tm); sm.castShadow = sm.receiveShadow = true; sm.scale.setScalar(ax); rec.pv.add(sm); rec.solid = sm;
+  if (C.glow) { const gm = new T3.Mesh(C.glow, TW.gm); gm.scale.setScalar(ax); rec.pv.add(gm); }
+  for (const f of sp.fires) { const m = new T3.Mesh(TW.flame, TW.fm), h = new T3.Mesh(TW.plane, TW.hm); m.position.set(f[0] * ax, f[1] * ax, f[2] * ax); h.position.set(f[0] * ax, (f[1] + 0.05) * ax, f[2] * ax); h.renderOrder = 5; rec.pv.add(m, h); rec.fires.push({ m, h, s: f[3] * ax }); }
+  for (const l of sp.lamps) { const h = new T3.Mesh(TW.plane, TW.hm); h.position.set(l[0] * ax, l[1] * ax, l[2] * ax); h.renderOrder = 5; rec.pv.add(h); rec.lamps.push({ h, s: l[3] * ax }); }
+  if (sp.bell) { const b = new T3.Group(); b.position.set(0, sp.bell.y * ax, 0); b.scale.setScalar(ax); b.add(new T3.Mesh(sp.bell.geo, TW.tm)); rec.pv.add(b); rec.bell = { g: b, amp: sp.bell.amp }; }
 }
 function townAnim(TW, rec, mode, t) {
   rec.mode = mode; rec.a0 = t; rec.dust = 0; rec.swapped = mode === 'rise';
@@ -8434,7 +8444,7 @@ function townTick(S, t, dt) {
     if (rec.mode === 'fall') {
       const k = (t - rec.a0) / 1.2;
       if (k >= 1) { TW.root.remove(rec.g); TW.recs.delete(rec.key); continue; }
-      const e = k * k; rec.pv.position.y = -(rec.sp.h + 0.6) * cs * e; rec.pv.rotation.z = 0.12 * Math.sin(k * 9) * (1 - k); rec.pv.scale.set(cs, cs * (1 - 0.15 * e), cs);
+      const e = k * k; rec.pv.position.y = -(rec.sp.h * rec.ax + 0.6) * cs * e; rec.pv.rotation.z = 0.12 * Math.sin(k * 9) * (1 - k); rec.pv.scale.set(cs, cs * (1 - 0.15 * e), cs);
       if (k > 0.25 && !rec.dust2) { rec.dust2 = 1; townDust(rec, 10, true); }
       continue;
     }
@@ -8442,7 +8452,7 @@ function townTick(S, t, dt) {
       const k = (t - rec.a0) / TOWN.rise;
       if (k >= 1) { rec.mode = null; townDust(rec, 9, true); } else {
         const e = 1 - Math.pow(1 - k, 3);
-        lift = -(rec.sp.h + 1.4) * cs * (1 - e); sy = 1 + 0.05 * Math.sin(k * Math.PI); heat = Math.pow(1 - k, 1.4); gl = Math.sin(Math.min(1, k * 1.2) * Math.PI) * 0.9;
+        lift = -(rec.sp.h * rec.ax + 1.4) * cs * (1 - e); sy = 1 + 0.05 * Math.sin(k * Math.PI); heat = Math.pow(1 - k, 1.4); gl = Math.sin(Math.min(1, k * 1.2) * Math.PI) * 0.9;
         if (!rec.dust) { rec.dust = 1; townDust(rec, 8, false); }
       }
     } else if (rec.mode === 'lvl') {
@@ -8607,7 +8617,7 @@ function townFx(S, TW, t, dt) {
     else if (ev.k === 'brazier') { const r = viewR(ev.r); tfxRing(X, t, { c: TFX.ember, r0: Math.max(2, r - 4), r1: r + 1.5, y: 0.4, dur: 1.1, op: 0.4, add: 1 }); }
     else if (ev.k === 'watch') { const [vx, vz] = toView(Math.cos(ev.a) * ev.d, Math.sin(ev.a) * ev.d); tfxRing(X, t, { c: TFX.watch, r0: 0.5, r1: ev.boss ? 6 : 3.5, y: 0.5, dur: 0.7, op: 0.6, add: 1, x: vx, z: vz }); }
     else if (ev.k === 'rocket') { const rec = slotRecAt(S, ev.sx, ev.sy), [vx, vz] = toView(ev.x, ev.y);
-      const from = rec ? [rec.g.position.x, rec.g.position.y + rec.sp.h * (rec.cs || TOWN.k), rec.g.position.z] : [0, RLOOK.plateau + 3, 0];
+      const from = rec ? [rec.g.position.x, rec.g.position.y + rec.sp.h * (rec.cs || TOWN.k) * (rec.ax || 1), rec.g.position.z] : [0, RLOOK.plateau + 3, 0];
       const head = new T3.Mesh(ico(0.24, 1), mat('#ffd59a', { glow: 1 })), halo = tfxHalo(X, TFX.rocket); X.grp.add(head);
       X.rockets.push({ t0: t, dur: Math.max(0.5, ev.climb || 1), from, to: [vx, 0.4, vz], peak: 9 + 0.2 * Math.hypot(vx - from[0], vz - from[2]), head, halo, r: ev.r || 6, fdur: ev.dur || 3, smoke: 0 }); }
     else if (ev.k === 'boat' && !ev.ok) { const [vx, vz] = toView(Math.cos(ev.a) * ev.r, Math.sin(ev.a) * ev.r);   // a boat lost in the dark: a splash, a ring of foam
