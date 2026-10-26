@@ -3855,7 +3855,7 @@ const TUNE = {
   // light a ring of sea r m out from the wall; n swivel guns on the wall fire only at creatures inside it (dmg x cannon
   // damage, rate shots/s each, no crits, no splash). The big mounts still fire only at what the beam lights.
   // mountsToo: 1 = the ring also lights creatures for the mounts (A/B only).
-  guard: { n: 2, r: 10, dmg: 0.12, rate: 1.5, mountsToo: 0 },
+  guard: { n: 2, r: 10, dmg: 0.09, rate: 1.5, mountsToo: 0 },   // LAS-66: 0.12 -> 0.09 holds run 1 under 4:00 with the wider full-turn beam (curve 9/9)
   // Mount kinds the Forge unlocks (the Cannon is TUNE.cannon). Upgrades, picks and the Forge scale every kind by
   // the same factors: a kind's damage/rate/range = Cannon value x (kind / cannon).
   mountKinds: {
