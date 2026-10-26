@@ -3785,7 +3785,20 @@ const TUNE = {
     kraken: { split: 4, splitHp: 0.08 },     // breaks into 4 Hulks with 8% of its HP each
     // LAS-32: the Mirror Warden turns the light back: it shines darkness: a cone w rad wide from the citadel toward it, on for `on` s, then off for
     // `off` s (it blinks). The guns can't shoot anything inside the cone (the Warden too) unless the Flare burns.
-    mirror: { hpX: 0.6, on: 6, off: 3, w: 1.0 } },
+    mirror: { hpX: 0.6, on: 6, off: 3, w: 1.0 },
+    // LAS-59: the Deep One takes the boss slot at wave `at`, then every `every` waves. One boss made of parts, each its own
+    // target, hit only where the light falls: body (the HP that kills it), eye (hits pass to the body x eyeX, mawX for the
+    // maw; Flare/ability hits pass at x1 through the body only), tentacle_1..tent (own HP: tentHp x the body's; reach the
+    // wall over `reach` s once the body stands (not before), slam it once (slamX x a boss hit), hold `grip` s, draw back, rest; severed ones grow back after
+    // `regrow` s). Eye damage of `recoil` x max HP since the last recoil: it recoils `push` m, every tentacle lets go, the
+    // eye shuts `shut` s. It surfaces `rise` m beyond where it stands (`stand` m out
+    // from the wall) and stays under water, out of reach, until it stands. `again`: per later appearance, slamX and tentHp x again.
+    // at: 0 = off until the Studio Head OKs the turntable sheet (LAS-59: shots/las59/after/sheet.png); tuned and measured at 60
+    deep: { at: 0, every: 40, hpX: 8, stand: 14, rise: 4, eyeX: 3, mawX: 1, tent: 8, tentHp: 0.02, fan: 1.0, cycle: 8, reach: 1.6, grip: 1.2,
+      slamX: 0.15, regrow: 20, recoil: 0.06, push: 5, shut: 2.5, again: 1.5,
+      // floor: its body HP is at least floor x the damage per second the run dealt over its last 3 waves (a strong build
+      // still gets a stream on the eye instead of killing it as it rises)
+      floor: 12 } },
   cannon: { dmg: 400, rate: 1.0, range: 30, shotSpeed: 40, crit: 0.05, critMul: 2, extraMul: 0.4, bigMul: 2, shell: 1.6 },   // extra cannons: 40% damage; x2 vs Hulks and bosses; shell: Cannon mounts only (not abilities)
   gold: { start: 0 },
   embersX: 1,              // Tide 2 raises it
@@ -3880,6 +3893,9 @@ const TUNE = {
     fallbackMax: { mend: 2 },        // LAS-61: Mortar and Stone at most 2x a run (every pick after wave ~40 was a full repair + 110 HP: a wall that never fell)
     evos: { crown: ['lamp2', 'brazier'], stars: ['mortar', 'rocket'], hooks: ['winch', 'beacon'], stormbell: ['bell', 'spire'], field: ['mines', 'wrecker'],
       nightwatch: ['watch', 'choir'], harbour: ['boat', 'cave'], deep: ['horn', 'well'] },
+    // evolutions: card mods the evolved building adds (on top of both parts), and numbers read at runtime (stars: shells light r m for dur s; hooks: reeled creatures burn)
+    evoEff: { crown: { lamps: 1 } }, evoRun: { stars: { r: 5, dur: 1.5, max: 24 }, hooks: { burn: 0.5, lane: 1.2 }, stormbell: { strikes: 6, fdur: 0.4 }, field: { fast: 0.5, gold: 0.4, lure: 1.5 },
+      nightwatch: { more: 3, durX: 2 }, harbour: { nth: 5 }, deep: { hands: 6 } },
     unlocks: { l_lens: 'lamp2', l_clock: 'beacon', g_drill: 'winch', w_stone: 'pitch', p_salvage: 'wrecker', a_eye: 'spire', g_ballista: 'ballista', w_moat: 'mines',
       p_chest: 'cave', a_fourth: 'well', g_mortar: 'mortar', a_owl: 'choir', g_tesla: 'tesla' },
     // runtime numbers: rocket {every s, n rockets, r m, dur s, reach m, climb s}; bell {every, stun s (boss), dmg x cannon}; horn {every, r, dur, boss};
@@ -3896,13 +3912,29 @@ const TUNE = {
       boat:       { name: 'Boathouse', role: 'greed', home: 'out', live: 1, eff: [], run: [{ every: 12, trip: 6, n: 1, mul: 5, catch: 2 }, { n: 2 }, { mul: 8 }] },
       horn:       { name: 'Fog Horn', role: 'strange', home: 'out', live: 1, eff: [], run: [{ every: 20, r: 25, dur: 2, boss: 0.5 }, { every: 16 }, { every: 12, dur: 3 }] },
       // the 13 Forge buildings: names and homes now, mechanics in work-list item 2 (live 0 = not in the pool)
-      lamp2: { name: 'Lamp Tower', role: 'light', home: 'in', live: 0 }, beacon: { name: 'Beacon Stack', role: 'light', home: 'in', live: 0 },
-      ballista: { name: 'Ballista Tower', role: 'kill', home: 'out', live: 0 }, mortar: { name: 'Mortar Pit', role: 'kill', home: 'out', live: 0 },
-      tesla: { name: 'Tesla Coil', role: 'kill', home: 'out', live: 0 }, winch: { name: 'Whaler’s Winch', role: 'kill', home: 'out', live: 0 },
-      mines: { name: 'Sea Mines', role: 'kill', home: 'out', live: 0 }, pitch: { name: 'Pitch Chutes', role: 'hold', home: 'in', live: 0 },
-      wrecker: { name: 'Wreckers’ Lamp', role: 'greed', home: 'out', live: 0 }, cave: { name: 'Smugglers’ Cave', role: 'greed', home: 'out', live: 0 },
-      well: { name: 'The Old Well', role: 'strange', home: 'out', live: 0 }, spire: { name: 'Storm Spire', role: 'strange', home: 'out', live: 0 },
-      choir: { name: 'Drowned Choir', role: 'strange', home: 'out', live: 0 },
+      // LAS-91 part 1 (live): Lamp Tower (+1 beam; II beams 25% wider; III 6 m farther), Beacon Stack (fixed lights 'at' m out that burn: dps x cannon damage for dur s;
+      // II: wider and whale oil; III: a second stack), Ballista / Mortar / Tesla (a mount of that kind on the slot, mount = x its kind's damage; pierce / splashR / chain
+      // add to the kind's numbers; ground: the shell leaves fire for that many s), Winch (every s: mul x dmg on the toughest lit creature within reach m, reeled pull m
+      // toward the wall, bosses x bossPull; III: Sounders can't dive for nodive s)
+      lamp2: { name: 'Lamp Tower', role: 'light', home: 'in', live: 1, eff: [{ lamps: 1 }, { beamW: 0.25 }, { len: 6 }], run: [{}, {}, {}] },
+      beacon: { name: 'Beacon Stack', role: 'light', home: 'in', live: 1, eff: [{}, { oil: 1 }, {}], run: [{ r: 7, burn: 0.3, dur: 3, at: 18, n: 1 }, { r: 9 }, { n: 2 }] },
+      ballista: { name: 'Ballista Tower', role: 'kill', home: 'out', live: 1, eff: [{}, {}, { exec: 0.1 }], run: [{ mount: 0.7, mk: 'ballista' }, { pierce: 1 }, { pierce: 2 }] },
+      mortar: { name: 'Mortar Pit', role: 'kill', home: 'out', live: 1, eff: [], run: [{ mount: 0.7, mk: 'mortar' }, { splashR: 1 }, { ground: 3, groundDps: 0.4 }] },
+      tesla: { name: 'Tesla Coil', role: 'kill', home: 'out', live: 1, eff: [], run: [{ mount: 0.7, mk: 'tesla' }, { chain: 2 }, { chainMul: 0.9 }] },
+      winch: { name: 'Whaler’s Winch', role: 'kill', home: 'out', live: 1, eff: [], run: [{ every: 8, mul: 5, pull: 8, reach: 30, bossPull: 0.3 }, { every: 6 }, { pull: 14, nodive: 2.5 }] },
+      // LAS-91 part 2 (live): Sea Mines (n mines drift out at sea; a lit creature within trig m sets one off: dmg x cannon damage in r m; a new one every s),
+      // Pitch Chutes (every s the most crowded arc deg of the wall burns burn x dmg/s for dur s; fire jumps spread m), Wreckers' Lamp (creatures within r m of a rock
+      // 'rock' m out drift to it, take hit x dmg/s there and pay +gold; hold: the rock holds them s), Smugglers' Cave (put of your gold goes in the chest at each
+      // wave's end, rate interest per wave; it pays out when the wall is under half HP or every 'every' waves), Old Well (every s: hands lit creatures within r
+      // m go under; bosses take bossMul x dmg), Storm Spire (every s: mul x dmg in r m on a lit creature; the flash lights flash m for fdur s),
+      // Drowned Choir (every 'each'th kill in the brazier ring rises as a ghost gunner for dur s, at most max, firing every rate s for dmg x cannon damage)
+      mines: { name: 'Sea Mines', role: 'kill', home: 'out', live: 1, eff: [], run: [{ n: 3, every: 6, dmg: 15, r: 4, trig: 1.2 }, { n: 5 }, { r: 6 }] },
+      pitch: { name: 'Pitch Chutes', role: 'hold', home: 'in', live: 1, eff: [], run: [{ every: 10, arc: 60, burn: 0.5, dur: 4, spread: 1.5 }, { every: 7 }, { arc: 90 }] },
+      wrecker: { name: 'Wreckers’ Lamp', role: 'greed', home: 'out', live: 1, eff: [], run: [{ r: 20, rock: 15, hit: 1, gold: 0.4, hold: 0 }, { gold: 0.7 }, { hold: 1 }] },
+      cave: { name: 'Smugglers’ Cave', role: 'greed', home: 'out', live: 1, eff: [], run: [{ put: 0.2, rate: 0.1, every: 4 }, { rate: 0.15 }, { put: 0.25 }] },
+      well: { name: 'The Old Well', role: 'strange', home: 'out', live: 1, eff: [], run: [{ every: 8, r: 15, hands: 1, bossMul: 10 }, { every: 6 }, { hands: 2 }] },
+      spire: { name: 'Storm Spire', role: 'strange', home: 'out', live: 1, eff: [], run: [{ every: 4, mul: 6, r: 3, flash: 12, fdur: 0.25 }, { every: 3 }, { every: 2 }] },
+      choir: { name: 'Drowned Choir', role: 'strange', home: 'out', live: 1, eff: [], run: [{ each: 20, max: 3, dur: 10, rate: 0.7, dmg: 0.22 }, { max: 5 }, { dur: 20 }] },
     },
   },
   // Mount kinds the Forge unlocks (the Cannon is TUNE.cannon). Upgrades, picks and the Forge scale every kind by
@@ -4050,9 +4082,15 @@ const FOE = {
   siren:   { name: 'The Siren', line: 'She sings, and the Spawn come.' },
   kraken:  { name: 'The Kraken', line: 'Cut it down and it breaks into Hulks.' },
   mirror:  { name: 'The Mirror Warden', line: 'It turns your light back on you. Where it looks, your guns are blind, until it blinks or the Flare burns.' },
+  deep:    { name: 'The Deep One', line: 'You will never see all of it. Light the eye.' },
 };
 const BOSSES = ['leviathan', 'siren', 'kraken', 'mirror'];
-function bossKind(wave) { return BOSSES[(Math.floor(wave / 10) - 1) % BOSSES.length]; }
+function bossKind(wave, T) {   // LAS-59: the Deep One takes the slot at deep.at, then every deep.every waves
+  const D = (T || TUNE).boss.deep;
+  if (D && D.at > 0 && wave >= D.at && (wave - D.at) % D.every === 0) return 'deep';
+  return BOSSES[(Math.floor(wave / 10) - 1) % BOSSES.length];
+}
+const DEEP_PARTS = ['body', 'eye', 'maw'];   // + tentacle_1..tent (render names, LAS-58)
 // The omen of a run: the creature kind it brings more of (known before the run starts, so the mounts can answer it).
 function omen(seed) {
   const k = ['swarmer', 'brute', 'flyer'][(rsHash(seed | 0, 'omen') >>> 0) % 3];
@@ -4389,7 +4427,7 @@ function newRun(opts) {
     guard: [], rim: T.citadel.r, ringR: T.citadel.r + T.guard.r + (fg.ring || 0),   // LAS-53: the Wall Guard's guns, the lit ring's radius (m from the centre)
     // LAS-61 the island town: rim = the wall's radius (creatures stop there); bmod = card-like mods from the buildings; lights = lit patches
     // { x, y, r, from, until, kind }; boats at sea; bossPicks = free picks waiting
-    town: { rings: 1, slots: [], seq: 0, absorbed: {}, evolved: {}, n: [] }, bmod: {}, townHp: 0, lights: [], boats: [], bossPicks: 0, boatSeq: 0, builds: [], pulseUntil: -1, boatStat: { sent: 0, back: 0, lost: 0, gold: 0 },
+    town: { rings: 1, slots: [], seq: 0, absorbed: {}, evolved: {}, n: [] }, bmod: {}, townHp: 0, lights: [], ground: [], mines: [], mineAt: 0, ghosts: [], choirK: 0, chest: 0, chestW: 0, noDiveT: -1, boats: [], bossPicks: 0, boatSeq: 0, builds: [], pulseUntil: -1, boatStat: { sent: 0, back: 0, lost: 0, gold: 0 },
     ev, fx: ev,                                         // S.fx: old name, same array
   };
   townInit(S);
@@ -4421,11 +4459,13 @@ function stats(S) {
   };
 }
 // One mount kind's numbers: { dmg, rate, range, ...special } scaled from the Cannon stats.
-function kindStats(S, kind, st) {
+function kindStats(S, kind, st, m) {
   const c = S.T.cannon; st = st || stats(S);
   if (kind === 'cannon' || !S.T.mountKinds[kind]) return { dmg: st.dmg, rate: st.rate, range: st.range };
   const K = S.T.mountKinds[kind], kp = G(S, 'kindPlus');   // Master Gunner: each trick +1
   const o = Object.assign({}, K, { dmg: st.dmg * K.dmg / c.dmg, rate: st.rate * K.rate / c.rate, range: st.range * K.range / c.range });
+  const x = m && m.ex;   // LAS-91: a town mount's building levels
+  if (x) { if (x.pierce) o.pierce += x.pierce; if (x.chain) o.chain += x.chain; if (x.chainMul) o.chainMul = x.chainMul; if (x.splashR) o.splashR += x.splashR; if (x.ground) { o.ground = x.ground; o.groundDps = x.groundDps; } }
   if (kp) { if (K.pierce) o.pierce += kp; if (K.chain) o.chain += 2 * kp; if (K.splashR) o.splashR += kp; }
   return o;
 }
@@ -4539,7 +4579,7 @@ function townPool(S) {   // buildings a pick can raise: live, the Forge has open
   }
   return r;
 }
-const evry = p => p.every || p.pEvery || p.pushEvery || 0;
+const evry = p => (p && (p.every || p.pEvery || p.pushEvery)) || 0;
 // The card mods and run numbers of every building at its level (an evolved building also keeps its absorbed partner's).
 function rebuild(S) {
   const T = S.T.town, bm = {}; let hp = 0;
@@ -4553,8 +4593,10 @@ function rebuild(S) {
   for (const sl of S.town.slots) {
     const run = {}; add(sl.id, sl.lv, run);
     if (sl.keep) add(sl.keep.id, sl.keep.lv, null);
+    const ee = sl.evo && T.evoEff[sl.evo]; if (ee) for (const k in ee) bm[k] = (bm[k] || 0) + ee[k];
     sl.p = run;
     if (!sl.on && evry(run) > 0) { sl.on = 1; sl.cd = 0.6 * evry(run); }
+    sl.kp = null; if (sl.keep) { const kr = runOf(S, sl.keep.id); sl.kp = kr; if (kr && !sl.kon && evry(kr) > 0) { sl.kon = 1; sl.kcd = 0.6 * evry(kr); } }   // the absorbed partner keeps working
   }
   S.bmod = bm;
   const d = hp - S.townHp; S.townHp = hp;
@@ -4564,13 +4606,20 @@ function rebuild(S) {
   for (let i = MT.length - 1; i >= 0; i--) if (MT[i].b && !S.town.slots.some(s => s.n === MT[i].b && s.p.mount)) MT.splice(i, 1);
   for (const sl of S.town.slots) if (sl.p.mount) {
     let m = null; for (const q of MT) if (q.b === sl.n) m = q;
-    if (!m) { m = { kind: 'cannon', x: sl.x, y: sl.y, cd: 0, mul: 0, b: sl.n }; MT.push(m); }
-    m.mul = sl.p.mount;
+    if (!m) { m = { kind: sl.p.mk || 'cannon', x: sl.x, y: sl.y, cd: 0, mul: 0, b: sl.n }; MT.push(m); }
+    m.mul = sl.p.mount; m.ex = sl.p;
+  }
+  // Beacon Stack: fixed lights out at sea (one per stack), kept in S.lights
+  S.lights = S.lights.filter(L => L.kind !== 'beacon');
+  const bc = { p: runOf(S, 'beacon') };
+  if (bc.p) for (let j = 0; j < bc.p.n; j++) {
+    const a = Math.PI / 2 + (j ? -0.9 : 0.9);
+    S.lights.push({ x: bc.p.at * dcos(a), y: bc.p.at * dsin(a), r: bc.p.r, from: 0, until: Infinity, kind: 'beacon', burn: bc.p.burn, burnDur: bc.p.dur });
   }
 }
 function raise(S, id, at) {   // a new building rises in the next free slot (or at, a vacated one)
   const B = S.T.town.buildings[id], pos = at || freeSlot(S, B.home); if (!pos) return null;
-  const xy = slotXY(S, pos.ring, pos.i), sl = { ring: pos.ring, i: pos.i, id, lv: 1, t: S.t, q: xy.q, r: xy.r, x: xy.x, y: xy.y, n: ++S.town.seq, evo: null, keep: null, p: {}, cd: 0, on: 0 };
+  const xy = slotXY(S, pos.ring, pos.i), sl = { ring: pos.ring, i: pos.i, kp: null, kon: 0, kcd: 0, id, lv: 1, t: S.t, q: xy.q, r: xy.r, x: xy.x, y: xy.y, n: ++S.town.seq, evo: null, keep: null, p: {}, cd: 0, on: 0 };
   S.town.slots.push(sl); rebuild(S);
   S.builds.push({ wave: S.wave, kind: 'new', id, lv: 1 });
   evt(S, { k: 'build', kind: 'new', id, ring: sl.ring, i: sl.i, lv: 1, x: sl.x, y: sl.y, wave: S.wave });
@@ -4738,7 +4787,7 @@ function useAbility(S, key, target) {
   if (key === 'beam') {   // the Flare: no aim, every creature within r
     const r2 = I.r * I.r;
     for (const e of E) {
-      if (e.dead || e.x * e.x + e.y * e.y > r2) continue;
+      if (e.dead || e.host || e.x * e.x + e.y * e.y > r2) continue;   // the Deep One's eye and maw: the Flare burns the body
       hits++; damage(S, e, I.dmg, false, false);
     }
     S.flareT = S.t + I.flareFor;
@@ -4794,7 +4843,8 @@ function useAbility(S, key, target) {
 function spawnArc(W, wave) { return W.arc + ((W.arcTo || W.arc) - W.arc) * Math.min(1, Math.max(0, (wave - 1) / Math.max(1, (W.arcBy || 1) - 1))); }
 function startWave(S) {
   const W = S.T.wave, B = S.T.boss;
-  S.wave++;
+  S.wave++; chestWave(S);
+  (S.dmgHist || (S.dmgHist = [])).push([S.t, S.dmgSum || 0]); if (S.dmgHist.length > 4) S.dmgHist.shift();   // LAS-59: the Deep One's HP floor
   for (const L of S.loud) if (L.after === null && S.wave >= L.wave + 3) L.after = S.biggestHit;
   const K = S.T.kinds;
   // slot shares this wave: kinds from their first wave, the omen x omenRise, the Drowned take the rest (>= 20%)
@@ -4824,8 +4874,8 @@ function startWave(S) {
     const so = K[k].solo ? 1 : 0;   // solo kinds keep their own count and numbers
     S.spawnQ.push({ at, a, hp: hp * hpF * K[k].hp * (so ? hpm : 1), gold: Math.ceil(gold * K[k].gold / (so ? 1 : hm)), kind: k, solo: so, r: op ? op.r : 0 });
   }
-  const boss = B.every > 0 && S.wave % B.every === 0, bk = boss ? bossKind(S.wave) : null;
-  if (boss) S.spawnQ.push({ at: S.t + W.arrive / 2, a: Math.PI / 2 + (rnd(S, 'angle') - 0.5) * arc * 0.5,
+  const boss = B.every > 0 && S.wave % B.every === 0, bk = boss ? bossKind(S.wave, S.T) : null;
+  if (boss) S.spawnQ.push({ at: S.t + W.arrive / 2, a: Math.PI / 2 + (rnd(S, 'angle') - 0.5) * arc * 0.5, r: bk === 'deep' ? S.rim + B.deep.stand + B.deep.rise : 0,
     hp: hp * Math.pow(hm, H ? H.hpPow : 1) * B.hpMul * ((B[bk] && B[bk].hpX) || 1), gold: Math.ceil(gold) * B.goldMul, boss: bk, kind: bk, bw: S.wave });
   S.spawnQ.sort((p, q) => q.at - p.at);   // pop() takes the earliest
   S.nextWave += W.every;
@@ -4846,12 +4896,14 @@ function spawn(S, p) {
     armor: p.boss ? 0 : kd.armor || 0, fly: p.boss ? 0 : kd.fly || 0, sumCd: S.T.boss.siren.every,
     hitMul: Math.pow(S.T.creature.hitGrowth, S.wave) / (p.boss || p.solo ? 1 : S.hordeHit || 1),
     // one hidden class for every creature (LAS-52: thousands alive, megamorphic property loads were the CPU cost)
-    dive: null, under: 0, diveAt: -1, dimR: 0, dark: 0, litSp: 0, glowT: 0, eclOn: false, shine: 0, eclT: 0, bw: p.bw || 0, stunT: 0, fearT: 0, cued: 0 };
+    dive: null, under: 0, diveAt: -1, dimR: 0, dark: 0, litSp: 0, glowT: 0, eclOn: false, shine: 0, eclT: 0, bw: p.bw || 0, stunT: 0, fearT: 0, cued: 0, burnT: 0, burnD: 0, goldX: 1, held: 0, spread: 0, pulled: 0,
+    part: null, host: null, hostX: 0, owner: null, deep: null };
   if (!p.boss && kd.dive) { e.dive = kd.dive; e.under = 0; e.diveAt = -1; }   // Sounders
   if (!p.boss && kd.murk) e.dimR = kd.murk;                                  // Gloams
   if (!p.boss && kd.dark) { e.dark = kd.dark; e.litSp = kd.litSpeed; }        // Shadelings
   if (e.kind === 'mirror') { e.eclOn = true; e.shine = 1; e.eclT = S.T.boss.mirror.on; }   // the Mirror Warden starts dark
   S.enemies.push(e);
+  if (e.kind === 'deep') deepRise(S, e);
   if (S.enemies.length > (S.peak[S.wave] || 0)) S.peak[S.wave] = S.enemies.length;
   if (e.boss && S.ev) S.ev.push({ k: 'boss', id: e.id, wave: S.wave, hp: e.hp, x: e.x, y: e.y, kind: e.kind, name: FOE[e.kind].name });
   if (!S.seen[e.kind]) {   // the first of a kind this run: a banner with its line
@@ -4861,13 +4913,17 @@ function spawn(S, p) {
 }
 
 function kill(S, e) {
+  if (e.host) { if (e.host.hp <= 1e-9 && !e.host.dead) kill(S, e.host); return; }   // the eye / maw never die on their own
+  if (e.part && e.part !== 'body') { deepSever(S, e); return; }
   e.dead = true; S.kills++; if (e.boss) S.bossKills++;
   if (e.boss) bossFell(S, e);
   const sp = e.boss && G(S, 'spoils');   // Spoils of the Deep (keystone): boss gold x spoilsGold and an extra pick
   if (sp && S.bossKills % S.T.forge.key.spoilsEvery === 0) S.spoils = (S.spoils || 0) + 1;
-  const g = Math.ceil(e.gold * stats(S).bounty * (sp ? S.T.forge.key.spoilsGold : 1) - 1e-9); S.gold += g; S.goldEarned += g;
+  if (S.ghosts.length || S.town.slots.length) choirRise(S, e);
+  const g = Math.ceil(e.gold * e.goldX * stats(S).bounty * (sp ? S.T.forge.key.spoilsGold : 1) - 1e-9); S.gold += g; S.goldEarned += g;
   if (S.ev) S.ev.push({ k: 'kill', id: e.id, x: e.x, y: e.y, gold: g, boss: e.boss, kind: e.kind });
   if (S.dark && S.dark.id === e.id) { S.dark = null; if (S.ev) S.ev.push({ k: 'eclipse', id: e.id, on: false }); }   // the Mirror Warden goes dark
+  if (e.deep) deepFell(S, e);
   if (e.kind === 'kraken') {   // breaks into Hulks where it died
     const KR = S.T.boss.kraken;
     for (let j = 0; j < KR.split; j++) {
@@ -4886,7 +4942,9 @@ function damage(S, e, dmg, crit, splash, ab) {
   if (e.dead || (e.under > S.t && !ab)) return false;
   if (splash && e.armor) dmg *= 1 - e.armor;
   if (S.mod.jack && rnd(S, 'jack') * S.T.jackIn < 1) { dmg *= S.T.jackMul; crit = true; }
-  e.hp -= dmg;
+  if (e.host) return deepHit(S, e, dmg, crit, splash, ab);   // the Deep One's eye / maw: the hit lands on the body
+  e.hp -= dmg; S.dmgSum = (S.dmgSum || 0) + dmg;
+  if (e.part) deepTally(S, e, dmg);
   if (dmg > S.biggestHit) S.biggestHit = dmg;
   if (S.ev) {
     S.ev.push({ k: 'hit', id: e.id, x: e.x, y: e.y, dmg, crit, splash });
@@ -4895,6 +4953,114 @@ function damage(S, e, dmg, crit, splash, ab) {
   const ex = M(S, 'exec');
   if (e.hp <= 1e-9 || (ex > 0 && !e.boss && e.hp < ex * e.maxHp)) { kill(S, e); return true; }
   return false;
+}
+// ---- the Deep One (LAS-59) ----
+// One boss, many targets. spawn() makes the body (kind 'deep', part 'body', e.deep = its state); deepRise adds the eye, the
+// maw and tentacle_1..n as creatures of their own (kind 'deep', boss, e.part = the render name), so the beam, the Flare,
+// the guns and the Wall Guard treat each like any creature: only a lit part can be shot. deepTick places them every step
+// from the body (nothing else moves them). The eye and the maw have no HP of their own: a direct hit passes to the body
+// x hostX (deepHit). Tentacles have their own HP, slam the wall, and grow back. S.deepLog: one record per appearance.
+function deepPart(S, b, part, hp, hostX) {
+  const e = Object.assign({}, b, { id: S.nextId++, part, hp, maxHp: hp, due: 0, litT: -1, rad: part === 'maw' ? 1.5 : part === 'eye' ? 1.2 : 0.9,
+    gold: hostX ? 0 : Math.ceil(b.gold * 0.01), host: hostX ? b : null, hostX: hostX || 0, owner: b, deep: null, cued: 0 });
+  S.enemies.push(e); return e;
+}
+function deepRise(S, b) {
+  const D = S.T.boss.deep, n = (S.deepN = (S.deepN || 0) + 1), k = Math.pow(D.again, n - 1);
+  b.part = 'body'; b.rad = 4;
+  const H = S.dmgHist || [], h0 = H[0], dps = h0 && S.t > h0[0] ? ((S.dmgSum || 0) - h0[1]) / (S.t - h0[0]) : 0;
+  if (D.floor && dps * D.floor > b.maxHp) b.hp = b.maxHp = dps * D.floor;
+  const log = { wave: S.wave, n, t0: S.t, t1: -1, hp: b.maxHp, dmg: {}, peak: {}, stack: {}, slams: 0, wall: 0, severs: 0, recoils: 0, regrows: 0 };
+  const st = b.deep = { up: false, n, slamX: D.slamX * k, tentHp: D.tentHp * k, gauge: 0, eye: null, maw: null, tents: [], log, win: {} };
+  st.eye = deepPart(S, b, 'eye', b.maxHp / D.eyeX, D.eyeX);
+  st.maw = deepPart(S, b, 'maw', b.maxHp / D.mawX, D.mawX);
+  for (let i = 0; i < D.tent; i++) st.tents.push({ i, e: deepPart(S, b, 'tentacle_' + (i + 1), b.maxHp * st.tentHp, 0), ph: -i * D.cycle / D.tent, grow: -1, f: 0 });
+  (S.deepLog || (S.deepLog = [])).push(log); (S.deepEyes || (S.deepEyes = [])).push(st.eye);
+  if (S.ev) S.ev.push({ k: 'deep', id: b.id, wave: S.wave, n, parts: [st.eye.id, st.maw.id].concat(st.tents.map(q => q.e.id)) });
+}
+// damage per part (a tentacle by its own name; S.deepLog sums): totals, the best 1 s, and the longest stream (hits with
+// gaps under 0.6 s: the number stack on screen)
+function deepTally(S, e, dmg) {
+  const b = e.host || (e.part === 'body' ? e : e.owner), st = b && b.deep; if (!st) return;
+  const L = st.log, p = e.part, w = st.win[p] || (st.win[p] = { t0: S.t, s: 0, last: -9, run: 0 });
+  if (e === b) { st.eye.hp = b.hp / st.eye.hostX; st.maw.hp = b.hp / st.maw.hostX; }   // the eye and maw read the body's HP
+  L.dmg[p] = (L.dmg[p] || 0) + dmg;
+  if (S.t - w.t0 >= 1) { w.t0 = S.t; w.s = 0; }
+  w.s += dmg; if (w.s > (L.peak[p] || 0)) L.peak[p] = w.s;
+  w.run = S.t - w.last < 0.6 ? w.run + dmg : dmg; w.last = S.t; if (w.run > (L.stack[p] || 0)) L.stack[p] = w.run;
+}
+function deepHit(S, e, dmg, crit, splash, ab) {   // the eye or the maw: only direct hits count, and they land on the body
+  const b = e.host; if (b.dead || splash || ab) return false;
+  dmg *= e.hostX; b.hp -= dmg; S.dmgSum = (S.dmgSum || 0) + dmg;
+  if (dmg > S.biggestHit) S.biggestHit = dmg;
+  if (S.ev) {
+    S.ev.push({ k: 'hit', id: e.id, x: e.x, y: e.y, dmg, crit, splash, part: e.part });
+    if (crit) S.ev.push({ k: 'crit', id: e.id, x: e.x, y: e.y, dmg });
+  }
+  deepTally(S, e, dmg);
+  const D = S.T.boss.deep, st = b.deep;
+  if (e.part === 'eye' && (st.gauge += dmg) >= D.recoil * b.maxHp && b.hp > 1e-9) deepRecoil(S, b);
+  if (b.hp <= 1e-9) { kill(S, b); return true; }
+  st.eye.hp = b.hp / st.eye.hostX; st.maw.hp = b.hp / st.maw.hostX; return false;
+}
+function deepRecoil(S, b) {   // the eye took too much: it shuts, the Deep One pulls back push m and every tentacle lets go
+  const D = S.T.boss.deep, st = b.deep, d = Math.hypot(b.x, b.y) || 1, nd = Math.min(S.T.wave.spawnR, d + D.push), f = nd / d;
+  st.gauge = 0; st.log.recoils++; b.x *= f; b.y *= f; st.eye.under = S.t + D.shut;
+  for (const q of st.tents) if (q.ph < D.cycle - D.reach) q.ph = Math.max(q.ph, 2 * D.reach + D.grip);   // draw back now
+  if (S.ev) S.ev.push({ k: 'recoil', id: b.id, eye: st.eye.id, x: b.x, y: b.y, shut: D.shut });
+}
+function deepSever(S, e) {   // a tentacle cut through: gone (a little gold), grows back regrow s later
+  const b = e.owner, st = b && b.deep; e.dead = true; e.hp = 0;
+  const g = Math.ceil(e.gold * stats(S).bounty - 1e-9); S.gold += g; S.goldEarned += g;
+  if (st) { const q = st.tents.find(t => t.e === e); if (q) q.grow = S.t + S.T.boss.deep.regrow; st.log.severs++; }
+  if (S.ev) S.ev.push({ k: 'sever', id: e.id, x: e.x, y: e.y, part: e.part, gold: g, host: b ? b.id : 0 });
+}
+function deepFell(S, b) {   // the body is gone: every part goes with it
+  const st = b.deep; st.log.t1 = S.t; S.deepEyes = S.deepEyes.filter(e => e !== st.eye);
+  for (const p of [st.eye, st.maw].concat(st.tents.map(q => q.e))) if (!p.dead) { p.dead = true; p.hp = 0; }
+}
+// every step, before the creatures walk: the body comes in to stand m out from the wall (stops for the Bell, backs off
+// from the Fog Horn), then the parts are placed. Each tentacle runs its cycle: reach the wall (reach s), slam once, hold
+// grip s, draw back (reach s), rest. f = how far out it is (0 at the body, 1 on the wall; render reads it as q.f).
+function deepTick(S, dt) {
+  const D = S.T.boss.deep, C = S.T.creature, wallR = S.rim;
+  for (const b of S.enemies) {
+    if (b.dead || !b.deep) continue;
+    const st = b.deep; let d = Math.hypot(b.x, b.y) || 1, still = false;
+    if (b.stunT > 0) { b.stunT -= dt; still = true; }
+    else if (b.fearT > 0) { b.fearT -= dt; const nd = Math.min(S.T.wave.spawnR, d + C.speed * b.speed * dt), f = nd / d; b.x *= f; b.y *= f; d = nd; }
+    else if (d > wallR + D.stand) { const nd = Math.max(wallR + D.stand, d - C.speed * b.speed * dt), f = nd / d; b.x *= f; b.y *= f; d = nd; }
+    const ux = b.x / d, uy = b.y / d, vx = -uy, vy = ux, came = d <= wallR + D.stand + 0.01;   // came: it stands, the tentacles reach
+    if (!came && !st.up) { b.under = S.t + 1; st.eye.under = st.maw.under = b.under; for (const q of st.tents) q.e.under = b.under; }
+    else if (!st.up) {   // it stands: it rises out of the sea
+      st.up = true; b.under = st.maw.under = 0; if (!(st.eye.under > S.t + 1)) st.eye.under = 0; for (const q of st.tents) q.e.under = 0; st.log.up = S.t;
+      if (S.ev) S.ev.push({ k: 'deepUp', id: b.id, x: b.x, y: b.y });
+    }
+    st.eye.x = b.x - ux * 2.6 + vx * 1.4; st.eye.y = b.y - uy * 2.6 + vy * 1.4; st.eye.hp = b.hp / st.eye.hostX;
+    st.maw.x = b.x - ux * 3.2 - vx * 1.6; st.maw.y = b.y - uy * 3.2 - vy * 1.6; st.maw.hp = b.hp / st.maw.hostX;
+    const n = st.tents.length, a0 = datan2(b.y, b.x);
+    for (const q of st.tents) {
+      let e = q.e;
+      if (e.dead) {
+        if (q.grow < 0 || S.t < q.grow) continue;
+        e = q.e = deepPart(S, b, 'tentacle_' + (q.i + 1), b.maxHp * st.tentHp, 0); q.ph = 2 * D.reach + D.grip; q.grow = -1; st.log.regrows++;
+        if (S.ev) S.ev.push({ k: 'regrow', id: e.id, host: b.id, part: e.part });
+      }
+      if (!still && (came || q.ph > 0)) q.ph += dt;
+      if (q.ph >= D.cycle) q.ph -= D.cycle;
+      const ph = q.ph, was = q.f;
+      q.f = ph < 0 ? 0 : ph < D.reach ? ph / D.reach : ph < D.reach + D.grip ? 1 : ph < 2 * D.reach + D.grip ? 1 - (ph - D.reach - D.grip) / D.reach : 0;
+      if (q.f >= 1 && was < 1) {   // the slam
+        const hd = C.hitDmg * S.T.boss.hitDmg * st.slamX * b.hitMul;
+        S.hp -= hd; const H = S.hurt || (S.hurt = {}); H.deep = (H.deep || 0) + hd; S.lastHurt = 'deep'; st.log.slams++; st.log.wall += hd;
+        if (S.ev) S.ev.push({ k: 'wallhit', id: e.id, dmg: hd, x: e.x, y: e.y, kind: 'deep', part: e.part });
+      }
+      // base on the body's front, fanned; the tip swings out to the wall at a0 + its fan angle
+      const s = n > 1 ? q.i / (n - 1) - 0.5 : 0, bx = b.x - ux * 2 + vx * s * 6, by = b.y - uy * 2 + vy * s * 6;
+      const ta = a0 + s * D.fan, tx = dcos(ta) * wallR, ty = dsin(ta) * wallR, f = q.f * q.f * (3 - 2 * q.f);
+      e.x = bx + (tx - bx) * f; e.y = by + (ty - by) * f; e.atWall = q.f >= 1;
+    }
+  }
 }
 function removeDead(S) {   // swap-remove; order does not matter
   const E = S.enemies;
@@ -4921,6 +5087,9 @@ function kindHit(S, s, e, ex, ey) {
       const dx = o.x - ex, dy = o.y - ey;
       if (dx * dx + dy * dy <= r2) { damage(S, o, sd, false, true); left--; }
     }
+    if (K.ground && S.ground.length < 30) { S.ground.push({ x: ex, y: ey, r: K.splashR * 0.7, until: S.t + K.ground, dps: K.groundDps }); if (S.ev) S.ev.push({ k: 'ground', x: ex, y: ey, r: K.splashR * 0.7, dur: K.ground }); }
+    const star = evoRun(S, 'stars');   // Star Shells: where a shell lands a light hangs for a moment
+    if (star && S.lights.length < star.max + 4) S.lights.push({ x: ex, y: ey, r: star.r, from: S.t, until: S.t + star.dur, kind: 'star', glow: 0 });
   } else if (K.chain) {   // Tesla: the spark jumps to the nearest creature not yet struck
     const struck = [e]; let cx = ex, cy = ey, d = s.dmg;
     for (let j = 1; j < K.chain; j++) {
@@ -5088,64 +5257,220 @@ function markLights(S, lit) {
       if (e.under > S.t) continue;
       const dx = e.x - L.x, dy = e.y - L.y; if (dx * dx + dy * dy > r2) continue;
       e.litT = lit;
+      if (L.burn) { e.burnT = S.t + L.burnDur; e.burnD = L.burn * S.cst.dmg; }   // Beacon Stack: a creature crossing its light burns
       if (e.dark && L.glow) e.glowT = Math.max(e.glowT, S.t + L.glow);   // Shadelings in a rocket's light stay slow
       if (e.dive && e.diveAt < 0 && !e.atWall) e.diveAt = S.t + e.dive.react + M(S, 'hook');
     }
   }
 }
-function townTick(S, st) {
-  const tw = S.town, dt = S.T.dt, E = S.enemies, B = S.beam;
-  if (!tw.slots.length) return;
-  if (S.lights.length) { let j = 0; for (const L of S.lights) if (L.until > S.t) S.lights[j++] = L; S.lights.length = j; }
-  for (const sl of tw.slots) {
-    const p = sl.p; if (!sl.on) { if (sl.id === 'watch' && p.cue) watchCue(S, p.cue); continue; }
-    if (sl.id === 'watch') { if (p.cue) watchCue(S, p.cue); continue; }
-    sl.cd -= dt; if (sl.cd > 0) continue;
-    if (sl.id === 'brazier') {   // III: the braziers flare, the lit ring grows for a few seconds
-      sl.cd += p.pEvery; S.pulseUntil = S.t + p.pDur; S.pulseAdd = p.pAdd; evt(S, { k: 'brazier', r: S.ringR + p.pAdd, dur: p.pDur });
-    } else if (sl.id === 'rocket') {   // a signal rocket hangs a light over the biggest pack
+function runOf(S, id) {   // merged run numbers of building id at its level (standing alone or kept inside an evolution); null if the island has none
+  let lv = 0; for (const q of S.town.slots) { if (q.id === id) lv = q.lv; else if (q.keep && q.keep.id === id) lv = q.keep.lv; }
+  if (!lv) return null;
+  const r = {}, R = S.T.town.buildings[id].run; for (let l = 0; l < lv; l++) if (R[l]) Object.assign(r, R[l]); return r;
+}
+const evoRun = (S, key) => S.town.slots.some(q => q.evo === key) ? S.T.town.evoRun[key] : null;
+// burning (Beacon, Mortar ground, Burning Hooks): a steady bleed every 6th step, no hit events (thousands may burn at once)
+function burnTick(S) {
+  if (S.tick % 6) return;
+  const E = S.enemies, h = 6 * S.T.dt, G0 = S.ground;
+  if (G0.length) {
+    let j = 0; for (const g of G0) if (g.until > S.t) G0[j++] = g; G0.length = j;
+    for (const g of G0) { const r2 = g.r * g.r;
+      for (const e of E) { if (e.dead || e.fly || e.under > S.t) continue; const dx = e.x - g.x, dy = e.y - g.y; if (dx * dx + dy * dy <= r2) { e.burnT = S.t + 0.5; e.burnD = Math.max(e.burnD, g.dps * S.cst.dmg); } } }
+  }
+  let sp = 0;
+  for (const e of E) if (e.burnT > S.t && !e.dead && !e.host) {   // (LAS-59: the Deep One's eye and maw burn through its body)
+    e.hp -= e.burnD * h; if (e.hp <= 1e-9) { kill(S, e); continue; }
+    if (e.spread && sp < 24) { sp++; const r2 = e.spread * e.spread; for (const o of E) { if (o.burnT > S.t || o.dead || o.under > S.t) continue; const dx = o.x - e.x, dy = o.y - e.y; if (dx * dx + dy * dy <= r2) { o.burnT = e.burnT; o.burnD = e.burnD; o.spread = e.spread; } } }
+  }
+}
+const degOf = e => ((datan2(e.y, e.x) * 180 / Math.PI) % 360 + 360) % 360;
+// Storm Spire: a bolt on a lit creature (the toughest when 'tough', else a random one), mul x dmg in r m; the flash lights flash m for fdur s
+function spireStrike(S, st, p, n, tough, fdur) {
+  let did = 0;
+  for (let j = 0; j < n; j++) {
+    let best = null, cnt = 0;
+    for (const e of S.enemies) {
+      if (e.dead || e.under > S.t || e.pulled === S.tick || (e.litT < S.t - S.T.dt - 1e-9 && S.flareT <= S.t)) continue;
+      if (tough) { if (!best || e.hp > best.hp) best = e; } else if (rnd(S, 'spire') * ++cnt < 1) best = e;
+    }
+    if (!best) break;
+    best.pulled = S.tick; did++;
+    const r2 = p.r * p.r, x = best.x, y = best.y; let left = 30;
+    for (const o of S.enemies) { if (left <= 0) break; if (o.dead || o.under > S.t) continue; const dx = o.x - x, dy = o.y - y; if (dx * dx + dy * dy <= r2) { damage(S, o, p.mul * st.dmg, false, true); left--; } }
+    S.lights.push({ x, y, r: p.flash, from: S.t, until: S.t + (fdur || p.fdur), kind: 'flash', glow: 0 });
+    evt(S, { k: 'strike', x, y, r: p.r, flash: p.flash });
+  }
+  return did > 0;
+}
+// the world of the greed / kill / strange buildings that is not a timed shot: mines at sea, the Wreckers' rock, ghost gunners, the cave's chest
+function worldTick(S, st) {
+  const dt = S.T.dt, E = S.enemies, mp = runOf(S, 'mines'), wp = runOf(S, 'wrecker'), cp = runOf(S, 'choir'), fld = evoRun(S, 'field');
+  if (!mp) S.mines.length = 0;
+  else {
+    if (S.mines.length < mp.n && S.t >= S.mineAt) {   // the harbour floats a new mine out on the tide
+      const a = Math.PI / 2 + (rnd(S, 'mine') - 0.5) * 2.4, r = 9 + rnd(S, 'mine') * 12;
+      S.mines.push({ x: r * dcos(a), y: r * dsin(a), id: ++S.boatSeq }); S.mineAt = S.t + mp.every * (fld ? fld.fast : 1);
+    }
+    for (let i = S.mines.length - 1; i >= 0; i--) {   // light sets one off
+      const m = S.mines[i], t2 = mp.trig * mp.trig; let hit = false;
+      for (const e of E) { if (e.dead || e.under > S.t || (e.litT < S.t - dt - 1e-9 && S.flareT <= S.t)) continue; const dx = e.x - m.x, dy = e.y - m.y; if (dx * dx + dy * dy <= t2) { hit = true; break; } }
+      if (!hit) continue;
+      const r2 = mp.r * mp.r; let left = 40;
+      for (const e of E) { if (left <= 0) break; if (e.dead || e.under > S.t) continue; const dx = e.x - m.x, dy = e.y - m.y; if (dx * dx + dy * dy <= r2) { if (fld) e.goldX = Math.max(e.goldX, 1 + fld.gold); damage(S, e, mp.dmg * st.dmg, false, true); left--; } }
+      evt(S, { k: 'mine', x: m.x, y: m.y, r: mp.r }); S.mines.splice(i, 1);
+    }
+  }
+  if (wp) {   // Wreckers' Lamp: a false light; the tide bends to the rock and pays more there
+    const rx = 0, ry = wp.rock, R = wp.r * (fld ? fld.lure : 1), R2 = R * R, sp = S.T.creature.speed * 0.6 * dt;
+    for (const e of E) {
+      if (e.dead || e.atWall || e.under > S.t || e.boss || e.fearT > 0) continue;
+      const dx = rx - e.x, dy = ry - e.y, d2 = dx * dx + dy * dy; if (d2 > R2) continue;
+      e.goldX = Math.max(e.goldX, 1 + wp.gold);
+      if (d2 > 2.25) { const d = Math.sqrt(d2), k = Math.min(sp, d) / d; e.x += dx * k; e.y += dy * k; }
+      else { e.hp -= wp.hit * st.dmg * dt; if (e.hp <= 1e-9) { kill(S, e); continue; } if (wp.hold && !e.held) { e.held = 1; e.stunT = Math.max(e.stunT, wp.hold); } }
+    }
+  }
+  if (cp) {   // Drowned Choir: ghost gunners on the rim fire at the nearest creature in the ring
+    const nw = evoRun(S, 'nightwatch'), mx = cp.max + (nw ? nw.more : 0), R2 = S.ringR * S.ringR;
+    for (let i = S.ghosts.length - 1; i >= 0; i--) {
+      const g = S.ghosts[i]; if (g.until <= S.t) { S.ghosts.splice(i, 1); continue; }
+      g.cd -= dt; if (g.cd > 0) continue;
+      let best = null, bd = R2; for (const e of E) { if (e.dead || e.under > S.t) continue; const d2 = e.x * e.x + e.y * e.y; if (d2 <= bd) { bd = d2; best = e; } }
+      if (!best) { g.cd = 0; continue; }
+      g.cd += cp.rate; damage(S, best, cp.dmg * st.dmg, false, false); evt(S, { k: 'ghost', x: g.x, y: g.y, id: best.id });
+    }
+    while (S.ghosts.length > mx) S.ghosts.shift();
+  } else S.ghosts.length = 0;
+}
+function choirRise(S, e) {   // called from kill(): every nth kill in the brazier ring rises
+  const cp = runOf(S, 'choir'); if (!cp || e.x * e.x + e.y * e.y > S.ringR * S.ringR) return;
+  if (++S.choirK % cp.each) return;
+  const nw = evoRun(S, 'nightwatch'), a = rnd(S, 'ghost') * Math.PI * 2;
+  S.ghosts.push({ x: S.rim * dcos(a), y: S.rim * dsin(a), until: S.t + cp.dur * (nw ? nw.durX : 1), cd: 0.3 });
+  if (S.ghosts.length > cp.max + (nw ? nw.more : 0)) S.ghosts.shift();
+  evt(S, { k: 'ghostrise', x: e.x, y: e.y });
+}
+function chestWave(S) {   // Smugglers' Cave, at each wave's end: put in, interest on what is there; pays out when the wall is under half or every nth wave
+  const cp = runOf(S, 'cave'); if (!cp) { S.chest = 0; return; }
+  S.chest *= 1 + cp.rate; const put = Math.floor(S.gold * cp.put); S.gold -= put; S.chest += put; S.chestW++;
+  if (S.chest > 0 && (S.hp < S.maxHp * 0.5 || S.chestW % cp.every === 0)) { const g = Math.floor(S.chest); S.gold += g; S.goldEarned += g; evt(S, { k: 'chest', gold: g }); S.chest = 0; }
+}
+function winchShot(S, sl, st) {   // spear the toughest lit creature in reach and reel it toward the wall
+  const p = sl.p, r2 = p.reach * p.reach; let best = null;
+  for (const e of S.enemies) {
+    if (e.dead || e.under > S.t || e.atWall || (e.litT < S.t - S.T.dt - 1e-9 && S.flareT <= S.t)) continue;   // townTick runs before moveBeam: lit as of the last step
+    if (e.x * e.x + e.y * e.y > r2) continue;
+    if (!best || e.hp > best.hp) best = e;
+  }
+  if (!best) return false;
+  const x0 = best.x, y0 = best.y, d = Math.hypot(x0, y0) || 1, hooks = evoRun(S, 'hooks');
+  const dead = damage(S, best, p.mul * st.dmg, false, false, true);
+  if (!dead) {
+    const nd = Math.max(S.rim, d - p.pull * (best.boss ? p.bossPull : 1)), f = nd / d; best.x *= f; best.y *= f;
+    if (nd <= S.rim + 1e-6) { best.atWall = true; best.hitCd = 0; }
+    if (hooks) {
+      best.burnT = S.t + 3; best.burnD = hooks.burn * st.dmg;
+      const dx = best.x - x0, dy = best.y - y0, L2 = dx * dx + dy * dy || 1;
+      for (const o of S.enemies) {   // everything on the line it was dragged along catches fire
+        if (o === best || o.dead || o.under > S.t) continue;
+        const t = Math.max(0, Math.min(1, ((o.x - x0) * dx + (o.y - y0) * dy) / L2)), qx = x0 + dx * t - o.x, qy = y0 + dy * t - o.y;
+        if (qx * qx + qy * qy <= hooks.lane * hooks.lane) { o.burnT = S.t + 3; o.burnD = hooks.burn * st.dmg; }
+      }
+    }
+  }
+  if (p.nodive) S.noDiveT = S.t + p.nodive;
+  evt(S, { k: 'winch', id: best.id, x0, y0, x: best.x, y: best.y, sx: sl.x, sy: sl.y, fire: hooks ? 1 : 0 });
+  return true;
+}
+// one building's turn: id/p its numbers, ck the cooldown key on the slot (sl.cd, or sl.kcd for a partner kept inside an evolution)
+function fireB(S, sl, id, p, st, ck) {
+  const dt = S.T.dt, E = S.enemies, B = S.beam;
+  sl[ck] -= dt; if (sl[ck] > 0) return;
+    if (id === 'brazier') {   // III: the braziers flare, the lit ring grows for a few seconds
+      sl[ck] += p.pEvery; S.pulseUntil = S.t + p.pDur; S.pulseAdd = p.pAdd; evt(S, { k: 'brazier', r: S.ringR + p.pAdd, dur: p.pDur });
+    } else if (id === 'rocket') {   // a signal rocket hangs a light over the biggest pack
       const spots = packSpots(S, p.reach, p.r, p.n);
-      if (!spots.length) { sl.cd = 0; continue; }
-      sl.cd += p.every;
+      if (!spots.length) { sl[ck] = 0; return; }
+      sl[ck] += p.every;
       for (const sp of spots) {
         S.lights.push({ x: sp.x, y: sp.y, r: p.r, from: S.t + p.climb, until: S.t + p.climb + p.dur, kind: 'rocket', glow: p.glow });
         evt(S, { k: 'rocket', x: sp.x, y: sp.y, r: p.r, dur: p.dur, climb: p.climb, sx: sl.x, sy: sl.y });
       }
-    } else if (sl.id === 'bell') {   // the bell rings: everything in the brazier ring stops (III: and takes a hit)
+    } else if (id === 'bell') {   // the bell rings: everything in the brazier ring stops (III: and takes a hit)
       const R2 = S.ringR * S.ringR; let hits = 0;
       for (const e of E) {
         if (e.dead || e.under > S.t || e.x * e.x + e.y * e.y > R2) continue;
         hits++; const t = e.boss ? p.stunBoss : p.stun; if (t > e.stunT) e.stunT = t;
         if (p.dmg > 0) damage(S, e, p.dmg * st.dmg, false, false);
       }
-      if (!hits) { sl.cd = 0; continue; }
-      sl.cd += p.every; evt(S, { k: 'bell', r: S.ringR, hits, x: sl.x, y: sl.y });
-    } else if (sl.id === 'horn') {   // the horn: every creature near turns away
+      if (!hits) { sl[ck] = 0; return; }
+      sl[ck] += p.every; evt(S, { k: 'bell', r: S.ringR, hits, x: sl.x, y: sl.y });
+      const sb = evoRun(S, 'stormbell'); if (sb) spireStrike(S, st, S.T.town.buildings.spire.run[0], sb.strikes, true, sb.fdur);   // Storm Bell: each ring calls strikes
+    } else if (id === 'horn') {   // the horn: every creature near turns away
       const R2 = p.r * p.r; let hits = 0;
       for (const e of E) {
         if (e.dead || e.x * e.x + e.y * e.y > R2) continue;
         hits++; const t = e.boss ? p.boss : p.dur; if (t > e.fearT) e.fearT = t;
       }
-      if (!hits) { sl.cd = 0; continue; }
-      sl.cd += p.every; evt(S, { k: 'horn', r: p.r, hits, dur: p.dur, x: sl.x, y: sl.y });
-    } else if (sl.id === 'breakwater') {   // III: a wave breaks off the rim and throws back everything at the wall
+      if (!hits) { sl[ck] = 0; return; }
+      sl[ck] += p.every; evt(S, { k: 'horn', r: p.r, hits, dur: p.dur, x: sl.x, y: sl.y });
+      const dp = evoRun(S, 'deep'), wl = dp && S.T.town.buildings.well.run[0];   // The Hungry Deep: hands rise round the island
+      if (dp) { let n = 0; for (const e of E) { if (n >= dp.hands) break; if (e.dead || e.boss || e.under > S.t || e.x * e.x + e.y * e.y > S.ringR * S.ringR) continue; n++; evt(S, { k: 'well', id: e.id, x: e.x, y: e.y, boss: 0, sx: sl.x, sy: sl.y }); kill(S, e); } }
+    } else if (id === 'breakwater') {   // III: a wave breaks off the rim and throws back everything at the wall
       let hits = 0;
       for (const e of E) {
         if (e.dead || !e.atWall) continue;
         const d = Math.hypot(e.x, e.y) || 1, nd = Math.min(S.T.wave.spawnR, d + p.push * (e.boss ? p.pushBoss : 1)), f = nd / d;
         e.x *= f; e.y *= f; e.atWall = false; hits++;
       }
-      if (!hits) { sl.cd = 0; continue; }
-      sl.cd += p.pushEvery; evt(S, { k: 'breakwater', hits, push: p.push });
-    } else if (sl.id === 'boat') {   // the boat rows out along the beam and back
-      sl.cd += p.every;
+      if (!hits) { sl[ck] = 0; return; }
+      sl[ck] += p.pushEvery; evt(S, { k: 'breakwater', hits, push: p.push });
+    } else if (id === 'pitch') {   // the most crowded arc of the wall burns, fire runs from creature to creature
+      const nb = 36, cnt = new Int32Array(nb), R2 = (S.rim + 4) * (S.rim + 4);
+      for (const e of E) { if (e.dead || e.under > S.t || e.x * e.x + e.y * e.y > R2) continue; cnt[Math.floor(degOf(e) / 10) % nb]++; }
+      const w = Math.round(p.arc / 10); let best = -1, bc = 0;
+      for (let j = 0; j < nb; j++) { let c = 0; for (let k = 0; k < w; k++) c += cnt[(j + k) % nb]; if (c > bc) { bc = c; best = j; } }
+      if (best < 0) { sl[ck] = 0; return; }
+      const a0 = best * 10, a1 = a0 + w * 10;
+      for (const e of E) { if (e.dead || e.under > S.t || e.x * e.x + e.y * e.y > R2) continue; const ang = degOf(e), d = (ang - a0 + 360) % 360; if (d <= a1 - a0) { e.burnT = S.t + p.dur; e.burnD = p.burn * st.dmg; e.spread = p.spread; } }
+      sl[ck] += p.every; evt(S, { k: 'pitch', a: a0 + (a1 - a0) / 2, arc: p.arc, r: S.rim, x: sl.x, y: sl.y });
+    } else if (id === 'well') {   // a hand takes the toughest lit creature in reach under
+      const r2 = p.r * p.r; let n = 0;
+      for (let h = 0; h < p.hands; h++) {
+        let best = null; for (const e of E) { if (e.dead || e.under > S.t || e.litT < S.t - dt - 1e-9 && S.flareT <= S.t || e.x * e.x + e.y * e.y > r2 || e.pulled === S.tick) continue; if (!best || e.hp > best.hp) best = e; }
+        if (!best) break; best.pulled = S.tick; n++;
+        evt(S, { k: 'well', id: best.id, x: best.x, y: best.y, boss: best.boss ? 1 : 0, sx: sl.x, sy: sl.y });
+        if (best.boss) damage(S, best, p.bossMul * st.dmg, false, false, true); else kill(S, best);
+      }
+      if (!n) { sl[ck] = 0; return; }
+      sl[ck] += p.every;
+    } else if (id === 'spire') {
+      if (!spireStrike(S, st, p, 1, false)) { sl[ck] = 0; return; }
+      sl[ck] += p.every;
+    } else if (id === 'winch') {
+      if (!winchShot(S, sl, st)) { sl[ck] = 0; return; }
+      sl[ck] += p.every;
+    } else if (id === 'boat') {   // the boat rows out along the beam and back
+      sl[ck] += p.every;
       for (let j = 0; j < p.n; j++) {
         const t0 = S.t + j * 0.8;
         S.boats.push({ sl: sl.n, a: B.a + (j ? 0.35 : 0), t0, ret: t0 + p.trip, mul: p.mul, catch: p.catch, r: S.rim, id: ++S.boatSeq });
         S.boatStat.sent++;
       }
     }
+}
+function townTick(S, st) {
+  const tw = S.town, dt = S.T.dt, E = S.enemies, B = S.beam;
+  if (!tw.slots.length) return;
+  if (S.lights.length) { let j = 0; for (const L of S.lights) if (L.until > S.t) S.lights[j++] = L; S.lights.length = j; }
+  for (const sl of tw.slots) {
+    const p = sl.p;
+    if (sl.id === 'watch' && p.cue) watchCue(S, p.cue);
+    if (sl.on) fireB(S, sl, sl.id, p, st, 'cd');
+    if (sl.kp && sl.kon) fireB(S, sl, sl.keep.id, sl.kp, st, 'kcd');
   }
+  const harb = evoRun(S, 'harbour');   // Black Harbour: boats are never lost, every nth one brings a free building level
   // boats: row straight out where the beam pointed at launch and back; pay when back; lost when the tide reaches one in the dark
   for (let i = S.boats.length - 1; i >= 0; i--) {
     const b = S.boats[i];
@@ -5153,12 +5478,13 @@ function townTick(S, st) {
     if (S.t < b.t0) continue;
     const f = Math.min(1, (S.t - b.t0) / (b.ret - b.t0));
     b.r = S.rim + (Math.min(B.len, 20) - S.rim) * (f < 0.5 ? 2 * f : 2 * (1 - f));
-    if (!litAt(S, b.a, b.r) && near(S, b.r * dcos(b.a), b.r * dsin(b.a), b.catch)) {
+    if (!harb && !litAt(S, b.a, b.r) && near(S, b.r * dcos(b.a), b.r * dsin(b.a), b.catch)) {
       S.boatStat.lost++; evt(S, { k: 'boat', id: b.id, ok: false, a: b.a, r: b.r }); S.boats.splice(i, 1); continue;
     }
     if (f >= 1) {
       const g = Math.ceil(Math.ceil(Math.pow(S.T.wave.goldGrowth, S.wave)) * b.mul * st.bounty - 1e-9);
       S.gold += g; S.goldEarned += g; S.boatStat.back++; S.boatStat.gold += g;
+      if (harb && S.boatStat.back % harb.nth === 0) { const lo = S.town.slots.filter(q => q.lv < S.T.town.maxLv && !q.evo).sort((x, y) => x.lv - y.lv || x.n - y.n)[0]; if (lo) levelUp(S, lo.id); }
       evt(S, { k: 'boat', id: b.id, ok: true, gold: g, a: b.a, r: b.r }); S.boats.splice(i, 1);
     }
   }
@@ -5169,7 +5495,7 @@ function watchCue(S, cue) {
   if (S.tick % 5) return;
   const c2 = cue * cue;
   for (const e of S.enemies) {
-    if (e.dead || e.cued || !(e.boss || e.kind === 'brute')) continue;
+    if (e.dead || e.cued || !(e.boss || e.kind === 'brute') || (e.part && e.part !== 'body')) continue;
     if (e.x * e.x + e.y * e.y > c2 || isLit(S, e)) continue;
     e.cued = 1; evt(S, { k: 'watch', id: e.id, kind: e.kind, boss: e.boss, a: datan2(e.y, e.x), d: Math.hypot(e.x, e.y) });
   }
@@ -5187,16 +5513,18 @@ function step(S) {
   while (S.t >= S.nextWave) startWave(S);
   while (S.spawnQ.length && S.spawnQ[S.spawnQ.length - 1].at <= S.t) spawn(S, S.spawnQ.pop());
   for (const k in S.ab) { const ab = S.ab[k]; if (ab.cd > 0) ab.cd = Math.max(0, ab.cd - dt); }
-  const st = stats(S);
-  townTick(S, st);
+  const st = stats(S); S.cst = st;
+  townTick(S, st); worldTick(S, st); burnTick(S);
   moveBeam(S); moveDark(S);
   if (st.regen > 0 && S.hp < S.maxHp) S.hp = Math.min(S.maxHp, S.hp + st.regen * dt);
 
   // creatures walk to the wall, then hit it (Forge: the Moat slows them near it, Iron Spikes bleed them at it)
   const C = T.creature, B = T.boss, wallR = S.rim, E = S.enemies;
   const moat = G(S, 'moat'), moatD = wallR + T.forge.moatR, spikes = G(S, 'spikes');
+  if (S.deepEyes) deepTick(S, dt);   // LAS-59: the Deep One and its parts move on their own
   for (let i = 0; i < E.length; i++) {
     const e = E[i];
+    if (e.part) continue;
     if (e.kind === 'siren' && (e.sumCd -= dt) <= 0) {   // the Siren calls Spawn around her
       e.sumCd += B.siren.every;
       const sk = T.kinds.swarmer, hp = T.wave.hpBase * Math.pow(T.wave.hpGrowth, S.wave) * sk.hp;
@@ -5209,7 +5537,7 @@ function step(S) {
       if (e.under && S.t >= e.under) { e.under = 0; if (S.ev) S.ev.push({ k: 'dive', id: e.id, x: e.x, y: e.y, up: true }); }
       if (e.diveAt >= 0 && S.t >= e.diveAt) {
         if (e.atWall) e.diveAt = -1;
-        else if (S.flareT <= S.t) {
+        else if (S.flareT <= S.t && S.noDiveT <= S.t) {
           e.diveAt = -1; e.under = S.t + e.dive.diveFor; e.litT = -1;
           if (S.ev) S.ev.push({ k: 'dive', id: e.id, x: e.x, y: e.y, up: false });
         }
@@ -5251,11 +5579,16 @@ function step(S) {
 
   // mounts: target the lit creature nearest the wall that is not already doomed by shots in flight
   for (const m of S.mounts) {
-    const ks = kindStats(S, m.kind, st), r2 = ks.range * ks.range;
+    const ks = kindStats(S, m.kind, st, m), r2 = ks.range * ks.range;
     m.cd -= dt;
     while (m.cd <= 0) {
       let best = null, bd = r2;
-      for (let i = 0; i < E.length; i++) {
+      if (S.deepEyes) for (const e of S.deepEyes) {   // LAS-59: the gunners know the eye: a lit Deep One eye in range comes first
+        if (e.dead || e.hp - e.due <= 0 || !isLit(S, e)) continue;
+        const dx = e.x - m.x, dy = e.y - m.y, d2 = dx * dx + dy * dy;
+        if (d2 <= bd) { bd = d2; best = e; }
+      }
+      if (!best) for (let i = 0; i < E.length; i++) {
         const e = E[i]; if (e.dead || e.hp - e.due <= 0 || !isLit(S, e)) continue;
         const dx = e.x - m.x, dy = e.y - m.y, d2 = dx * dx + dy * dy;
         if (d2 <= bd) { bd = d2; best = e; }
@@ -5355,7 +5688,7 @@ function result(S) {
   return { seed: S.seed, wave: S.wave, time: S.t, kills: S.kills, bossKills: S.bossKills, gold: S.goldEarned, spent: S.goldSpent,
     biggestHit: S.biggestHit, embers, nextNodeIn, lv: Object.assign({}, S.lv), picks: S.picks.slice(),
     mounts: S.mounts.map(m => m.kind), abUses, rings: S.town.rings, rim: S.rim, builds: S.builds.slice(), boats: Object.assign({}, S.boatStat),
-    town: S.town.slots.map(q => ({ id: q.id, lv: q.lv, ring: q.ring, i: q.i, evo: q.evo })), evolved: Object.assign({}, S.town.evolved), capped: S.hp > 0, omen: S.omen, tide: S.tide, starlight: S.star, loud };
+    town: S.town.slots.map(q => ({ id: q.id, lv: q.lv, ring: q.ring, i: q.i, evo: q.evo })), evolved: Object.assign({}, S.town.evolved), capped: S.hp > 0, omen: S.omen, tide: S.tide, starlight: S.star, loud, deep: S.deepLog || null };
 }
 
 const FORGE = TUNE.forge.nodes.map(n => n.id), FORGE_FULL = forgeFull(TUNE);   // FORGE_FULL: nodes in a full Forge (forks hold one side)
@@ -5402,6 +5735,7 @@ const MILE = ['', 'a Thousand', 'a Million', 'a Billion', 'a Trillion', 'a Quadr
 
 const FX = {
   numMax: 48, numLife: 0.85, merge: 0.3, stackH: 24, stackMax: 3,          // numbers on screen at most; seconds alive; merge window per creature
+  deepGap: 0.6, deepHold: 1.1, deepFade: 0.8, deepMax: 3, deepNums: 5,   // while its piles run, at most deepNums other numbers (the Flare made a wall of them)     // LAS-59: a Deep One part's stack runs while hits come < deepGap s apart, then holds and fades
   numSize: [13, 34], critMul: 1.35,               // font px from small to huge hits; crits are 35% bigger
   numCol: '#f3e6cf', critCol: '#dfe8ee', beamCol: '#e6f1ff',
   shakeDecay: 1.6, shakeAmp: 0.9,                 // trauma per second lost; world units at full trauma
@@ -5520,7 +5854,13 @@ function frame(S, t, dt) {
 
 function onEv(S, e) {
   switch (e.k) {
-    case 'hit': num(S, e); if (!e.splash) play(e.crit ? 'crit' : 'hit', e.crit ? 0.07 : 0.05); break;
+    case 'hit': if (F.deep && F.deep.has(e.id)) pile(e); else num(S, e); if (!e.splash) play(e.crit ? 'crit' : 'hit', e.crit ? 0.07 : 0.05); break;
+    // LAS-59 the Deep One: its parts' hits pile into stacks; it rises with its call; slams, severs and the eye's recoil hit hard
+    case 'deep': { const M = F.deep || (F.deep = new Map()); M.set(e.id, 'body'); e.parts.forEach((id, i) => M.set(id, i === 0 ? 'eye' : i === 1 ? 'maw' : 'tentacle')); break; }
+    case 'regrow': (F.deep || (F.deep = new Map())).set(e.id, 'tentacle'); break;
+    case 'deepUp': kick(0.55); play('deep', 0); break;
+    case 'sever': kick(0.25); play('bossdie', 0.4); break;
+    case 'recoil': kick(0.4); hold(FX.stop.bossCrit * 2); play('boss', 0.5); break;
     case 'crit':   // crit shake only up to a small cap; a crit on a boss also gets a short hit-stop (at most every 0.6 s)
       if (F.bossIds.has(e.id)) { kick(0.25); if (F.t > F.critStop) { F.critStop = F.t + 0.6; hold(FX.stop.bossCrit); } } else kick(0.06, 0.2);
       break;
@@ -5550,7 +5890,7 @@ function onEv(S, e) {
       const f = e.dmg / Math.max(1, S.maxHp);
       if (f >= 0.01) F.flash = Math.min(1, F.flash + f * 6);   // LAS-81: only a real hit pulses (steady chip damage kept the screen red: the dark must stay black)
       if (f >= 0.01 && root.TWUI && root.TWUI.hit) root.TWUI.hit(e.x, e.y, f, e.kind);   // LAS-83: a red pulse in from the edge the hit came from; LAS-98: real hits only (chip damage kept a red glow up)
-      if (F.bossIds.has(e.id)) { kick(0.45); play('wallboss', 0.7); }   // LAS-88: a boss pounding the wall was ~1 boom a second (the 10-min mix check)
+      if (F.bossIds.has(e.id) || e.kind === 'deep') { kick(0.45); play('wallboss', 0.7); }   // LAS-88: a boss pounding the wall was ~1 boom a second (the 10-min mix check)
       else { if (f >= 0.03) kick(0.12); play('wall', 0.12); }
       break;
     }
@@ -5586,7 +5926,9 @@ function num(S, e) {
   if (n && n.age < FX.merge && n.dmg !== undefined) {
     n.dmg += e.dmg; n.crit = n.crit || e.crit; n.pop = 1; [n.x, n.z] = V(e.x, e.y); return;
   }
-  if (F.nums.length >= FX.numMax) {   // replace the weakest of the older half: big hits stay readable
+  const cap = F.piles && F.piles.some(q => (F.t || 0) - q.last < FX.deepGap + FX.deepHold) ? FX.deepNums : FX.numMax;   // LAS-59: the Deep One's piles own the screen
+  if (F.nums.length > cap) { F.nums.sort((a, b) => b.dmg - a.dmg); for (const m of F.nums.splice(cap)) if (F.byId.get(m.id) === m) F.byId.delete(m.id); }
+  if (F.nums.length >= cap) {   // replace the weakest of the older half: big hits stay readable
     let w = 0;
     for (let i = 1; i < F.nums.length; i++) { const a = F.nums[i], b = F.nums[w]; if ((a.age > 0.25) - (b.age > 0.25) > 0 || ((a.age > 0.25) === (b.age > 0.25) && a.dmg < b.dmg)) w = i; }
     n = F.nums[w]; if (F.byId.get(n.id) === n) F.byId.delete(n.id);
@@ -5649,8 +5991,51 @@ function draw(S) {
     g.fillStyle = n.crit ? FX.critCol : FX.numCol; g.fillText(s, x, y);
   }
   F.nums.length = keep; g.globalAlpha = 1;
+  pilesDraw(g, w, h, lt);
   tagsDraw(g, w, h);
   bossPlate(S, g, w, h);
+}
+// LAS-59: the Deep One's number stacks. Every hit on one of its parts adds to that part's pile: a big running total that
+// climbs while the hits keep coming (< deepGap s apart), the hit count under it and the last few hits rising off its top;
+// when the stream breaks it holds deepHold s and fades. The eye's pile leans left, the maw's right (they sit close).
+function pile(e) {
+  const P = F.piles || (F.piles = []), part = F.deep.get(e.id); let p = P.find(q => q.id === e.id && F.t - q.last < FX.deepGap);
+  if (!p) { p = { id: e.id, part, sum: 0, n: 0, last: F.t, pop: 0, trail: [] }; P.push(p); if (P.length > 24) P.shift(); }
+  p.sum += e.dmg; p.n++; p.last = F.t; p.pop = 1; [p.x, p.z] = V(e.x, e.y);
+  const tl = F.R && F.R.tall && F.R.tall.get(e.id); if (tl !== undefined) p.y = tl;
+  p.trail.push({ d: e.dmg, t: F.t, crit: e.crit }); if (p.trail.length > 3) p.trail.shift();
+}
+function pilesDraw(g, w, h, lt) {
+  if (!F.piles || !F.piles.length) return;
+  const life = FX.deepGap + FX.deepHold + FX.deepFade;
+  F.piles = F.piles.filter(p => F.t - p.last < life);
+  g.save(); g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineJoin = 'round';
+  // at most deepMax piles (the biggest running ones); each placed clear of the ones already placed (and of the boss plate)
+  const top = F.piles.slice().sort((a, b) => (F.t - a.last < FX.deepGap ? 1 : 0) - (F.t - b.last < FX.deepGap ? 1 : 0) || b.sum - a.sum).slice(0, FX.deepMax), boxes = F.plateBox ? [F.plateBox] : [];
+  if (F.bnT && F.t < F.bnT) boxes.push({ x: w / 2, w: w * 0.6, y0: h * 0.17 - 10, y1: h * 0.17 + 100 });   // the wave / boss banner
+  for (const p of top) {
+    const v = F.v.set(p.x, (p.y !== undefined ? p.y : 4) + 0.4, p.z).project(F.cam); if (v.z > 1) continue;
+    const age = F.t - p.last, a = age < FX.deepGap + FX.deepHold ? 1 : 1 - (age - FX.deepGap - FX.deepHold) / FX.deepFade;
+    const rel = Math.max(0, Math.min(1, 1 - (lt - Math.log10(Math.max(1, p.sum))) / 4)), lean = p.part === 'eye' ? -1 : p.part === 'maw' ? 1 : 0;
+    p.pop = Math.max(0, p.pop - 0.08);
+    const big = p === top[0], px = Math.round(h * (big ? 0.038 + 0.034 * rel : 0.024 + 0.012 * rel) * (1 + 0.12 * p.pop)), s = fmt(p.sum), tw = s.length * px * 0.55;   // the top pile grows as it climbs
+    const x = Math.max(tw / 2 + 8, Math.min(w - tw / 2 - 8, (v.x + 1) / 2 * w + lean * (tw / 2 + 14))), sm0 = Math.max(13, Math.round(px * 0.36));
+    let y = Math.max(px + 8, (1 - v.y) / 2 * h - 6 - 10 * Math.min(1, age));
+    for (let k = 0; k < 8; k++) { const hit = boxes.find(b => Math.abs(b.x - x) < (b.w + tw) / 2 + 10 && y + sm0 + 4 > b.y0 && y - px < b.y1); if (!hit) break; y = hit.y1 + px + 6; }   // below what it covers
+    boxes.push({ x, w: tw, y0: y - px, y1: y + sm0 + 6 });
+    g.globalAlpha = Math.max(0, a);
+    g.font = '400 ' + px + 'px ' + FELL; g.lineWidth = Math.max(3, px / 6); g.strokeStyle = 'rgba(3,6,8,.9)'; g.strokeText(s, x, y); g.fillStyle = FX.numCol; g.fillText(s, x, y);
+    const sm = Math.max(13, Math.round(px * 0.36));
+    if (p.n > 1) { g.font = '400 ' + sm + 'px ' + FELL; const c = '×' + fmt(p.n) + ' hits'; g.lineWidth = 3; g.strokeText(c, x, y + sm + 2); g.fillStyle = '#b9ad98'; g.fillText(c, x, y + sm + 2); }
+    if (p === top[0]) for (let i = 0; i < p.trail.length; i++) {   // the last hits rise off the top of the biggest pile
+      const q = p.trail[i], qa = F.t - q.t; if (qa > 0.7) continue;
+      const tp = Math.max(13, Math.round(px * 0.42)) * (q.crit ? 1.15 : 1), ts = '+' + fmt(q.d) + (q.crit ? '!' : '');
+      g.globalAlpha = Math.max(0, a * (1 - qa / 0.7)); g.font = '400 ' + Math.round(tp) + 'px ' + FELL; g.lineWidth = 3;
+      const ty = y - px * 0.95 - (p.trail.length - 1 - i) * tp * 0.95 - 26 * qa;
+      g.strokeText(ts, x, ty); g.fillStyle = q.crit ? FX.critCol : FX.numCol; g.fillText(ts, x, ty);
+    }
+  }
+  g.restore(); g.globalAlpha = 1;
 }
 // LAS-116: a building's name over its hex for a moment after a pick lands (render.js townMark calls TWFx.tag): bone on a dark
 // stroke, in in 0.3 s, out over the last 0.7 s, drifting up a little. World point, so it stays on the building.
@@ -5667,13 +6052,15 @@ function tagsDraw(g, w, h) {
 }
 // LAS-49: the boss's name plate and health bar over its head; off screen it sticks to the screen edge with an arrow toward it
 function bossPlate(S, g, w, h) {
+  F.plateBox = null;
   for (const e of S.enemies) {
-    if (!e.boss || e.hp <= 0) continue;
+    if (!e.boss || e.hp <= 0 || (e.part && e.part !== 'body')) continue;   // LAS-59: one plate for the Deep One, on its body
     if (F.R && F.R.visMap && !(F.R.visMap.get(e.id) > 0.004)) continue;   // LAS-55: no plate, no arrow for what the light does not show
     const tall = F.R && F.R.tall && F.R.tall.get(e.id), [vx, vz] = V(e.x, e.y), v = F.v.set(vx, (tall !== undefined ? tall : 6) + 0.9, vz).project(F.cam);
     let x = (v.x + 1) / 2 * w, y = (1 - v.y) / 2 * h, off = false; if (v.z > 1) { x = w - x; y = h - y; }
     const mx = 150, my = intro.age < FX.intro ? 300 : 120; if (x < mx || x > w - mx || y < my || y > h - 150 || v.z > 1) { off = true; x = Math.max(mx, Math.min(w - mx, x)); y = Math.max(my, Math.min(h - 150, y)); }
     const bw = Math.max(200, Math.min(300, w * 0.13)), k = Math.max(0, Math.min(1, e.hp / e.maxHp)), nm = foe(e.kind).name.toUpperCase();
+    if (e.kind === 'deep') F.plateBox = { x, w: bw + 10, y0: y - 34, y1: y + 12 };   // LAS-59: the piles keep clear of it
     g.save(); g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.font = '400 ' + Math.round(Math.max(14, h * 0.017)) + 'px ' + FELL; g.lineJoin = 'round';
     g.lineWidth = 4; g.strokeStyle = 'rgba(2,8,10,.9)'; g.strokeText(nm, x, y - 10); g.fillStyle = '#ffb59a'; g.fillText(nm, x, y - 10);
     g.fillStyle = 'rgba(2,8,10,.8)'; g.fillRect(x - bw / 2 - 2, y - 4, bw + 4, 12);
@@ -8839,6 +9226,25 @@ function townFx(S, TW, t, dt) {
       const from = rec ? [rec.g.position.x, rec.g.position.y + rec.sp.h * (rec.cs || TOWN.k) * (rec.ax || 1), rec.g.position.z] : [0, RLOOK.plateau + 3, 0];
       const head = new T3.Mesh(ico(0.24, 1), mat('#ffd59a', { glow: 1 })), halo = tfxHalo(X, TFX.rocket); X.grp.add(head);
       X.rockets.push({ t0: t, dur: Math.max(0.5, ev.climb || 1), from, to: [vx, 0.4, vz], peak: 9 + 0.2 * Math.hypot(vx - from[0], vz - from[2]), head, halo, r: ev.r || 6, fdur: ev.dur || 3, smoke: 0 }); }
+    else if (ev.k === 'winch') { const [ax, az] = toView(ev.x0, ev.y0), [bx, bz] = toView(ev.x, ev.y);   // the harpoon line: a trail of spray from where it struck to where it was reeled
+      for (let j = 0; j < 14; j++) { const q = j / 13; puff(ax + (bx - ax) * q, 0.5, az + (bz - az) * q, ev.fire ? 0.9 : 0.8, 0.7, 0.6, 1.2); }
+      tfxRing(X, t, { c: ev.fire ? TFX.ember : TFX.foam, r0: 0.4, r1: 3, y: 0.3, dur: 0.7, op: 0.5, add: 1, x: bx, z: bz }); }
+    else if (ev.k === 'mine') { const [vx, vz] = toView(ev.x, ev.y), r = Math.max(2.5, ev.r * radK(Math.hypot(ev.x, ev.y)));   // a sea mine goes up
+      tfxRing(X, t, { c: '#ffd9a8', r0: 0.5, r1: r, y: 0.4, dur: 0.6, op: 0.7, add: 1, x: vx, z: vz });
+      for (let j = 0; j < 12; j++) puff(vx + (Math.random() - 0.5) * r, 0.5 + Math.random(), vz + (Math.random() - 0.5) * r, 0.8, 1.2, 1.4, 2); }
+    else if (ev.k === 'strike') { const [vx, vz] = toView(ev.x, ev.y), r = Math.max(2, ev.r * radK(Math.hypot(ev.x, ev.y)));   // lightning: a white ring, the flash is the sim's light
+      tfxRing(X, t, { c: '#e6f2ff', r0: 0.4, r1: r + 1, y: 0.5, dur: 0.35, op: 0.85, add: 1, x: vx, z: vz });
+      const h = tfxHalo(X, '#cfe4ff'); h.position.set(vx, 4, vz); h.scale.setScalar(9); h.material.opacity = 0.8; X.flares.push({ h, t0: t, dur: 0.4, r: 4 }); }
+    else if (ev.k === 'well') { const [vx, vz] = toView(ev.x, ev.y);   // a hand from the well takes a creature under: a dark ring, black spray
+      tfxRing(X, t, { c: '#0a1a1a', r0: 0.4, r1: 3, y: 0.3, dur: 1.0, op: 0.7, x: vx, z: vz }); for (let j = 0; j < 8; j++) puff(vx + (Math.random() - 0.5) * 2, 0.4, vz + (Math.random() - 0.5) * 2, 0.15, 1.2, 0.8, 1.6); }
+    else if (ev.k === 'pitch') { const r = viewR(ev.r) + 1, a = ev.a * Math.PI / 180;   // pitch pours down the wall: embers along the arc
+      for (let j = 0; j < 14; j++) { const b = a + (j / 13 - 0.5) * ev.arc * Math.PI / 180; puff(Math.cos(b) * r, 0.6, Math.sin(b) * r, 0.9, 1.2, 0.9, 1.4); }
+      tfxRing(X, t, { c: TFX.ember, r0: r - 1, r1: r + 2, y: 0.4, dur: 0.9, op: 0.4, add: 1 }); }
+    else if (ev.k === 'ghost' || ev.k === 'ghostrise') { const [vx, vz] = toView(ev.x, ev.y);   // pale drowned gunners
+      tfxRing(X, t, { c: '#9fd0c8', r0: 0.3, r1: ev.k === 'ghost' ? 1.4 : 3, y: 0.3, dur: 0.6, op: 0.5, add: 1, x: vx, z: vz }); }
+    else if (ev.k === 'ground') { const [vx, vz] = toView(ev.x, ev.y), r = Math.max(2, ev.r * radK(Math.hypot(ev.x, ev.y)));   // a mortar shell's burning ground
+      tfxRing(X, t, { c: TFX.ember, r0: r * 0.4, r1: r, y: 0.25, dur: Math.min(1.2, ev.dur || 3), op: 0.45, add: 1, x: vx, z: vz });
+      for (let j = 0; j < 4; j++) puff(vx + (Math.random() - 0.5) * r, 0.5, vz + (Math.random() - 0.5) * r, 0.5, 1, 0.5, 1.4); }
     else if (ev.k === 'boat' && !ev.ok) { const [vx, vz] = toView(Math.cos(ev.a) * ev.r, Math.sin(ev.a) * ev.r);   // a boat lost in the dark: a splash, a ring of foam
       tfxRing(X, t, { c: TFX.foam, r0: 0.5, r1: 4, y: 0.2, dur: 0.8, op: 0.5, add: 1, x: vx, z: vz }); for (let j = 0; j < 10; j++) puff(vx + (Math.random() - 0.5) * 2, 0.4, vz + (Math.random() - 0.5) * 2, 0.8, 1, 1.2, 1.6); }
   }
@@ -8856,6 +9262,18 @@ function townFx(S, TW, t, dt) {
   for (let i = X.flares.length - 1; i >= 0; i--) { const f = X.flares[i], q = (t - f.t0) / f.dur;
     if (q >= 1) { X.grp.remove(f.h); f.h.material.dispose(); X.flares.splice(i, 1); continue; }
     f.h.quaternion.copy(R.cam.quaternion); f.h.scale.setScalar(f.r * 1.6 * (0.9 + 0.1 * Math.sin(t * 17 + i))); f.h.material.opacity = 0.42 * (q < 0.1 ? q * 10 : 1 - (q - 0.1) / 0.9); }
+  { X.mineM = X.mineM || new Map(); const live = new Set();
+    for (const m of S.mines || []) { live.add(m.id); let g = X.mineM.get(m.id);
+      if (!g) { g = new T3.Group(); g.add(new T3.Mesh(ico(0.7, 1), mat('#2a2f2f')), new T3.Mesh(ico(0.2, 1), mat('#ff6a30', { glow: 1 }))); g.children[1].position.y = 0.75; X.grp.add(g); X.mineM.set(m.id, g); }
+      const [vx, vz] = toView(m.x, m.y); g.position.set(vx, 0.15 + 0.12 * Math.sin(t * 1.7 + m.id), vz); g.rotation.y = t * 0.3 + m.id; }
+    for (const [id, g] of X.mineM) if (!live.has(id)) { X.grp.remove(g); X.mineM.delete(id); } }
+  // Beacon Stacks (S.lights kind 'beacon'): a black rock out at sea with a fire on it
+  { const bl = (S.lights || []).filter(L => L.kind === 'beacon'); X.stacks = X.stacks || [];
+    while (X.stacks.length < bl.length) { const g = new T3.Group(), rk = new T3.Mesh(new T3.ConeGeometry(3.4, 6.4, 7), mat(TC.stoneD)), fr = new T3.Mesh(ico(0.95, 1), mat('#ff8a30', { glow: 1 })), h = tfxHalo(X, '#ff9a40');
+      rk.position.y = 3.2; fr.position.y = 7; g.add(rk, fr); X.grp.add(g, h); X.stacks.push({ g, fr, h }); }
+    X.stacks.forEach((k, i) => { const L = bl[i]; k.g.visible = k.h.visible = !!L; if (!L) return;
+      const [vx, vz] = toView(L.x, L.y); k.g.position.set(vx, -0.3, vz); k.h.position.set(vx, 7.2, vz); k.h.quaternion.copy(R.cam.quaternion);
+      const fl = 0.85 + 0.2 * Math.sin(t * 13 + i) * Math.sin(t * 5.3); k.fr.scale.setScalar(fl); k.h.scale.setScalar(11 * fl); k.h.material.opacity = 0.5; }); }
   // boats: row straight out along their angle and back, bobbing on the swell, the bow lantern lit
   const live = new Set();
   for (const b of S.boats || []) { if (S.t < b.t0) continue; live.add(b.id); let B = X.boats.get(b.id);
@@ -9380,6 +9798,186 @@ function specialEnd(X, cnt) {
   R.ripples.length = n; T.ripple.count = n; T.ripple.instanceMatrix.needsUpdate = T.ripple.instanceColor.needsUpdate = true;
   if (X.sink.size > 400) X.sink.clear();
 }
+// ---------- LAS-59: the Deep One. One boss in pieces: the sim's parts (body, eye, maw, tentacle_1..8) are creatures of
+// kind 'deep'; render draws one vast thing around them that is seen ONLY where the light falls. Every one of its
+// materials runs the sea's beam mask per pixel (the beams, the Flare disc, the braziers' ring) and is discarded outside
+// it: the dark stays pure black and the player sees the pieces the beam crosses, never the whole. The eye and the maw are
+// drawn where the sim's eye and maw are (what is lit there is what the guns can hit); the tentacles are tubes rebuilt
+// every frame on a curve from the head to the wall, driven by the sim's reach (b.deep.tents[i].f: 0 at rest, 1 on the wall).
+// Read-only on S. Dev: #deep (checks/las59.js) draws a still one at a fixed spot (R.deepDev) for the turntable sheet.
+// Z: the whole of it x Z (Studio Head, LAS-59 review: Cthulhu-scale, bigger than the citadel): the meshes are built at 1 and drawn at Z
+const DEEP = { headR: 5.4, hump: [12, 8, 9], eyeR: 1.75, tentR: [1.25, 0.16], beardN: 7, rings: 46, sides: 10, rise: 3.2, sink: 4.5, Z: 2.6, eyeZ: 2.9 };
+const DMASK = 'varying vec3 vDW;\nuniform vec4 uBa;\nuniform float uBw,uBl,uFl,uFr,uBase;\n' + BMASK +
+  'float dmask(vec2 q){float r=length(q);float m=max(max(bmask(q,uBa.x,uBw,uBl),bmask(q,uBa.y,uBw,uBl)),max(bmask(q,uBa.z,uBw,uBl),bmask(q,uBa.w,uBw,uBl)));' +
+  'm=max(m,uFl*max(0.12,smoothstep(uFr+2.5,uFr-2.5,r)));return max(m,0.6*smoothstep(uBase+1.0,uBase-1.0,r));}\n';   // the Flare: a dim glimpse of all of it (as litAmt: never 0 while the sim lights it)
+function deepMat(o) {   // wet black flesh that exists only in the light (R.deepAll: the turntable shows it whole)
+  const m = new T3.MeshStandardMaterial(Object.assign({ vertexColors: true, flatShading: false, roughness: 0.3, metalness: 0.12 }, o));   // smooth wet skin (faceted read as rock)
+  const uAll = { value: 0 }; m.userData.all = uAll;
+  return patch(m, 'deep-mask', sh => {
+    Object.assign(sh.uniforms, { uBa: U.ba, uBw: U.bw, uBl: U.bl, uFl: U.fl, uFr: U.fr, uBase: U.base, uAll });
+    vHead(sh, 'varying vec3 vDW;');
+    vAfter(sh, 'project_vertex', 'vDW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    fHead(sh, DMASK + 'uniform float uAll;');
+    fAfter(sh, 'dithering_fragment', 'float dm = max(uAll, dmask(vDW.xz)); if (dm < 0.02) discard; gl_FragColor.rgb *= dm;' +
+      // dev only (the turntable): a grey studio key light from over the camera, so the whole model can be judged
+      'gl_FragColor.rgb += uAll * vColor * (0.25 + 1.8 * max(0.0, dot(normalize(normal), normalize(vec3(0.35, 0.75, 0.55)))));');
+  });
+}
+// vertex colours from a function of the unit-sphere point (and its noise)
+function paint(g, f) {
+  const P = g.attributes.position, c = new Float32Array(P.count * 3), v = new T3.Vector3();
+  for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i); const k = f(v, i); c[i * 3] = k[0]; c[i * 3 + 1] = k[1]; c[i * 3 + 2] = k[2]; }
+  g.setAttribute('color', new T3.BufferAttribute(c, 3)); return g;
+}
+const dn = (x, y, z) => Math.sin(x * 3.1 + Math.sin(y * 2.3)) * Math.sin(z * 2.7 + Math.sin(x * 1.9)) * 0.5 + 0.5;
+// a blob: unit sphere pushed by fold(v) (radius factor), scaled to s; flesh colours with pale barnacle flecks
+function blob(s, seg, fold, col) {
+  const g = new T3.SphereGeometry(1, seg, Math.round(seg * 0.62)), P = g.attributes.position, v = new T3.Vector3();
+  for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i); const k = fold(v); P.setXYZ(i, v.x * k * s[0], v.y * k * s[1], v.z * k * s[2]); }
+  g.computeVertexNormals();
+  return paint(g, (p, i) => { const q = p.clone().set(p.x / s[0], p.y / s[1], p.z / s[2]), n = dn(q.x * 3, q.y * 3, q.z * 3), fl = ((i * 2654435761) >>> 0) % 97 === 0;
+    return fl ? [0.30, 0.29, 0.25] : col(q, n); });
+}
+function deepBuild() {
+  const D = R.deep = { list: new Map(), mats: {} }, sc = R.scene;
+  const flesh = (q, n) => { const k = 0.035 + 0.04 * n * n + 0.025 * Math.max(0, -q.y), g = Math.pow(Math.abs(Math.sin(q.x * 9 + q.y * 4 + n * 3)), 30) * 0.05;   // near-black, a bruised brown-green; pale wet seams
+    return [k * 1.05 + g, k * 0.95 + g * 0.9, k * 0.85 + g * 0.8]; };
+  D.mats.flesh = deepMat({}); D.mats.eye = deepMat({ roughness: 0.15, metalness: 0.0 }); D.mats.bone = deepMat({ roughness: 0.6, flatShading: true });
+  // the hump: a ridged back of folds and spines, mostly under water; the head: brow over one eye, the maw under the other side
+  // the back: heavy folds across it, a raised spine ridge of knuckled plates along its length (z), sagging flanks
+  D.hump = blob(DEEP.hump, 72, v => 1 + 0.06 * Math.sin(v.z * 16 + 2 * dn(v.x * 3, v.y * 3, v.z * 3)) * Math.max(0, v.y) + 0.07 * dn(v.x * 4, v.y * 4, v.z * 4)
+    + 0.16 * Math.exp(-v.x * v.x * 60) * Math.max(0, v.y) * (0.6 + 0.4 * Math.abs(Math.sin(v.z * 11))) - 0.06 * Math.max(0, -v.y), flesh);
+  const spines = []; for (let i = 0; i < 9; i++) { const z = -0.8 + i * 0.2, y = Math.sqrt(Math.max(0, 1 - z * z)) * 1.12, L = 1.2 + 1.6 * Math.sin(Math.PI * (i + 0.5) / 9) + 0.4 * ((i * 7) % 3);
+    const c = new T3.ConeGeometry(0.32, L, 6); c.translate(0, L / 2, 0); c.rotateX(-0.5 - z * 0.4); c.translate(0, y * DEEP.hump[1], z * DEEP.hump[2]); spines.push(c); }
+  D.spines = paint(T3.mergeGeometries(spines), p => [0.05, 0.045, 0.04]);
+  D.head = blob([DEEP.headR * 1.05, DEEP.headR * 0.9, DEEP.headR], 64, v => 1 + 0.16 * Math.max(0, v.y + 0.1 - Math.abs(v.x - 0.3)) * Math.max(0, v.z) + 0.06 * Math.sin(v.y * 13 + v.x * 3) + 0.08 * dn(v.x * 5, v.y * 5, v.z * 5)
+    - 0.22 * Math.exp(-((v.x - 0.33) ** 2 + (v.y - 0.28) ** 2) * 9) * Math.max(0, v.z), flesh);   // a socket where the eye sits
+  // the eye: jaundiced, veined, a slit pupil that narrows in the light; lids that shut when it recoils
+  D.eyeG = paint(new T3.SphereGeometry(1, 36, 26), p => {
+    const r = Math.hypot(p.x, p.y), fz = p.z;
+    if (fz > 0.8 && r < 0.56) return r < 0.5 ? [0.36, 0.21, 0.05] : [0.12, 0.07, 0.02];   // iris, its dark rim
+    const vein = Math.pow(Math.abs(Math.sin(Math.atan2(p.y, p.x) * 7 + fz * 6)), 18) * (1 - fz) * 0.6;
+    return [0.40 + vein * 0.2, 0.36 - vein * 0.18, 0.21 - vein * 0.12]; });
+  D.pupilG = paint(new T3.SphereGeometry(1, 16, 12), () => [0.004, 0.004, 0.004]);
+  D.lidG = blob([1.1, 1.1, 1.1], 24, v => v.y < 0 ? 0.0 : 1, flesh);
+  // the maw: a black throat ringed with long uneven teeth
+  D.throatG = paint(new T3.SphereGeometry(1, 20, 14), () => [0.01, 0.0, 0.0]);
+  const teeth = (n, up) => { const parts = [];
+    for (let i = 0; i < n; i++) { const a = Math.PI * (0.08 + 0.84 * i / (n - 1)), L = 0.55 + 0.45 * (((i * 7919) % 11) / 11), c = new T3.ConeGeometry(0.13, L, 5);
+      c.translate(0, -L / 2, 0); if (!up) c.rotateZ(Math.PI); c.rotateX(0.35 * (up ? 1 : -1)); c.translate(Math.cos(a) * 1.5, up ? 0.15 : -0.15, Math.sin(a) * 0.6); parts.push(c); }
+    const g = T3.mergeGeometries(parts); return paint(g, (p, i) => [0.42 - 0.002 * (i % 40), 0.38, 0.30]); };
+  D.teethUp = teeth(9, true); D.teethLo = teeth(8, false);
+  D.n = 0;
+}
+// one tentacle: a tapered tube with suckers on its underside, re-laid along a cubic curve every frame
+function tubeGeo() {
+  const N = DEEP.rings, M = DEEP.sides, pos = new Float32Array(N * (M + 1) * 3), col = new Float32Array(N * (M + 1) * 3), idx = [];
+  for (let i = 0; i < N; i++) for (let j = 0; j <= M; j++) {
+    const o = (i * (M + 1) + j) * 3, under = Math.cos(j / M * Math.PI * 2) < -0.55, suck = under && i % 3 === 0;
+    const k = suck ? 0.22 : under ? 0.15 : 0.07 + 0.03 * ((i * 13 + j * 7) % 5) / 5;
+    col[o] = k * (under ? 1.05 : 0.8); col[o + 1] = k * (under ? 0.92 : 1); col[o + 2] = k * (under ? 0.86 : 0.92);
+    if (i < N - 1 && j < M) { const a = i * (M + 1) + j, b = a + M + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+  }
+  const g = new T3.BufferGeometry(); g.setAttribute('position', new T3.BufferAttribute(pos, 3).setUsage(T3.DynamicDrawUsage)); g.setAttribute('color', new T3.BufferAttribute(col, 3)); g.setIndex(idx);
+  return g;
+}
+const bez = (a, b, c, d, t, o) => { const u = 1 - t; for (let k = 0; k < 3; k++) o[k] = u * u * u * a[k] + 3 * u * u * t * b[k] + 3 * u * t * t * c[k] + t * t * t * d[k]; return o; };
+function layTube(g, P0, P1, P2, P3, r0, r1, t, ph) {
+  const N = DEEP.rings, M = DEEP.sides, A = g.attributes.position.array, c = [0, 0, 0], n = [0, 0, 0], tg = new T3.Vector3(), up = new T3.Vector3(), sd = new T3.Vector3(), nm = new T3.Vector3();
+  for (let i = 0; i < N; i++) {
+    const s = i / (N - 1); bez(P0, P1, P2, P3, s, c); bez(P0, P1, P2, P3, Math.min(1, s + 0.02), n);
+    if (s >= 0.98) { bez(P0, P1, P2, P3, s - 0.02, n); tg.set(c[0] - n[0], c[1] - n[1], c[2] - n[2]); } else tg.set(n[0] - c[0], n[1] - c[1], n[2] - c[2]);
+    tg.normalize(); up.set(0, 1, 0); if (Math.abs(tg.y) > 0.95) up.set(1, 0, 0);
+    sd.crossVectors(tg, up).normalize(); nm.crossVectors(sd, tg).normalize();
+    const w = 0.2 * Math.sin(t * 2.2 + ph + s * 7) * s * s, rad = (r0 + (r1 - r0) * Math.pow(s, 0.7)) * (1 + 0.1 * Math.sin(s * 46 + ph));
+    for (let j = 0; j <= M; j++) {
+      const a = j / M * Math.PI * 2, ca = Math.cos(a) * rad, sa = Math.sin(a) * rad, o = (i * (M + 1) + j) * 3;
+      A[o] = c[0] + nm.x * ca + sd.x * (sa + w); A[o + 1] = c[1] + nm.y * ca + sd.y * (sa + w); A[o + 2] = c[2] + nm.z * ca + sd.z * (sa + w);
+    }
+  }
+  g.attributes.position.needsUpdate = true; g.computeVertexNormals(); g.computeBoundingSphere();
+}
+function deepRec(D, id) {   // one Deep One's meshes (2 at most at once)
+  let r = D.list.get(id); if (r) return r;
+  const grp = new T3.Group(), m = D.mats, mk3 = (g, mt) => { const x = new T3.Mesh(g, mt); x.frustumCulled = false; grp.add(x); return x; };
+  r = { grp, hump: mk3(D.hump, m.flesh), spines: mk3(D.spines, m.bone), head: mk3(D.head, m.flesh), eye: mk3(D.eyeG, m.eye), pupil: mk3(D.pupilG, m.eye), lidU: mk3(D.lidG, m.flesh), lidL: mk3(D.lidG, m.flesh),
+    throat: mk3(D.throatG, m.flesh), tUp: mk3(D.teethUp, m.bone), tLo: mk3(D.teethLo, m.bone), tents: [], beard: [], up: -1, gone: -1, px: 0, pz: 0, fs: [], lit: 0, lid: 0, seen: 0 };
+  const tube = n => { const g = tubeGeo(); return { g, m: mk3(g, m.flesh) }; };
+  for (let i = 0; i < 8; i++) r.tents.push(tube());
+  for (let i = 0; i < DEEP.beardN; i++) r.beard.push(tube());
+  R.scene.add(grp); D.list.set(id, r); return r;
+}
+// per frame: the sim's Deep Ones (b = body creature, its parts in b.deep) -> meshes; a dead one sinks for DEEP.sink s
+function deepFrame(S, bodies, t, dt, alpha) {
+  const D = R.deep || (deepBuild(), R.deep), seen = new Set(), K = S.T.boss.deep, TT = R.tall;
+  for (const b of bodies) {
+    const st = b.deep; if (!st) continue; seen.add(b.id);
+    const r = deepRec(D, b.id), bp = dispPos(b, alpha), bx = bp.x, bz = bp.z;
+    if (st.up && r.up < 0) r.up = t;
+    if (r.seen === 0) { r.px = bx; r.pz = bz; r.seen = 1; }
+    r.px += (bx - r.px) * Math.min(1, dt * 3); r.pz += (bz - r.pz) * Math.min(1, dt * 3);   // the recoil's 5 m jump, eased
+    r.b = { st, eye: toView(st.eye.x, st.eye.y), maw: toView(st.maw.x, st.maw.y), bv: toView(b.x, b.y), shut: st.eye.under > S.t, rim: S.rim, a0: Math.atan2(b.y, b.x), hp: b.hp / b.maxHp };
+    deepPose(S, r, t, dt, K, TT, b);
+  }
+  for (const [id, r] of D.list) {
+    if (seen.has(id)) continue;
+    if (r.gone < 0) r.gone = t;
+    if (t - r.gone > DEEP.sink || !r.b) { R.scene.remove(r.grp); D.list.delete(id); continue; }
+    deepPose(S, r, t, dt, K, null, null);
+  }
+}
+function deepPose(S, r, t, dt, K, TT, b) {
+  const B = r.b, st = B.st, dx = B.eye[0] - B.bv[0], dz = B.eye[1] - B.bv[1], mx = B.maw[0] - B.bv[0], mz = B.maw[1] - B.bv[1];
+  const fx = -r.px, fz = -r.pz, fl = Math.hypot(fx, fz) || 1, ux = fx / fl, uz = fz / fl, rx = -uz, rz = ux;   // u: toward the citadel; r: its right
+  const qUp = r.up < 0 ? 0 : Math.min(1, (t - r.up) / DEEP.rise), qg = r.gone < 0 ? 0 : Math.min(1, (t - r.gone) / DEEP.sink);
+  const Z = DEEP.Z, lift = (-(1 - (1 - Math.pow(1 - qUp, 3))) * 15 - qg * qg * 16) * Z + 0.35 * Math.sin(t * 0.7);   // it heaves up out of the sea; dead, it goes down
+  const yaw = Math.atan2(ux, uz), ex = r.px + dx, ez = r.pz + dz, wx = r.px + mx, wz = r.pz + mz;
+  // the head sits seaward of the sim's eye and maw (its near face carries them), half under water: only its crown, the eye and the jaw rise
+  const HR = DEEP.headR * Z, hx = (ex + wx) / 2 - ux * HR * 0.78, hz = (ez + wz) / 2 - uz * HR * 0.78, hy = HR * 0.12 + lift;
+  r.head.position.set(hx, hy, hz); r.head.rotation.set(-0.12 + 0.03 * Math.sin(t * 0.9), yaw, 0.04 * Math.sin(t * 0.5)); r.head.scale.setScalar(Z);
+  r.hump.position.set(hx - ux * 2.3 * HR, -DEEP.hump[1] * Z * 0.5 + lift * 1.1 + 0.6 * Math.sin(t * 0.45), hz - uz * 2.3 * HR); r.hump.rotation.set(0.1, yaw + 0.3, 0.05 * Math.sin(t * 0.4)); r.hump.scale.setScalar(Z);
+  r.spines.position.copy(r.hump.position); r.spines.rotation.copy(r.hump.rotation); r.spines.scale.setScalar(Z);
+  // the eye: on the head where the sim's eye is; the pupil narrows while lit; the lids close when it recoils
+  const eLit = R.litMap.get(st.eye.id) || 0; r.lit += ((eLit > 0 ? 1 : 0) - r.lit) * Math.min(1, dt * 6);
+  r.lid += ((B.shut || qg > 0 ? 1 : 0) - r.lid) * Math.min(1, dt * (B.shut ? 14 : 3));
+  const es = DEEP.eyeR * DEEP.eyeZ * (1 - 0.15 * r.lid), ey = Math.max(es * 0.8, hy + HR * 0.3);   // an eye the size of a tower
+  r.eye.position.set(ex, ey, ez); r.eye.rotation.set(0.15, yaw, 0); r.eye.scale.setScalar(es);
+  r.pupil.position.set(ex + ux * es * 0.93, ey + 0.05, ez + uz * es * 0.93); r.pupil.rotation.set(0.15, yaw, 0); r.pupil.scale.set(es * (0.34 - 0.24 * r.lit), es * 0.5, es * 0.1);
+  for (const [lid, s] of [[r.lidU, 1], [r.lidL, -1]]) { lid.position.set(ex, ey, ez); lid.scale.setScalar(es * 1.02); lid.rotation.set(s > 0 ? -1.75 + 1.7 * r.lid : Math.PI + 1.75 - 1.7 * r.lid, yaw, 0, 'YXZ'); }
+  // the maw: low on the other side, it breathes; it gapes when a tentacle slams or the eye is struck shut
+  const slam = st.tents.some(q => q.f >= 1 && !q.e.dead) ? 1 : 0, gape = 0.18 + 0.1 * Math.sin(t * 1.3) + 0.3 * slam + 0.35 * r.lid, my = Math.max(1.2 * Z, hy - 0.05 * HR), MZ = Z * 1.1;
+  r.throat.position.set(wx - ux * 0.5 * MZ, my, wz - uz * 0.5 * MZ); r.throat.scale.set(1.5 * MZ, (0.45 + gape * 1.4) * MZ, 0.8 * MZ); r.throat.rotation.set(0, yaw, 0);
+  r.tUp.position.set(wx, my + 0.25 * MZ, wz); r.tUp.rotation.set(0, yaw, 0, 'YXZ'); r.tUp.scale.setScalar(MZ);
+  r.tLo.position.set(wx, my - (0.25 + gape * 0.9) * MZ, wz); r.tLo.rotation.set(-gape * 0.6, yaw, 0, 'YXZ'); r.tLo.scale.setScalar(MZ);
+  // the tentacles: from the head's sides to the wall, the sim's reach eased; severed ones a thrashing stump; the beard writhes
+  const n = st.tents.length, wallY = Math.max(1.4, (R.walkY || 0) + 0.4);
+  st.tents.forEach((q, i) => {
+    const T = r.tents[i]; if (!T) return;
+    const s = n > 1 ? i / (n - 1) - 0.5 : 0, dead = q.e.dead || qg > 0;
+    r.fs[i] = (r.fs[i] || 0) + ((dead ? 0 : q.f) - (r.fs[i] || 0)) * Math.min(1, dt * (q.f >= 1 ? 16 : 5));
+    const f = r.fs[i], fe = f * f * (3 - 2 * f);
+    const P0 = [hx + rx * s * 1.9 * HR + ux * 0.3 * HR, -0.6 + lift * 0.6, hz + rz * s * 1.9 * HR + uz * 0.3 * HR];   // thick arms out of the sea at the head's flanks
+    const ta = B.a0 + s * K.fan, W = toView(Math.cos(ta) * B.rim, Math.sin(ta) * B.rim);
+    const rest = [P0[0] + (ux * 5 + rx * s * 5) * Z, 0.2 + lift * 0.3 + 0.4 * Math.sin(t * 1.1 + i), P0[2] + (uz * 5 + rz * s * 5) * Z];
+    let P3 = [rest[0] + (W[0] - rest[0]) * fe, rest[1] + (wallY - rest[1]) * fe + Math.sin(Math.PI * Math.min(1, fe * 1.1)) * 7 * Z, rest[2] + (W[1] - rest[2]) * fe];
+    let r1 = DEEP.tentR[1] * Z;
+    if (q.e.dead && q.grow > 0) { const k = 0.18 + 0.05 * Math.sin(t * 9 + i); P3 = [P0[0] + (P3[0] - P0[0]) * k, P0[1] + (2.5 + Math.sin(t * 7 + i)) * Z, P0[2] + (P3[2] - P0[2]) * k]; r1 = 0.7 * Z; }
+    const L = Math.hypot(P3[0] - P0[0], P3[2] - P0[2]);
+    // at rest they lie curled in the swell (low arcs); reaching, they rear up high and come down over the wall
+    const P1 = [P0[0] + (P3[0] - P0[0]) * 0.25, P0[1] + (1 + 7 * fe) * Z, P0[2] + (P3[2] - P0[2]) * 0.25];
+    const P2 = [P3[0] - (P3[0] - P0[0]) * 0.22 + rx * Math.sin(t * 1.7 + i * 2) * 1.5 * Z, P3[1] + (0.6 + 6 * Math.sin(Math.PI * Math.min(1, fe * 1.15))) * Z + L * 0.06 * fe, P3[2] - (P3[2] - P0[2]) * 0.22 + rz * Math.sin(t * 1.7 + i * 2) * 1.5 * Z];   // they arch high and come down over the wall
+    layTube(T.g, P0, P1, P2, P3, DEEP.tentR[0] * Z * 0.9, r1, t, i * 1.9);
+    if (TT && !q.e.dead) TT.set(q.e.id, P3[1] + 1.2);
+  });
+  for (let i = 0; i < r.beard.length; i++) {   // short face tentacles hanging over the maw
+    const T = r.beard[i], s = i / (r.beard.length - 1) - 0.5, P0 = [wx + (rx * s * 3.4 - ux * 0.4) * MZ, my + 0.4 * MZ, wz + (rz * s * 3.4 - uz * 0.4) * MZ];
+    const sw = Math.sin(t * 1.4 + i * 1.3), P3 = [P0[0] + (ux * (1.5 + 0.8 * sw) + rx * s * 2) * MZ, P0[1] - (3.2 + 0.6 * Math.abs(s)) * MZ + lift * 0.1, P0[2] + (uz * (1.5 + 0.8 * sw) + rz * s * 2) * MZ];
+    layTube(T.g, P0, [P0[0] + ux * 1.4 * MZ, P0[1] - 0.6 * MZ, P0[2] + uz * 1.4 * MZ], [P3[0] + rx * sw * 0.6 * MZ, P3[1] + 1.2 * MZ, P3[2] + rz * sw * 0.6 * MZ], P3, 0.42 * MZ, 0.07 * MZ, t, i * 2.3);
+  }
+  if (TT && b) { TT.set(b.id, hy + HR * 0.9); TT.set(st.eye.id, ey + es + 0.6); TT.set(st.maw.id, my + 0.6 * MZ);
+    const AY = R.aimY || (R.aimY = new Map()); AY.set(st.eye.id, ey); AY.set(st.maw.id, my); AY.set(b.id, hy);
+    st.tents.forEach(q => { if (!q.e.dead) AY.set(q.e.id, (TT.get(q.e.id) || 2) - 1.2); }); }
+}
 function frame(S, alpha, now) {
   if (!R.on) return;
   if (S !== R.S) setRun(S);
@@ -9401,7 +9999,7 @@ function frame(S, alpha, now) {
   const E = R.dev ? S.enemies.concat(devTick(S, t)) : S.enemies, n = Math.min(E.length, RLOOK.maxEnemies), col = R.col, T = R.T, cnt = R.cnt || (R.cnt = new Int32Array(KLIST.length));
   cnt.fill(0); R.tall.clear(); R.litMap.clear(); if (R.visMap.size > 30000) R.visMap.clear();   // visMap keeps the last frame's light so a kill still finds its creature
   const X = specialBegin(S, t, dtR), baseR = baseRad(S);
-  let nw = 0;
+  let nw = 0; const DB = [];
   const SHP = T.shadowP.instanceMatrix.array;
   const F = T.flyer, SH = F.shadow.instanceMatrix.array;
   for (let i = 0; i < n; i++) {
@@ -9410,6 +10008,7 @@ function frame(S, alpha, now) {
     // LAS-105: inside the ring only the light that really falls there shows it: a brazier's pool or the lit shore (the sea's own vBs / shore band)
     const la = litAmt(S, e), rr2 = baseR > 0 && !(e.under > S.t) ? Math.hypot(e.x, e.y) : 1e9, p = dispPos(e, alpha), bk = rr2 <= baseR && la < 1 ? 0.6 * ringLit(p.x, p.z) : 0, lb2 = Math.max(la, bk), hid = lb2 < 0.004;
     R.litMap.set(e.id, la); R.visMap.set(e.id, lb2);
+    if (e.kind === 'deep') { if (e.deep) DB.push(e); continue; }   // LAS-59: the Deep One draws itself (deepFrame)
     if (hid && R.hx) { const h = R.hx.get(e.id); if (h) { h.on = false; h.l = 0; } }   // LAS-109: back in the dark, so the next light makes it flinch again
     if (hid && ki !== 5) continue;   // (the Dimmer's dark halo stays: it eats the beam)
     const j = cnt[ki]++;
@@ -9456,6 +10055,12 @@ function frame(S, alpha, now) {
     }
   }
   T.shadowP.count = SHADOW ? nw : 0; T.shadowP.instanceMatrix.needsUpdate = true;
+  if (DB.length || (R.deep && R.deep.list.size)) {
+    if (R.aimY && R.aimY.size > 4000) R.aimY.clear();
+    deepFrame(S, DB, t, dtR, alpha);
+    for (const k in R.deep.mats) R.deep.mats[k].userData.all.value = R.deepAll ? 1 : 0;
+    for (const rec of R.deep.list.values()) rec.grp.visible = !R.deepHide;   // dev (checks/las59.js): the same frame without it (pillar 3: the horde)   // dev (checks/las59.js): the whole of it, for the turntable
+  }
   for (let ki = 0; ki < KLIST.length; ki++) {
     const m = T[KLIST[ki]]; m.body.count = m.eyes.count = cnt[ki];
     m.body.instanceMatrix.needsUpdate = m.eyes.instanceMatrix.needsUpdate = m.body.instanceColor.needsUpdate = m.eyes.instanceColor.needsUpdate = true;
@@ -9516,7 +10121,8 @@ function frame(S, alpha, now) {
     const q = Math.min(1, Math.max(0, 1 - (s.left - alpha * S.T.dt) / t0)), e = s.tgt, p = dispPos(e, alpha), ki = KIND[e.kind] || 0;
     const mz = R.muzzle.get(s.x + ',' + s.y), kind = R.SHOT[s.kind] ? s.kind : 'cannon', M = R.SHOT[kind];
     const sx = mz ? mz[0] : s.x, sy = mz ? mz[1] : RLOOK.plateau + RLOOK.gunY, sz = mz ? mz[2] : s.y;
-    const ex = p.x, ey = p.y + CHEST[ki] * (ki >= BOSSK ? RLOOK.bossScale : RLOOK.creatureK * kindK(ki)), ez = p.z, d = Math.hypot(ex - sx, ez - sz);
+    const ay = e.kind === 'deep' && R.aimY ? R.aimY.get(e.id) : undefined;   // LAS-59: shots fly to the Deep One's eye, maw, tentacle
+    const ex = p.x, ey = ay !== undefined ? ay : p.y + CHEST[ki] * (ki >= BOSSK ? RLOOK.bossScale : RLOOK.creatureK * kindK(ki)), ez = p.z, d = Math.hypot(ex - sx, ez - sz);
     const arc = kind === 'mortar' ? 0.45 : kind === 'ballista' || kind === 'harpoon' ? 0.03 : kind === 'tesla' ? 0 : 0.1;
     const x = sx + (ex - sx) * q, z = sz + (ez - sz) * q, y = sy + (ey - sy) * q + Math.sin(q * Math.PI) * d * arc, j = SC[kind]++;
     if (j >= RLOOK.maxShots) continue;
@@ -12114,7 +12720,7 @@ const TI = {
 // id: [name, role, new line at I, II, III]
 const BLD = {
   brazier: ['Braziers', 'light', 'Fire bowls line the rim. The lit ring grows 3 m.', 'The lit ring grows 3 m more.', 'Every 12 s the braziers flare: ring +6 m for 3 s.'],
-  lamp2: ['Lamp Tower', 'light', 'A second beam on the far side of the lens, turning with the first: 40°, 70% of the main reach.', 'Both beams are 25% wider.', 'The second beam holds on the toughest lit creature in reach.'],
+  lamp2: ['Lamp Tower', 'light', 'A second beam on the far side of the lens, as wide as the first, turning with it.', 'Both beams are 25% wider.', 'Both beams reach 6 m farther.'],
   rocket: ['Rocket Rack', 'light', 'Every 10 s a rocket hangs a 6 m light for 4 s over the biggest pack within 30 m.', 'A rocket every 8 s.', 'Two rockets.'],
   beacon: ['Beacon Stack', 'light', 'A bonfire on a sea stack 18 m out: 7 m light. Creatures crossing it burn 0.3× dmg/s for 3 s.', 'The light grows to 9 m. It burns whale oil: the beam ignores Gloam murk.', 'A second stack on the other side.'],
   battery: ['Gun Battery', 'kill', 'A second cannon on its own tower, at 40% damage.', 'It hits for 70%, and its hits splash 30%.', 'Splash 100%. Crits deal +100% damage.'],
@@ -12127,9 +12733,9 @@ const BLD = {
   breakwater: ['Breakwater', 'hold', 'Stone segments close the ring. Max HP +110 and a full repair.', 'Flood Gate cooldown −25%, arc +30%.', 'Every 15 s a wave breaks off it and throws back every creature at the wall 4 m.'],
   bell: ['Bell Tower', 'hold', 'Every 12 s a shockwave stops every creature in the brazier ring for 1 s (bosses 0.3 s).', 'Every 9 s.', 'Each ring also hits them for 2× dmg.'],
   pitch: ['Pitch Chutes', 'hold', 'Every 10 s the most crowded 60° of the wall burns: 0.5× dmg/s for 4 s. Fire jumps to creatures within 1.5 m.', 'Every 7 s.', 'The burning arc is 90°.'],
-  wrecker: ['Wreckers’ Lamp', 'greed', 'A false light on the rocks. Creatures within 20 m drift to a rock 15 m out, take 1× dmg there and drop +40% gold.', '+70% gold. The tide is 10% faster.', 'The rock holds them 1 s.'],
+  wrecker: ['Wreckers’ Lamp', 'greed', 'A false light on the rocks. Creatures within 20 m drift to a rock 15 m out, take 1× dmg there and drop +40% gold.', '+70% gold from creatures lured to the rock.', 'The rock holds them 1 s.'],
   boat: ['Boathouse', 'greed', 'Every 12 s a boat rows out and brings 5× wave gold. If the tide reaches it in the dark, it is lost.', 'Two boats.', 'Boats bring 8× wave gold.'],
-  cave: ['Smugglers’ Cave', 'greed', 'At each wave’s end 20% of your gold goes in the chest. It pays 10% interest per wave held.', 'Interest 15%.', '25% goes in.'],
+  cave: ['Smugglers’ Cave', 'greed', 'At each wave’s end 20% of your gold goes in the chest. It pays 10% interest per wave held, and pays out when the wall is under half HP or every 4th wave.', 'Interest 15%.', '25% goes in.'],
   horn: ['Fog Horn', 'strange', 'Every 20 s every creature within 25 m turns away for 2 s (bosses 0.5 s).', 'Every 16 s.', 'Every 12 s, for 3 s.'],
   well: ['The Old Well', 'strange', 'Every 8 s a hand drags one lit creature within 15 m under (bosses take 10× dmg instead).', 'Every 6 s.', 'Two hands.'],
   spire: ['Storm Spire', 'strange', 'Lightning every 4 s: 6× dmg in 3 m on a lit creature. The flash lights a 12 m circle for 0.25 s.', 'Every 3 s.', 'Every 2 s.'],
