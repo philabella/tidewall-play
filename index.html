@@ -3793,8 +3793,8 @@ const TUNE = {
     // `regrow` s). Eye damage of `recoil` x max HP since the last recoil: it recoils `push` m, every tentacle lets go, the
     // eye shuts `shut` s. It surfaces `rise` m beyond where it stands (`stand` m out
     // from the wall) and stays under water, out of reach, until it stands. `again`: per later appearance, slamX and tentHp x again.
-    // at: 0 = off until the Studio Head OKs the turntable sheet (LAS-59: shots/las59/after/sheet.png); tuned and measured at 60
-    deep: { at: 0, every: 40, hpX: 8, stand: 14, rise: 4, eyeX: 3, mawX: 1, tent: 8, tentHp: 0.02, fan: 1.0, cycle: 8, reach: 1.6, grip: 1.2,
+    // at: on at 60 (Studio Head OK'd the sheet in LAS-122), again at 100 (x again), 140...
+    deep: { at: 60, every: 40, hpX: 8, stand: 14, rise: 4, eyeX: 3, mawX: 1, tent: 8, tentHp: 0.02, fan: 1.0, cycle: 8, reach: 1.6, grip: 1.2,
       slamX: 0.15, regrow: 20, recoil: 0.06, push: 5, shut: 2.5, again: 1.5,
       // floor: its body HP is at least floor x the damage per second the run dealt over its last 3 waves (a strong build
       // still gets a stream on the eye instead of killing it as it rises)
@@ -5022,6 +5022,14 @@ function deepFell(S, b) {   // the body is gone: every part goes with it
 // every step, before the creatures walk: the body comes in to stand m out from the wall (stops for the Bell, backs off
 // from the Fog Horn), then the parts are placed. Each tentacle runs its cycle: reach the wall (reach s), slam once, hold
 // grip s, draw back (reach s), rest. f = how far out it is (0 at the body, 1 on the wall; render reads it as q.f).
+// dev (#dev panel "Summon the Deep One", LAS-122): one rises now, off the schedule, so it can be seen without reaching wave
+// 60. Its HP is the boss HP of this wave x20 (a dev viewer gets time to look; the dps floor still applies). No rnd draw.
+function summonDeep(S) {
+  const W = S.T.wave, B = S.T.boss, D = B.deep;
+  const hp = W.hpBase * Math.pow(W.hpGrowth, Math.max(1, S.wave)) * B.hpMul * D.hpX * 20;
+  S.spawnQ.push({ at: S.t, a: Math.PI / 2, r: S.rim + D.stand + D.rise, hp, gold: Math.ceil(Math.pow(W.goldGrowth, S.wave)) * B.goldMul, boss: 'deep', kind: 'deep', bw: S.wave });
+  S.spawnQ.sort((p, q) => q.at - p.at);
+}
 function deepTick(S, dt) {
   const D = S.T.boss.deep, C = S.T.creature, wallR = S.rim;
   for (const b of S.enemies) {
@@ -5692,7 +5700,7 @@ function result(S) {
 }
 
 const FORGE = TUNE.forge.nodes.map(n => n.id), FORGE_FULL = forgeFull(TUNE);   // FORGE_FULL: nodes in a full Forge (forks hold one side)
-const TWSim = { TUNE, UPS, ABS, KINDS, KINDNAME, FOES, FOE, BOSSES, FORGE, FORGE_FULL, forgeFull, newRun, step, stats, kindStats, cost, canBuy, buy, upText, card,
+const TWSim = { TUNE, summonDeep, UPS, ABS, KINDS, KINDNAME, FOES, FOE, BOSSES, FORGE, FORGE_FULL, forgeFull, newRun, step, stats, kindStats, cost, canBuy, buy, upText, card,
   choosePick, rerollPick, useAbility, abInfo, play, result, rnd, rsHash, merge, fmt, omen, bossKind,
   newMeta, nodeInfo, newDawnInfo, newDawn, starMul, tideInfo, setTide, mountSlots, nodeCost, canBuyNode, buyNode, nextNode, setMount,
   forgeMods, embersFor, bank, serialize, deserialize,
@@ -6281,6 +6289,8 @@ const SYN = {
   fall: (C, o, t, p) => { synT(C, o, t, 110, 110, 0.6, 'sawtooth', 0.12); synT(C, o, t + 0.6, 104, 104, 0.6, 'sawtooth', 0.12); synT(C, o, t + 1.2, 98, 49, 1.8, 'sawtooth', 0.14, 0.02); synT(C, o, t, 50, 28, 2.4, 'sine', 0.6, 0.05); },
   // the Deep One (later): a vast call from under the sea, loud
   deep: (C, o, t, p) => { call(C, o, t, 'groan', 1.6); synT(C, o, t, 31, 24, 4, 'sine', 0.9, 0.8); synN(C, o, t, 4, 'lowpass', 140, 50, 1, 0.5, 1); },
+  // LAS-122: the Deep One's eye opens (the beam crosses it the first time): a slow wet sub-bass swell. A hook: Art & Brand replaces it
+  deepeye: (C, o, t, p) => { synT(C, o, t, 19, 26, 4.5, 'sine', 0.9, 1.6); synT(C, o, t + 0.4, 38, 33, 3.5, 'triangle', 0.18, 1.2); synN(C, o, t, 3.5, 'lowpass', 70, 160, 2, 0.35, 1.4); },
   // the lamp mechanism: one iron clank per turn (quiet, a bed sound)
   clank: (C, o, t, p) => { [[310, 1], [847, 0.5], [1590, 0.25]].forEach(([f, v]) => synT(C, o, t, f * p, f * p * 0.99, 0.35 * (1.2 - v * 0.4), 'sine', 0.12 * v, 0.002)); synN(C, o, t, 0.05, 'bandpass', 1800, 900, 2, 0.14, 0.001); },
   click: (C, o, t, p) => { synT(C, o, t, 900 * p, 700, 0.04, 'triangle', 0.25, 0.002); },
@@ -6316,9 +6326,9 @@ const SYN = {
   dive: (C, o, t, p) => { synN(C, o, t, 0.3, 'lowpass', 900, 150, 0.8, 0.5, 0.004); synT(C, o, t, 120 * p, 50, 0.25, 'sine', 0.35, 0.004); wet(C, o, t + 0.2, 'gurgle'); },
 };
 const VOL = { shot: 0.26, hit: 0.15, crit: 0.28, kill: 0.22, wall: 0.34, wallboss: 0.8, bell: 0.55, horn: 1, boss: 0.9, bossdie: 0.95, omen: 0.6,
-  keg: 0.85, harpoon: 0.6, beam: 0.95, flood: 0.8, mile: 0.6, fall: 0.85, deep: 1, clank: 0.35, click: 0.5,
+  keg: 0.85, harpoon: 0.6, beam: 0.95, flood: 0.8, mile: 0.6, fall: 0.85, deep: 1, deepeye: 0.9, clank: 0.35, click: 0.5,
   battery: 0.22, mortar: 0.4, ballista: 0.4, tesla: 0.6, tbell: 0.4, hornb: 0.4, roar: 0.75, rocket: 0.45, surge: 0.45, boatok: 0.6, boatlost: 0.45, watch: 1, dive: 0.3 };
-const VERB = { bell: 0.6, horn: 0.45, boss: 0.35, bossdie: 0.4, omen: 0.5, mile: 0.4, fall: 0.4, beam: 0.25, deep: 0.6, clank: 0.3, keg: 0.15, wallboss: 0.15,
+const VERB = { bell: 0.6, horn: 0.45, boss: 0.35, bossdie: 0.4, omen: 0.5, mile: 0.4, fall: 0.4, beam: 0.25, deep: 0.6, deepeye: 0.5, clank: 0.3, keg: 0.15, wallboss: 0.15,
   tbell: 0.5, hornb: 0.4, roar: 0.15, rocket: 0.2, surge: 0.25, boatok: 0.3, boatlost: 0.35, mortar: 0.15, watch: 0.2, dive: 0.2 };
 // LAS-88 habituation (the 10-minute mix check): a voice that keeps coming back gets quieter. h = its play count decayed over
 // ~12 s; past HAB[k] plays in that window its level goes x sqrt(HAB/h) (a 14-a-second gun hail sits ~7 dB under a lone shot)
@@ -9809,19 +9819,30 @@ function specialEnd(X, cnt) {
 // every frame on a curve from the head to the wall, driven by the sim's reach (b.deep.tents[i].f: 0 at rest, 1 on the wall).
 // Read-only on S. Dev: #deep (checks/las59.js) draws a still one at a fixed spot (R.deepDev) for the turntable sheet.
 // Z: the whole of it x Z (Studio Head, LAS-59 review: Cthulhu-scale, bigger than the citadel): the meshes are built at 1 and drawn at Z
-const DEEP = { headR: 5.4, hump: [12, 8, 9], eyeR: 1.75, tentR: [1.25, 0.16], beardN: 7, rings: 46, sides: 10, rise: 3.2, sink: 4.5, Z: 2.6, eyeZ: 2.9 };
+// LAS-122 polish: tentacles taper hard to a curled tip, sucker cups in two rows underneath, creased segments; the eye's first
+// lighting is an event (rev: lid opens slowly, the pupil closes to a slit, a low swell); a ridged barnacled hide, a brow
+// over the eye and a jaw the sea lights from below when the maw opens; wet sheen only where the beam falls.
+const DEEP = { headR: 5.4, hump: [12, 8, 9], eyeR: 1.75, tentR: [1.25, 0.06], beardN: 7, rings: 72, sides: 12, rise: 3.2, sink: 4.5, Z: 2.6, eyeZ: 2.9,
+  suck: 0.42, curl: 0.22, rev: [0.3, 1.8, 1.0, 0.8, 0.35] };   // suck: cup rows +-rad from the underside; curl: the tip's share of the length;
+// rev (seconds of light on the eye): wait, lid open, pupil starts, slit; then the share of that clock that runs in the dark
 const DMASK = 'varying vec3 vDW;\nuniform vec4 uBa;\nuniform float uBw,uBl,uFl,uFr,uBase;\n' + BMASK +
   'float dmask(vec2 q){float r=length(q);float m=max(max(bmask(q,uBa.x,uBw,uBl),bmask(q,uBa.y,uBw,uBl)),max(bmask(q,uBa.z,uBw,uBl),bmask(q,uBa.w,uBw,uBl)));' +
   'm=max(m,uFl*max(0.12,smoothstep(uFr+2.5,uFr-2.5,r)));return max(m,0.6*smoothstep(uBase+1.0,uBase-1.0,r));}\n';   // the Flare: a dim glimpse of all of it (as litAmt: never 0 while the sim lights it)
-function deepMat(o) {   // wet black flesh that exists only in the light (R.deepAll: the turntable shows it whole)
+const DMAW = { value: new Float32Array([0, -999, 0, 0]) }, DMAWR = { value: 15 };   // the open maw (xyz, gape) and its light's reach: the jaw lit from below
+function deepMat(o, wet) {   // wet black flesh that exists only in the light (R.deepAll: the turntable shows it whole)
   const m = new T3.MeshStandardMaterial(Object.assign({ vertexColors: true, flatShading: false, roughness: 0.3, metalness: 0.12 }, o));   // smooth wet skin (faceted read as rock)
-  const uAll = { value: 0 }; m.userData.all = uAll;
+  const uAll = { value: 0 }, uWet = { value: new T3.Vector2(wet ? wet[0] : 0.35, wet ? wet[1] : 40) }; m.userData.all = uAll;
   return patch(m, 'deep-mask', sh => {
-    Object.assign(sh.uniforms, { uBa: U.ba, uBw: U.bw, uBl: U.bl, uFl: U.fl, uFr: U.fr, uBase: U.base, uAll });
-    vHead(sh, 'varying vec3 vDW;');
-    vAfter(sh, 'project_vertex', 'vDW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    fHead(sh, DMASK + 'uniform float uAll;');
-    fAfter(sh, 'dithering_fragment', 'float dm = max(uAll, dmask(vDW.xz)); if (dm < 0.02) discard; gl_FragColor.rgb *= dm;' +
+    Object.assign(sh.uniforms, { uBa: U.ba, uBw: U.bw, uBl: U.bl, uFl: U.fl, uFr: U.fr, uBase: U.base, uAll, uWet, uMaw: DMAW, uMawR: DMAWR });
+    vHead(sh, 'varying vec3 vDW;\nvarying vec3 vDN;');
+    vAfter(sh, 'project_vertex', 'vec4 dwp = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\ndwp = instanceMatrix * dwp;\n#endif\nvDW = (modelMatrix * dwp).xyz; vDN = normalize((vec4(transformedNormal, 0.0) * viewMatrix).xyz);');
+    fHead(sh, DMASK + 'uniform float uAll, uMawR;\nuniform vec2 uWet;\nuniform vec4 uMaw;\nvarying vec3 vDN;');
+    fAfter(sh, 'dithering_fragment', 'float dl = dmask(vDW.xz), dm = max(uAll, dl); if (dm < 0.02) discard; gl_FragColor.rgb *= dm;' +
+      // LAS-122: wet: the lamp's own glint (a half-vector highlight toward the lantern) only where the beam falls (dl), never in the dark
+      'vec3 dN = normalize(vDN), dL = normalize(vec3(0.0, 26.0, 0.0) - vDW), dV = normalize(cameraPosition - vDW);' +
+      'gl_FragColor.rgb += uWet.x * pow(max(dot(dN, normalize(dL + dV)), 0.0), uWet.y) * dl * vec3(0.62, 0.66, 0.66);' +
+      // the maw open: the lit sea under it throws a cold light up into the jaw, brow and beard (faces turned down only, inside the light)
+      'vec3 dq = vDW - uMaw.xyz; gl_FragColor.rgb += uMaw.w * max(0.0, -dN.y) * exp(-dot(dq, dq) / (uMawR * uMawR)) * dm * vec3(0.11, 0.14, 0.14);' +
       // dev only (the turntable): a grey studio key light from over the camera, so the whole model can be judged
       'gl_FragColor.rgb += uAll * vColor * (0.25 + 1.8 * max(0.0, dot(normalize(normal), normalize(vec3(0.35, 0.75, 0.55)))));');
   });
@@ -9841,20 +9862,61 @@ function blob(s, seg, fold, col) {
   return paint(g, (p, i) => { const q = p.clone().set(p.x / s[0], p.y / s[1], p.z / s[2]), n = dn(q.x * 3, q.y * 3, q.z * 3), fl = ((i * 2654435761) >>> 0) % 97 === 0;
     return fl ? [0.30, 0.29, 0.25] : col(q, n); });
 }
+// LAS-122: barnacle clusters on a blob's surface (s, fold as blob): n clusters of 3-8 crusted cones, each with a dark mouth,
+// set along the surface normal where ok(v) (unit-sphere point); merged into the blob (one mesh, one draw). Deterministic.
+function barnacled(g, s, fold, n, ok, seed) {
+  const parts = [g], h = k => { const x = Math.sin(k * 127.1 + seed * 311.7) * 43758.5453; return x - Math.floor(x); }, v = new T3.Vector3(), nm = new T3.Vector3(), up = new T3.Vector3(0, 1, 0), q = new T3.Quaternion();
+  for (let c = 0, tries = 0; c < n && tries < n * 30; tries++) {
+    const z = h(tries * 2) * 2 - 1, a = h(tries * 2 + 1) * Math.PI * 2, cv = new T3.Vector3(Math.sqrt(1 - z * z) * Math.cos(a), z, Math.sqrt(1 - z * z) * Math.sin(a));
+    if (!ok(cv)) continue; c++;
+    const m = 6 + Math.floor(h(tries + 77) * 9);
+    for (let j = 0; j < m; j++) {
+      v.set(cv.x + (h(tries * 9 + j) - 0.5) * 0.11, cv.y + (h(tries * 9 + j + 3) - 0.5) * 0.11, cv.z + (h(tries * 9 + j + 5) - 0.5) * 0.11).normalize();
+      const k = fold(v), R0 = (0.07 + 0.13 * h(tries * 13 + j)) * (j === 0 ? 1.5 : 1), H = R0 * (0.7 + 0.6 * h(tries * 5 + j));
+      const b = new T3.CylinderGeometry(R0 * 0.5, R0, H, 9, 1); b.deleteAttribute('uv'); b.translate(0, H / 2 - R0 * 0.25, 0);
+      const top = H - R0 * 0.25 - 1e-4, pale = 0.085 + 0.05 * h(tries * 3 + j);
+      paint(b, p => p.y >= top && Math.hypot(p.x, p.z) < R0 * 0.5 ? [0.008, 0.006, 0.005] : [pale, pale * 0.95, pale * 0.82]);   // crusted shell, a black mouth on top
+      nm.set(v.x / s[0], v.y / s[1], v.z / s[2]).normalize(); q.setFromUnitVectors(up, nm); b.applyQuaternion(q);
+      b.translate(v.x * k * s[0], v.y * k * s[1], v.z * k * s[2]);
+      parts.push(b);
+    }
+  }
+  if (g.attributes.uv) g.deleteAttribute('uv');
+  return T3.mergeGeometries(parts);
+}
+function bend(g, k) {   // arch a geometry along x (y -= k x^2): the brow droops round the eye
+  const P = g.attributes.position; for (let i = 0; i < P.count; i++) { const x = P.getX(i); P.setY(i, P.getY(i) - k * x * x); } g.computeVertexNormals(); return g;
+}
 function deepBuild() {
   const D = R.deep = { list: new Map(), mats: {} }, sc = R.scene;
+  // LAS-122 hide: ridged like a whale's throat and a toad's back, not rock: sharp pale crests (rg) over dark wet troughs
+  const rg = q => Math.pow(1 - Math.abs(Math.sin(q.z * 13 + q.x * 2 + 1.6 * dn(q.x * 3, q.y * 3, q.z * 3))), 3) * (0.5 + 0.5 * dn(q.x * 7, q.y * 6, q.z * 2));
   const flesh = (q, n) => { const k = 0.035 + 0.04 * n * n + 0.025 * Math.max(0, -q.y), g = Math.pow(Math.abs(Math.sin(q.x * 9 + q.y * 4 + n * 3)), 30) * 0.05;   // near-black, a bruised brown-green; pale wet seams
     return [k * 1.05 + g, k * 0.95 + g * 0.9, k * 0.85 + g * 0.8]; };
-  D.mats.flesh = deepMat({}); D.mats.eye = deepMat({ roughness: 0.15, metalness: 0.0 }); D.mats.bone = deepMat({ roughness: 0.6, flatShading: true });
+  const hide = (q, n) => { const c = flesh(q, n), r = rg(q.clone().normalize()) * Math.max(0, q.y + 0.2), d = 1 - 0.45 * Math.pow(Math.abs(Math.sin(q.z * 13 + q.x * 2 + 1.6 * dn(q.x * 3, q.y * 3, q.z * 3))), 8);
+    return [c[0] * d + r * 0.07, c[1] * d + r * 0.062, c[2] * d + r * 0.052]; };
+  D.mats.flesh = deepMat({}, [0.45, 48]); D.mats.eye = deepMat({ roughness: 0.15, metalness: 0.0 }, [1.1, 220]); D.mats.bone = deepMat({ roughness: 0.6, flatShading: true }, [0.08, 20]);
+  D.mats.tent = deepMat({ roughness: 0.22 }, [0.7, 70]);   // the arms: the wettest skin (they come up out of the sea)
   // the hump: a ridged back of folds and spines, mostly under water; the head: brow over one eye, the maw under the other side
   // the back: heavy folds across it, a raised spine ridge of knuckled plates along its length (z), sagging flanks
-  D.hump = blob(DEEP.hump, 72, v => 1 + 0.06 * Math.sin(v.z * 16 + 2 * dn(v.x * 3, v.y * 3, v.z * 3)) * Math.max(0, v.y) + 0.07 * dn(v.x * 4, v.y * 4, v.z * 4)
-    + 0.16 * Math.exp(-v.x * v.x * 60) * Math.max(0, v.y) * (0.6 + 0.4 * Math.abs(Math.sin(v.z * 11))) - 0.06 * Math.max(0, -v.y), flesh);
+  const humpF = v => 1 + 0.06 * Math.sin(v.z * 16 + 2 * dn(v.x * 3, v.y * 3, v.z * 3)) * Math.max(0, v.y) + 0.07 * dn(v.x * 4, v.y * 4, v.z * 4) + 0.07 * rg(v) * Math.max(0, v.y + 0.2)
+    + 0.16 * Math.exp(-v.x * v.x * 60) * Math.max(0, v.y) * (0.6 + 0.4 * Math.abs(Math.sin(v.z * 11))) - 0.06 * Math.max(0, -v.y);
+  D.hump = barnacled(blob(DEEP.hump, 96, humpF, hide), DEEP.hump, humpF, 34, v => v.y > 0.15 && Math.abs(v.x) > 0.12, 11);
   const spines = []; for (let i = 0; i < 9; i++) { const z = -0.8 + i * 0.2, y = Math.sqrt(Math.max(0, 1 - z * z)) * 1.12, L = 1.2 + 1.6 * Math.sin(Math.PI * (i + 0.5) / 9) + 0.4 * ((i * 7) % 3);
     const c = new T3.ConeGeometry(0.32, L, 6); c.translate(0, L / 2, 0); c.rotateX(-0.5 - z * 0.4); c.translate(0, y * DEEP.hump[1], z * DEEP.hump[2]); spines.push(c); }
   D.spines = paint(T3.mergeGeometries(spines), p => [0.05, 0.045, 0.04]);
-  D.head = blob([DEEP.headR * 1.05, DEEP.headR * 0.9, DEEP.headR], 64, v => 1 + 0.16 * Math.max(0, v.y + 0.1 - Math.abs(v.x - 0.3)) * Math.max(0, v.z) + 0.06 * Math.sin(v.y * 13 + v.x * 3) + 0.08 * dn(v.x * 5, v.y * 5, v.z * 5)
-    - 0.22 * Math.exp(-((v.x - 0.33) ** 2 + (v.y - 0.28) ** 2) * 9) * Math.max(0, v.z), flesh);   // a socket where the eye sits
+  // the head: a heavy brow shelf across its front over the eye, cheek folds running down to a jaw shelf (a face, half seen)
+  const HS = [DEEP.headR * 1.05, DEEP.headR * 0.9, DEEP.headR];
+  const headF = v => 1 + 0.16 * Math.max(0, v.y + 0.1 - Math.abs(v.x - 0.3)) * Math.max(0, v.z) + 0.06 * Math.sin(v.y * 13 + v.x * 3) + 0.08 * dn(v.x * 5, v.y * 5, v.z * 5) + 0.05 * rg(v) * Math.max(0, v.y)
+    - 0.22 * Math.exp(-((v.x - 0.33) ** 2 + (v.y - 0.28) ** 2) * 9) * Math.max(0, v.z)   // a socket where the eye sits
+    + 0.2 * Math.exp(-((v.y - 0.55 + 0.25 * v.x * v.x) ** 2) * 40) * Math.max(0, v.z - 0.2)   // the brow shelf
+    + 0.12 * Math.exp(-((v.y + 0.3) ** 2) * 30) * Math.max(0, v.z - 0.3) + 0.05 * Math.pow(Math.abs(Math.sin(v.x * 7)), 6) * Math.max(0, v.z) * Math.max(0, 0.4 - v.y);   // jaw shelf, cheek folds
+  D.head = barnacled(blob(HS, 80, headF, hide), HS, headF, 14, v => v.y > 0.35 && v.z < 0.6, 5);
+  // the brow over the eye itself: an arched overhang of hide (drawn on the eye's top); the jaw: a slab under the lower teeth
+  D.browG = paint(bend(blob([2.3, 0.6, 1.0], 28, v => 1 + 0.12 * rg(v) + 0.06 * dn(v.x * 6, v.y * 6, v.z * 6), hide), 0.32), (p, i) => { const k = 0.05 + 0.04 * Math.max(0, p.y); return [k * 1.05, k * 0.95, k * 0.82]; });
+  D.jawG = blob([1.9, 0.55, 1.0], 28, v => 1 + 0.1 * Math.pow(Math.abs(Math.sin(v.x * 9)), 4) + 0.05 * dn(v.x * 5, v.y * 5, v.z * 5), hide);
+  // a sucker: a fleshy ring cup (axis y), pale rim, dark centre
+  D.suckG = paint(new T3.TorusGeometry(1, 0.68, 6, 10).rotateX(Math.PI / 2).scale(1, 0.55, 1), p => { const r = Math.hypot(p.x, p.z), k = r > 1.1 ? 0.1 : r > 0.6 ? 0.06 : 0.02; return [k * 1.15, k * 0.95, k * 0.9]; });
   // the eye: jaundiced, veined, a slit pupil that narrows in the light; lids that shut when it recoils
   D.eyeG = paint(new T3.SphereGeometry(1, 36, 26), p => {
     const r = Math.hypot(p.x, p.y), fz = p.z;
@@ -9872,42 +9934,71 @@ function deepBuild() {
   D.teethUp = teeth(9, true); D.teethLo = teeth(8, false);
   D.n = 0;
 }
-// one tentacle: a tapered tube with suckers on its underside, re-laid along a cubic curve every frame
+// one tentacle: a hard-tapered tube, creased every 3rd ring on its back, paler underneath (the sucker cups sit there),
+// re-laid along a cubic curve every frame; its last DEEP.curl of length rolls into a curl (LAS-122)
 function tubeGeo() {
   const N = DEEP.rings, M = DEEP.sides, pos = new Float32Array(N * (M + 1) * 3), col = new Float32Array(N * (M + 1) * 3), idx = [];
   for (let i = 0; i < N; i++) for (let j = 0; j <= M; j++) {
-    const o = (i * (M + 1) + j) * 3, under = Math.cos(j / M * Math.PI * 2) < -0.55, suck = under && i % 3 === 0;
-    const k = suck ? 0.22 : under ? 0.15 : 0.07 + 0.03 * ((i * 13 + j * 7) % 5) / 5;
-    col[o] = k * (under ? 1.05 : 0.8); col[o + 1] = k * (under ? 0.92 : 1); col[o + 2] = k * (under ? 0.86 : 0.92);
+    const o = (i * (M + 1) + j) * 3, ca = Math.cos(j / M * Math.PI * 2), under = ca < -0.45, crease = !under && i % 3 === 0;
+    const k = under ? 0.13 + 0.03 * ((i * 5 + j) % 3) / 3 : crease ? 0.025 : 0.065 + 0.03 * ((i * 13 + j * 7) % 5) / 5;
+    col[o] = k * (under ? 1.1 : 0.8); col[o + 1] = k * (under ? 0.9 : 1); col[o + 2] = k * (under ? 0.84 : 0.92);
     if (i < N - 1 && j < M) { const a = i * (M + 1) + j, b = a + M + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
   }
   const g = new T3.BufferGeometry(); g.setAttribute('position', new T3.BufferAttribute(pos, 3).setUsage(T3.DynamicDrawUsage)); g.setAttribute('color', new T3.BufferAttribute(col, 3)); g.setIndex(idx);
   return g;
 }
 const bez = (a, b, c, d, t, o) => { const u = 1 - t; for (let k = 0; k < 3; k++) o[k] = u * u * u * a[k] + 3 * u * u * t * b[k] + 3 * u * t * t * c[k] + t * t * t * d[k]; return o; };
-function layTube(g, P0, P1, P2, P3, r0, r1, t, ph) {
-  const N = DEEP.rings, M = DEEP.sides, A = g.attributes.position.array, c = [0, 0, 0], n = [0, 0, 0], tg = new T3.Vector3(), up = new T3.Vector3(), sd = new T3.Vector3(), nm = new T3.Vector3();
+const TUB = { c: new Float32Array(DEEP.rings * 3), a: [0, 0, 0], b: [0, 0, 0], tg: new T3.Vector3(), nm: new T3.Vector3(), sd: new T3.Vector3(), t0: new T3.Vector3(), bn: new T3.Vector3(), ax: new T3.Vector3(), x: new T3.Vector3() };
+// curl 0..1 (how far the tip rolls), cs (+-1: which way); SK = { arr, n } fills sucker-cup matrices (two rows on the underside)
+function layTube(g, P0, P1, P2, P3, r0, r1, t, ph, curl, cs, SK) {
+  const N = DEEP.rings, M = DEEP.sides, A = g.attributes.position.array, C = TUB.c, tg = TUB.tg, nm = TUB.nm, sd = TUB.sd;
+  const s0 = curl > 0 ? 1 - DEEP.curl : 1;
+  for (let i = 0; i < N; i++) { const s = i / (N - 1); if (s <= s0) { bez(P0, P1, P2, P3, s, TUB.a); C[i * 3] = TUB.a[0]; C[i * 3 + 1] = TUB.a[1]; C[i * 3 + 2] = TUB.a[2]; } }
+  if (curl > 0) {   // the tip: a spiral rolled from the curve's direction at s0 toward up-and-aside, tightening as it goes
+    bez(P0, P1, P2, P3, s0, TUB.a); bez(P0, P1, P2, P3, s0 - 0.01, TUB.b); TUB.t0.set(TUB.a[0] - TUB.b[0], TUB.a[1] - TUB.b[1], TUB.a[2] - TUB.b[2]).normalize();
+    bez(P0, P1, P2, P3, 1, TUB.b); const seg = Math.hypot(TUB.b[0] - TUB.a[0], TUB.b[1] - TUB.a[1], TUB.b[2] - TUB.a[2]) * 1.05;
+    TUB.x.set(0, 1, 0).addScaledVector(TUB.t0, -TUB.t0.y); TUB.ax.crossVectors(TUB.t0, TUB.x.set(0, 1, 0)).normalize();
+    TUB.bn.set(0, 1, 0).addScaledVector(TUB.t0, -TUB.t0.y).normalize().multiplyScalar(0.55).addScaledVector(TUB.ax, 0.84 * cs).normalize();
+    const th = Math.PI * (0.6 + 1.3 * curl), r = seg / (th * 0.78);
+    for (let i = 0; i < N; i++) { const s = i / (N - 1); if (s <= s0) continue;
+      const u = (s - s0) / (1 - s0), q = th * u, rr = r * (1 - 0.45 * u), fa = rr * Math.sin(q), fb = rr * (1 - Math.cos(q));
+      C[i * 3] = TUB.a[0] + TUB.t0.x * fa + TUB.bn.x * fb; C[i * 3 + 1] = TUB.a[1] + TUB.t0.y * fa + TUB.bn.y * fb; C[i * 3 + 2] = TUB.a[2] + TUB.t0.z * fa + TUB.bn.z * fb; }
+  }
+  let ns = 0; const SA = SK ? SK.arr : null;
   for (let i = 0; i < N; i++) {
-    const s = i / (N - 1); bez(P0, P1, P2, P3, s, c); bez(P0, P1, P2, P3, Math.min(1, s + 0.02), n);
-    if (s >= 0.98) { bez(P0, P1, P2, P3, s - 0.02, n); tg.set(c[0] - n[0], c[1] - n[1], c[2] - n[2]); } else tg.set(n[0] - c[0], n[1] - c[1], n[2] - c[2]);
-    tg.normalize(); up.set(0, 1, 0); if (Math.abs(tg.y) > 0.95) up.set(1, 0, 0);
-    sd.crossVectors(tg, up).normalize(); nm.crossVectors(sd, tg).normalize();
-    const w = 0.2 * Math.sin(t * 2.2 + ph + s * 7) * s * s, rad = (r0 + (r1 - r0) * Math.pow(s, 0.7)) * (1 + 0.1 * Math.sin(s * 46 + ph));
+    const s = i / (N - 1), i0 = Math.max(0, i - 1) * 3, i1 = Math.min(N - 1, i + 1) * 3;
+    tg.set(C[i1] - C[i0], C[i1 + 1] - C[i0 + 1], C[i1 + 2] - C[i0 + 2]).normalize();
+    if (i === 0) { nm.set(0, 1, 0); if (Math.abs(tg.y) > 0.95) nm.set(1, 0, 0); }
+    nm.addScaledVector(tg, -nm.dot(tg)).normalize(); sd.crossVectors(tg, nm);   // carried along (no flips in the curl): -nm is always its underside
+    const w = 0.2 * Math.sin(t * 2.2 + ph + s * 7) * s * s;
+    const rad = (r1 + (r0 - r1) * Math.pow(1 - s, 1.7)) * (1 + 0.3 * Math.max(0, 1 - s / 0.06)) * (1 + 0.06 * Math.sin(s * 23 + ph));   // hard taper, a flared root
+    const cx = C[i * 3], cy = C[i * 3 + 1], cz = C[i * 3 + 2], cr = i % 3 === 0 ? 0.9 : i % 3 === 1 ? 1.03 : 1;   // the creases between segments
     for (let j = 0; j <= M; j++) {
-      const a = j / M * Math.PI * 2, ca = Math.cos(a) * rad, sa = Math.sin(a) * rad, o = (i * (M + 1) + j) * 3;
-      A[o] = c[0] + nm.x * ca + sd.x * (sa + w); A[o + 1] = c[1] + nm.y * ca + sd.y * (sa + w); A[o + 2] = c[2] + nm.z * ca + sd.z * (sa + w);
+      const a = j / M * Math.PI * 2, c0 = Math.cos(a), rr = c0 > -0.45 ? rad * cr : rad, ca = c0 * rr, sa = Math.sin(a) * rr, o = (i * (M + 1) + j) * 3;
+      A[o] = cx + nm.x * ca + sd.x * (sa + w); A[o + 1] = cy + nm.y * ca + sd.y * (sa + w); A[o + 2] = cz + nm.z * ca + sd.z * (sa + w);
+    }
+    if (SA && i % 2 === 0 && s > 0.07 && s < 0.985 && ns + 2 <= SK.max) for (const sg of [-1, 1]) {   // a sucker cup each side of the underside
+      const a = Math.PI + sg * DEEP.suck, ax = TUB.ax.copy(nm).multiplyScalar(Math.cos(a)).addScaledVector(sd, Math.sin(a)), rx = TUB.x.crossVectors(ax, tg), k = rad * 0.17, o = (SK.n + ns++) * 16;
+      SA[o] = rx.x * k; SA[o + 1] = rx.y * k; SA[o + 2] = rx.z * k; SA[o + 3] = 0;
+      SA[o + 4] = ax.x * k; SA[o + 5] = ax.y * k; SA[o + 6] = ax.z * k; SA[o + 7] = 0;
+      SA[o + 8] = tg.x * k; SA[o + 9] = tg.y * k; SA[o + 10] = tg.z * k; SA[o + 11] = 0;
+      SA[o + 12] = cx + ax.x * rad * 0.92 + sd.x * w; SA[o + 13] = cy + ax.y * rad * 0.92 + sd.y * w; SA[o + 14] = cz + ax.z * rad * 0.92 + sd.z * w; SA[o + 15] = 1;
     }
   }
+  if (SK) SK.n += ns;
   g.attributes.position.needsUpdate = true; g.computeVertexNormals(); g.computeBoundingSphere();
 }
 function deepRec(D, id) {   // one Deep One's meshes (2 at most at once)
   let r = D.list.get(id); if (r) return r;
   const grp = new T3.Group(), m = D.mats, mk3 = (g, mt) => { const x = new T3.Mesh(g, mt); x.frustumCulled = false; grp.add(x); return x; };
   r = { grp, hump: mk3(D.hump, m.flesh), spines: mk3(D.spines, m.bone), head: mk3(D.head, m.flesh), eye: mk3(D.eyeG, m.eye), pupil: mk3(D.pupilG, m.eye), lidU: mk3(D.lidG, m.flesh), lidL: mk3(D.lidG, m.flesh),
-    throat: mk3(D.throatG, m.flesh), tUp: mk3(D.teethUp, m.bone), tLo: mk3(D.teethLo, m.bone), tents: [], beard: [], up: -1, gone: -1, px: 0, pz: 0, fs: [], lit: 0, lid: 0, seen: 0 };
-  const tube = n => { const g = tubeGeo(); return { g, m: mk3(g, m.flesh) }; };
-  for (let i = 0; i < 8; i++) r.tents.push(tube());
-  for (let i = 0; i < DEEP.beardN; i++) r.beard.push(tube());
+    brow: mk3(D.browG, m.flesh), jaw: mk3(D.jawG, m.flesh),
+    throat: mk3(D.throatG, m.flesh), tUp: mk3(D.teethUp, m.bone), tLo: mk3(D.teethLo, m.bone), tents: [], beard: [], up: -1, gone: -1, px: 0, pz: 0, fs: [], lit: 0, lid: 1, seen: 0, rev: -1, rq: 0 };
+  const tube = mt => { const g = tubeGeo(); return { g, m: mk3(g, mt) }; };
+  for (let i = 0; i < 8; i++) r.tents.push(tube(m.tent));
+  for (let i = 0; i < DEEP.beardN; i++) r.beard.push(tube(m.flesh));
+  const SMAX = 8 * DEEP.rings + 8, sk = new T3.InstancedMesh(D.suckG, m.tent, SMAX); sk.frustumCulled = false; sk.count = 0; sk.instanceMatrix.setUsage(T3.DynamicDrawUsage); grp.add(sk);
+  r.suck = sk; r.SK = { arr: sk.instanceMatrix.array, n: 0, max: SMAX };
   R.scene.add(grp); D.list.set(id, r); return r;
 }
 // per frame: the sim's Deep Ones (b = body creature, its parts in b.deep) -> meshes; a dead one sinks for DEEP.sink s
@@ -9941,19 +10032,33 @@ function deepPose(S, r, t, dt, K, TT, b) {
   r.hump.position.set(hx - ux * 2.3 * HR, -DEEP.hump[1] * Z * 0.5 + lift * 1.1 + 0.6 * Math.sin(t * 0.45), hz - uz * 2.3 * HR); r.hump.rotation.set(0.1, yaw + 0.3, 0.05 * Math.sin(t * 0.4)); r.hump.scale.setScalar(Z);
   r.spines.position.copy(r.hump.position); r.spines.rotation.copy(r.hump.rotation); r.spines.scale.setScalar(Z);
   // the eye: on the head where the sim's eye is; the pupil narrows while lit; the lids close when it recoils
-  const eLit = R.litMap.get(st.eye.id) || 0; r.lit += ((eLit > 0 ? 1 : 0) - r.lit) * Math.min(1, dt * 6);
-  r.lid += ((B.shut || qg > 0 ? 1 : 0) - r.lid) * Math.min(1, dt * (B.shut ? 14 : 3));
+  // LAS-122: it comes up with the eye shut. The first time the light finds the eye (rev) is an event: a held beat, the lid
+  // drags open over rev[1] s, the pupil, wide and round, closes to a slit; a low swell (TWFx 'deepeye': Art & Brand's hook).
+  // Its clock (r.rq) runs while the light is on it (a pass of the beam is ~1 s), at rev[4] in the dark: the next pass finds it wider
+  const eLit = R.litMap.get(st.eye.id) || 0, RV = DEEP.rev; r.lit += ((eLit > 0 ? 1 : 0) - r.lit) * Math.min(1, dt * 6);
+  if (R.deepAll && r.rev < 0) { r.rev = t; r.rq = 99; }   // the turntable: long open
+  if (r.rev < 0 && eLit > 0 && qUp > 0.6 && qg === 0) { r.rev = t; r.rq = 0; const F = root.TWFx; if (F) { if (F.sound) F.sound('deepeye'); if (F.kick) F.kick(0.25); } }
+  if (r.rev >= 0 && r.rq < 99) r.rq += dt * (eLit > 0 ? 1 : RV[4]);
+  const rt = r.rev < 0 ? -1 : r.rq;
+  if (rt < 0) r.lid = 1;
+  else if (rt < RV[0] + RV[1] && !B.shut && qg === 0) { const u = Math.max(0, Math.min(1, (rt - RV[0]) / RV[1])); r.lid = 1 - u * u * (3 - 2 * u) * (0.75 + 0.25 * u); }   // slow, heavy, a catch near the end
+  else r.lid += ((B.shut || qg > 0 ? 1 : 0) - r.lid) * Math.min(1, dt * (B.shut ? 14 : 3));
+  const sl = rt < 0 ? 0 : rt < RV[2] + RV[3] ? Math.max(0, Math.min(1, (rt - RV[2]) / RV[3])) * r.lit : r.lit;   // 0: round and wide, 1: a slit
   const es = DEEP.eyeR * DEEP.eyeZ * (1 - 0.15 * r.lid), ey = Math.max(es * 0.8, hy + HR * 0.3);   // an eye the size of a tower
   r.eye.position.set(ex, ey, ez); r.eye.rotation.set(0.15, yaw, 0); r.eye.scale.setScalar(es);
-  r.pupil.position.set(ex + ux * es * 0.93, ey + 0.05, ez + uz * es * 0.93); r.pupil.rotation.set(0.15, yaw, 0); r.pupil.scale.set(es * (0.34 - 0.24 * r.lit), es * 0.5, es * 0.1);
+  r.pupil.position.set(ex + ux * es * 0.93, ey + 0.05, ez + uz * es * 0.93); r.pupil.rotation.set(0.15, yaw, 0); r.pupil.scale.set(es * (0.4 - 0.34 * sl), es * (0.42 + 0.2 * sl), es * 0.1);
+  // the brow: an arched overhang of hide on the eye's top, lowered as the lid shuts (it scowls)
+  r.brow.position.set(ex - ux * es * 0.15, ey + es * (0.92 - 0.12 * r.lid), ez - uz * es * 0.15); r.brow.rotation.set(0.25 + 0.15 * r.lid, yaw, 0, 'YXZ'); r.brow.scale.setScalar(es * 0.62);
   for (const [lid, s] of [[r.lidU, 1], [r.lidL, -1]]) { lid.position.set(ex, ey, ez); lid.scale.setScalar(es * 1.02); lid.rotation.set(s > 0 ? -1.75 + 1.7 * r.lid : Math.PI + 1.75 - 1.7 * r.lid, yaw, 0, 'YXZ'); }
   // the maw: low on the other side, it breathes; it gapes when a tentacle slams or the eye is struck shut
   const slam = st.tents.some(q => q.f >= 1 && !q.e.dead) ? 1 : 0, gape = 0.18 + 0.1 * Math.sin(t * 1.3) + 0.3 * slam + 0.35 * r.lid, my = Math.max(1.2 * Z, hy - 0.05 * HR), MZ = Z * 1.1;
   r.throat.position.set(wx - ux * 0.5 * MZ, my, wz - uz * 0.5 * MZ); r.throat.scale.set(1.5 * MZ, (0.45 + gape * 1.4) * MZ, 0.8 * MZ); r.throat.rotation.set(0, yaw, 0);
   r.tUp.position.set(wx, my + 0.25 * MZ, wz); r.tUp.rotation.set(0, yaw, 0, 'YXZ'); r.tUp.scale.setScalar(MZ);
   r.tLo.position.set(wx, my - (0.25 + gape * 0.9) * MZ, wz); r.tLo.rotation.set(-gape * 0.6, yaw, 0, 'YXZ'); r.tLo.scale.setScalar(MZ);
+  r.jaw.position.set(wx - ux * 0.35 * MZ, my - (0.75 + gape * 1.1) * MZ, wz - uz * 0.35 * MZ); r.jaw.rotation.set(-gape * 0.5, yaw, 0, 'YXZ'); r.jaw.scale.setScalar(MZ);
+  if (qg === 0) { DMAW.value.set([wx + ux * 0.6 * MZ, my - 3 * MZ, wz + uz * 0.6 * MZ, Math.max(0, gape - 0.2) * 2.4]); DMAWR.value = 6 * MZ; }   // open, the sea under it lights the jaw from below
   // the tentacles: from the head's sides to the wall, the sim's reach eased; severed ones a thrashing stump; the beard writhes
-  const n = st.tents.length, wallY = Math.max(1.4, (R.walkY || 0) + 0.4);
+  const n = st.tents.length, wallY = Math.max(1.4, (R.walkY || 0) + 0.4); r.SK.n = 0;
   st.tents.forEach((q, i) => {
     const T = r.tents[i]; if (!T) return;
     const s = n > 1 ? i / (n - 1) - 0.5 : 0, dead = q.e.dead || qg > 0;
@@ -9969,14 +10074,16 @@ function deepPose(S, r, t, dt, K, TT, b) {
     // at rest they lie curled in the swell (low arcs); reaching, they rear up high and come down over the wall
     const P1 = [P0[0] + (P3[0] - P0[0]) * 0.25, P0[1] + (1 + 7 * fe) * Z, P0[2] + (P3[2] - P0[2]) * 0.25];
     const P2 = [P3[0] - (P3[0] - P0[0]) * 0.22 + rx * Math.sin(t * 1.7 + i * 2) * 1.5 * Z, P3[1] + (0.6 + 6 * Math.sin(Math.PI * Math.min(1, fe * 1.15))) * Z + L * 0.06 * fe, P3[2] - (P3[2] - P0[2]) * 0.22 + rz * Math.sin(t * 1.7 + i * 2) * 1.5 * Z];   // they arch high and come down over the wall
-    layTube(T.g, P0, P1, P2, P3, DEEP.tentR[0] * Z * 0.9, r1, t, i * 1.9);
+    const cu = q.e.dead ? 0 : (1 - 0.8 * fe) * (0.75 + 0.25 * Math.sin(t * 0.9 + i * 1.7));   // the tip curls at rest, opens to grip the wall
+    layTube(T.g, P0, P1, P2, P3, DEEP.tentR[0] * Z * 0.9, r1, t, i * 1.9, cu, i % 2 ? 1 : -1, r.SK);
     if (TT && !q.e.dead) TT.set(q.e.id, P3[1] + 1.2);
   });
   for (let i = 0; i < r.beard.length; i++) {   // short face tentacles hanging over the maw
     const T = r.beard[i], s = i / (r.beard.length - 1) - 0.5, P0 = [wx + (rx * s * 3.4 - ux * 0.4) * MZ, my + 0.4 * MZ, wz + (rz * s * 3.4 - uz * 0.4) * MZ];
     const sw = Math.sin(t * 1.4 + i * 1.3), P3 = [P0[0] + (ux * (1.5 + 0.8 * sw) + rx * s * 2) * MZ, P0[1] - (3.2 + 0.6 * Math.abs(s)) * MZ + lift * 0.1, P0[2] + (uz * (1.5 + 0.8 * sw) + rz * s * 2) * MZ];
-    layTube(T.g, P0, [P0[0] + ux * 1.4 * MZ, P0[1] - 0.6 * MZ, P0[2] + uz * 1.4 * MZ], [P3[0] + rx * sw * 0.6 * MZ, P3[1] + 1.2 * MZ, P3[2] + rz * sw * 0.6 * MZ], P3, 0.42 * MZ, 0.07 * MZ, t, i * 2.3);
+    layTube(T.g, P0, [P0[0] + ux * 1.4 * MZ, P0[1] - 0.6 * MZ, P0[2] + uz * 1.4 * MZ], [P3[0] + rx * sw * 0.6 * MZ, P3[1] + 1.2 * MZ, P3[2] + rz * sw * 0.6 * MZ], P3, 0.42 * MZ, 0.03 * MZ, t, i * 2.3, 0.5 + 0.3 * sw, s < 0 ? -1 : 1, null);
   }
+  r.suck.count = r.SK.n; r.suck.instanceMatrix.needsUpdate = true;
   if (TT && b) { TT.set(b.id, hy + HR * 0.9); TT.set(st.eye.id, ey + es + 0.6); TT.set(st.maw.id, my + 0.6 * MZ);
     const AY = R.aimY || (R.aimY = new Map()); AY.set(st.eye.id, ey); AY.set(st.maw.id, my); AY.set(b.id, hy);
     st.tents.forEach(q => { if (!q.e.dead) AY.set(q.e.id, (TT.get(q.e.id) || 2) - 1.2); }); }
@@ -12051,7 +12158,7 @@ function build() {
     <div class="r"><button data-d="star" disabled title="Starlight arrives with New Dawn (sim day 7)">+1 Starlight</button></div>
     <div class="r"><input id="tw-dw" type="number" min="1" value="20"><button data-d="wave">Jump to wave</button></div>
     <div class="r"><button data-d="pick">Force a pick</button><button data-d="fall">Fall now</button></div>
-    <div class="r"><button data-d="town">Town cards</button></div>
+    <div class="r"><button data-d="town">Town cards</button><button data-d="deep">Summon the Deep One</button></div>
     <div class="r"><button data-d="reset">Reset meta</button></div>
     <div id="tw-dinfo" class="num" style="color:#7fa9a5;margin-top:4px"></div>
   </div>`;
@@ -13281,6 +13388,7 @@ function dev(k) {
   } else if (k === 'pick') {                     // opens a pick at the next step (pickEvery 1 until it is open)
     if (live && !S.pick) { U.devPick = U.devPick || S.pickEvery; S.pickEvery = 1; S.pickedAt = -1; S.nextWave = Math.min(S.nextWave, S.t); }
   } else if (k === 'town') { if (live) mockTown();
+  } else if (k === 'deep') { if (live) Sim.summonDeep(S);   // LAS-122: see it without reaching wave 60
   } else if (k === 'fall') { if (live) { S.hp = 0; S.over = true; } }
   else if (k === 'reset') { hints = {}; store('tidewall.hints', '{}'); combos = {}; store('tidewall.combos', '{}'); if (U.cb.resetMeta) U.cb.resetMeta(); renderForges(); syncTitle(); }
 }
