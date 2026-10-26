@@ -5521,7 +5521,20 @@ function onEv(S, e) {
     case 'crit':   // crit shake only up to a small cap; a crit on a boss also gets a short hit-stop (at most every 0.6 s)
       if (F.bossIds.has(e.id)) { kick(0.25); if (F.t > F.critStop) { F.critStop = F.t + 0.6; hold(FX.stop.bossCrit); } } else kick(0.06, 0.2);
       break;
-    case 'shot': play('shot', 0.07); break;
+    case 'shot': {   // LAS-88: each gun its own voice; the Gun Battery and the Forge mounts fire from their hex (panned)
+      const m = e.from || {}, k = m.b ? 'battery' : SHOT[e.kind];
+      if (k) play(k, SHOTGAP[k], null, panOf(m.x || 0, m.y || 0, 0.6)); else play('shot', 0.07);
+      break;
+    }
+    // LAS-88 the buildings at work (render.js draws them; their sound is here)
+    case 'bell': play('tbell', 1, null, panOf(e.x, e.y, 0.5)); break;
+    case 'horn': play('hornb', 2, null, panOf(e.x, e.y, 0.5)); break;
+    case 'brazier': play('roar', 2); break;
+    case 'rocket': play('rocket', 0.5, null, panOf(e.x, e.y)); break;
+    case 'breakwater': play('surge', 2, null, (Math.random() - 0.5) * 0.6); break;
+    case 'boat': play(e.ok ? 'boatok' : 'boatlost', 0.5, null, panOf(Math.cos(e.a) * e.r, Math.sin(e.a) * e.r)); break;
+    case 'watch': play('watch', 0.8, null, panOf(Math.cos(e.a) * e.d, Math.sin(e.a) * e.d)); break;
+    case 'dive': if (!e.up) play('dive', 0.4, A.call, panOf(e.x, e.y)); break;
     case 'kill': play(e.boss ? 'bossdie' : 'kill', e.boss ? 0 : 0.06); if (e.boss) { kick(0.7); hold(FX.stop.bossKill); F.bossIds.delete(e.id); } break;
     case 'boss': {   // the boss intro: letterbox, the camera leans toward it, its name and line
       F.bossIds.add(e.id); kick(0.35); play('boss', 0);
@@ -5534,7 +5547,7 @@ function onEv(S, e) {
       const f = e.dmg / Math.max(1, S.maxHp);
       if (f >= 0.01) F.flash = Math.min(1, F.flash + f * 6);   // LAS-81: only a real hit pulses (steady chip damage kept the screen red: the dark must stay black)
       if (e.dmg > 0 && root.TWUI && root.TWUI.hit) root.TWUI.hit(e.x, e.y, f);   // LAS-83: a red pulse in from the edge the hit came from
-      if (F.bossIds.has(e.id)) { kick(0.45); play('wallboss', 0.1); }
+      if (F.bossIds.has(e.id)) { kick(0.45); play('wallboss', 0.7); }   // LAS-88: a boss pounding the wall was ~1 boom a second (the 10-min mix check)
       else { if (f >= 0.03) kick(0.12); play('wall', 0.12); }
       break;
     }
@@ -5553,6 +5566,7 @@ function onEv(S, e) {
     case 'fall': banner('The citadel has fallen', 'Wave ' + e.wave + ' · ' + fmt(S.kills) + ' Drowned sent back', FX.bannerFor.fall, '#ff9b7a', 'fall'); kick(0.8); play('fall', 0); break;
   }
 }
+const SHOT = { mortar: 'mortar', ballista: 'ballista', tesla: 'tesla' }, SHOTGAP = { battery: 0.1, mortar: 0.25, ballista: 0.12, tesla: 0.12 };
 const kick = (v, cap = 1) => { if (F.trauma < cap) F.trauma = Math.min(cap, F.trauma + v); };
 const nowMs = () => (root.performance ? root.performance.now() : Date.now());
 function hold(sec) { F.holdUntil = Math.max(F.holdUntil || 0, nowMs() + sec * 1000); }
@@ -5762,7 +5776,10 @@ function flood3d(dt) {
 // ducked by the heartbeat), sfx (the SYN one-shots, hits muffled, big moments loud) and calls from the dark (far,
 // sparse, panned toward a creature that is out there and unlit, mostly reverb). A synthetic hall reverb (a decaying
 // noise impulse) gives the distance. Spec: art/look-target.md section 4.
-const A = { ctx: null, bus: null, last: {}, nz: null, n: 0 };
+// LAS-88: every building its own voice (panned to its hex) and a habituation governor; the city beds (crowd, fire,
+// harbour, chapel bells) grow with the town; the dark adds something huge passing, a voice, wet sounds at the wall from
+// unlit creatures, a tension bed before boss waves. Still all synth (no files, no licences): sound list in art/sound.md.
+const A = { ctx: null, bus: null, last: {}, nz: null, n: 0, cnt: {}, hab: {} };
 const MIX = { bed: 0.3, sfx: 0.85, call: 0.5, verb: 0.7 };   // group levels under the master volume
 try { const v = root.localStorage && root.localStorage.getItem('tidewall.vol'); if (v !== null && v !== undefined && v !== '') FX.vol = Math.max(0, Math.min(1, +v)); } catch (e) {}
 function audio(wake) {
@@ -5774,12 +5791,13 @@ function audio(wake) {
     A.comp = comp; A.bus = C.createGain(); A.bus.gain.value = FX.vol; A.bus.connect(comp);
     const g = v => { const n = C.createGain(); n.gain.value = v; n.connect(A.bus); return n; };
     A.sfx = g(MIX.sfx); A.bed = g(MIX.bed); A.call = g(MIX.call);
+    A.fight = C.createGain(); A.fight.connect(A.sfx);   // LAS-88: the combat voices' sub-bus, ducked by their density (amb)
     // the hall: convolver (stereo IR, 3.4 s) -> lowpass (wet stone, not a bright plate) -> bus
     const ir = C.createBuffer(2, (C.sampleRate * 3.4) | 0, C.sampleRate); let q = 24681357;
     for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c), n = d.length, pre = (C.sampleRate * 0.03) | 0;
       for (let i = pre; i < n; i++) { q = (q * 1103515245 + 12345) & 0x7fffffff; d[i] = (q / 1073741824 - 1) * Math.pow(1 - i / n, 3.4); } }
     const cv = C.createConvolver(), lp = C.createBiquadFilter(); cv.buffer = ir; lp.type = 'lowpass'; lp.frequency.value = 2400;
-    A.verb = C.createGain(); A.verb.gain.value = 1; A.verb.connect(cv); cv.connect(lp); lp.connect(g(MIX.verb));
+    A.verb = C.createGain(); A.verb.gain.value = 1; A.verb.connect(cv); cv.connect(lp); lp.connect(A.wet = g(MIX.verb));
   }
   if (A.ctx.state === 'suspended') A.ctx.resume();
   return A.ctx;
@@ -5849,7 +5867,7 @@ const SYN = {
   flood: (C, o, t, p) => { synN(C, o, t, 1.1, 'bandpass', 250, 1200, 0.8, 0.7, 0.12); synT(C, o, t, 80, 45, 0.9, 'sine', 0.4, 0.05); },
   omen: (C, o, t, p) => { [196, 208, 277].forEach((f, i) => synT(C, o, t + i * 0.14, f, f * 0.97, 1.8, 'triangle', 0.12, 0.12)); synN(C, o, t, 1.4, 'bandpass', 500, 180, 2, 0.15, 0.25); },
   keg: (C, o, t, p) => { synT(C, o, t, 90 * p, 30, 0.6, 'sine', 0.9, 0.003); synN(C, o, t, 0.6, 'lowpass', 1500, 100, 0.8, 0.8, 0.002); },
-  harpoon: (C, o, t, p) => { synN(C, o, t, 0.12, 'bandpass', 2200, 700, 1, 0.4, 0.002); synT(C, o, t + 0.08, 160 * p, 90, 0.25, 'sawtooth', 0.22, 0.002); },
+  harpoon: (C, o, t, p) => { synN(C, o, t, 0.12, 'bandpass', 2200, 700, 1, 0.4, 0.002); synT(C, o, t + 0.08, 160 * p, 90, 0.25, 'sawtooth', 0.22, 0.002); chain(C, o, t + 0.1, 0.5, 0.5); },   // LAS-88: the chain runs out after it
   mile: (C, o, t, p) => { bellT(C, lowp(C, o, 2200), t, 196, 0.26, 3.2); bellT(C, lowp(C, o, 2200), t + 0.7, 147, 0.3, 4); },
   fall: (C, o, t, p) => { synT(C, o, t, 110, 110, 0.6, 'sawtooth', 0.12); synT(C, o, t + 0.6, 104, 104, 0.6, 'sawtooth', 0.12); synT(C, o, t + 1.2, 98, 49, 1.8, 'sawtooth', 0.14, 0.02); synT(C, o, t, 50, 28, 2.4, 'sine', 0.6, 0.05); },
   // the Deep One (later): a vast call from under the sea, loud
@@ -5857,19 +5875,95 @@ const SYN = {
   // the lamp mechanism: one iron clank per turn (quiet, a bed sound)
   clank: (C, o, t, p) => { [[310, 1], [847, 0.5], [1590, 0.25]].forEach(([f, v]) => synT(C, o, t, f * p, f * p * 0.99, 0.35 * (1.2 - v * 0.4), 'sine', 0.12 * v, 0.002)); synN(C, o, t, 0.05, 'bandpass', 1800, 900, 2, 0.14, 0.001); },
   click: (C, o, t, p) => { synT(C, o, t, 900 * p, 700, 0.04, 'triangle', 0.25, 0.002); },
+  // LAS-88 the buildings, each its own voice (panned to its hex). Gun Battery: the cannon on its own tower, heavier and nearer than the wall guns
+  battery: (C, o, t, p) => { synT(C, o, t, 52 * p, 30, 0.4, 'sine', 0.9, 0.003); synN(C, o, t, 0.28, 'lowpass', 900 * p, 120, 0.7, 0.55, 0.002); synN(C, o, t + 0.02, 0.5, 'bandpass', 300, 90, 0.8, 0.18, 0.05); },
+  // Mortar Pit: the hollow tube thump, then the shell landing far out
+  mortar: (C, o, t, p) => { synT(C, o, t, 120 * p, 48, 0.18, 'sine', 0.8, 0.002); synN(C, o, t, 0.1, 'lowpass', 500, 150, 2, 0.5, 0.002); synT(C, o, t + 0.9, 40 * p, 26, 0.7, 'sine', 0.6, 0.01); synN(C, o, t + 0.9, 0.6, 'lowpass', 700, 80, 0.7, 0.4, 0.005); },
+  // Ballista: the cord's twang and the bolt's hiss
+  ballista: (C, o, t, p) => { const l = lowp(C, o, 1800); synT(C, l, t, 180 * p, 150, 0.35, 'sawtooth', 0.18, 0.002); synT(C, l, t, 90 * p, 70, 0.25, 'triangle', 0.35, 0.002); synN(C, l, t + 0.02, 0.22, 'bandpass', 900, 2400, 1.2, 0.2, 0.03); synN(C, l, t, 0.03, 'lowpass', 2000, 600, 1, 0.4, 0.001); },
+  // Tesla Coil: a dry crackle over a mains hum
+  tesla: (C, o, t, p) => { const l = lowp(C, o, 3200); for (let i = 0; i < 6; i++) synN(C, l, t + i * 0.018 + Math.random() * 0.01, 0.02, 'bandpass', 1800 + Math.random() * 1600, 1200, 2, 0.35, 0.001); synT(C, l, t, 100, 98, 0.25, 'square', 0.06, 0.01); },
+  // Bell Tower: a big cast bell close by (the buoy bell 'bell' is the wave start, far out)
+  tbell: (C, o, t, p) => { synN(C, o, t, 0.04, 'bandpass', 2400, 1200, 1.5, 0.3, 0.001); bellT(C, lowp(C, o, 2600), t, 139, 0.32, 5.5); },
+  // Fog Horn: one low 'booo', shorter and nearer than the boss horn's 'bee-oh'
+  hornb: (C, o, t, p) => { const l = lowp(C, o, 700), g = C.createGain(); g.connect(l);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.8, t + 0.18); g.gain.setValueAtTime(0.8, t + 1.4); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.1);
+    [[87, 0.5], [87.5, 0.4], [174, 0.12]].forEach(([f, v]) => { const s = C.createOscillator(), a = C.createGain(); s.type = 'sawtooth'; a.gain.value = v;
+      s.frequency.setValueAtTime(f * 0.92, t); s.frequency.exponentialRampToValueAtTime(f, t + 0.2); s.frequency.setValueAtTime(f, t + 1.5); s.frequency.exponentialRampToValueAtTime(f * 0.7, t + 2.1);
+      s.connect(a); a.connect(g); s.start(t); s.stop(t + 2.2); }); },
+  // Braziers III: the fire ring flares up (a roar and a burst of crackles)
+  roar: (C, o, t, p) => { o = lowp(C, o, 1500); synN(C, o, t, 1.5, 'bandpass', 220, 900, 0.6, 0.6, 0.25); synN(C, o, t, 1.2, 'lowpass', 260, 120, 0.7, 0.5, 0.15);
+    for (let i = 0; i < 8; i++) synN(C, o, t + 0.15 + Math.random() * 1.1, 0.012, 'bandpass', 1100 + Math.random() * 900, 900, 1.5, 0.2, 0.001); },
+  // Rocket Rack: the launch hiss, the burst at the top, the star fizzing down
+  rocket: (C, o, t, p) => { synN(C, o, t, 0.6, 'bandpass', 600 * p, 3000, 1.2, 0.3, 0.05); synT(C, o, t + 0.6, 140, 60, 0.25, 'sine', 0.5, 0.002); synN(C, o, t + 0.6, 0.3, 'lowpass', 2400, 300, 0.8, 0.55, 0.001); synN(C, o, t + 0.75, 2.6, 'bandpass', 2200, 1500, 0.8, 0.05, 0.4); },
+  // Breakwater III: a wave thrown back off the stone
+  surge: (C, o, t, p) => { synN(C, o, t, 1.6, 'lowpass', 300, 1400, 0.6, 0.5, 0.35); synT(C, o, t + 0.35, 58, 34, 0.6, 'sine', 0.7, 0.01); synN(C, o, t + 0.4, 1.8, 'bandpass', 900, 400, 0.6, 0.25, 0.05); },
+  // Boathouse: a boat comes home (oars, the hull, two strokes of its little bell) or is taken (splinters and a cry)
+  boatok: (C, o, t, p) => { creak(C, o, t, 0.5); bellT(C, lowp(C, o, 3000), t + 0.3, 587, 0.06, 1.4); bellT(C, lowp(C, o, 3000), t + 0.55, 587, 0.05, 1.4); },
+  boatlost: (C, o, t, p) => { for (let i = 0; i < 5; i++) synN(C, o, t + i * 0.04 + Math.random() * 0.03, 0.08, 'bandpass', 500 + Math.random() * 900, 300, 2, 0.4, 0.002); synT(C, o, t, 90, 40, 0.5, 'sine', 0.4, 0.005); call(C, lowp(C, o, 1400), t + 0.4, 'moan', 1); },
+  // Watch Posts: the watchman's rattle, toward the creature it saw
+  watch: (C, o, t, p) => { const l = lowp(C, o, 2600); for (let i = 0; i < 14; i++) synN(C, l, t + i * 0.045, 0.025, 'bandpass', 1100 * p, 800, 3, 0.8 * (1 - i / 18), 0.001); },
+  // a Sounder goes under: a heavy wet plunge and bubbles
+  dive: (C, o, t, p) => { synN(C, o, t, 0.3, 'lowpass', 900, 150, 0.8, 0.5, 0.004); synT(C, o, t, 120 * p, 50, 0.25, 'sine', 0.35, 0.004); wet(C, o, t + 0.2, 'gurgle'); },
 };
 const VOL = { shot: 0.26, hit: 0.15, crit: 0.28, kill: 0.22, wall: 0.34, wallboss: 0.8, bell: 0.55, horn: 1, boss: 0.9, bossdie: 0.95, omen: 0.6,
-  keg: 0.85, harpoon: 0.6, beam: 0.95, flood: 0.8, mile: 0.6, fall: 0.85, deep: 1, clank: 0.35, click: 0.5 };
-const VERB = { bell: 0.6, horn: 0.45, boss: 0.35, bossdie: 0.4, omen: 0.5, mile: 0.4, fall: 0.4, beam: 0.25, deep: 0.6, clank: 0.3, keg: 0.15, wallboss: 0.15 };
-function play(k, gap, to) {
+  keg: 0.85, harpoon: 0.6, beam: 0.95, flood: 0.8, mile: 0.6, fall: 0.85, deep: 1, clank: 0.35, click: 0.5,
+  battery: 0.22, mortar: 0.4, ballista: 0.4, tesla: 0.6, tbell: 0.4, hornb: 0.4, roar: 0.75, rocket: 0.45, surge: 0.45, boatok: 0.6, boatlost: 0.45, watch: 1, dive: 0.3 };
+const VERB = { bell: 0.6, horn: 0.45, boss: 0.35, bossdie: 0.4, omen: 0.5, mile: 0.4, fall: 0.4, beam: 0.25, deep: 0.6, clank: 0.3, keg: 0.15, wallboss: 0.15,
+  tbell: 0.5, hornb: 0.4, roar: 0.15, rocket: 0.2, surge: 0.25, boatok: 0.3, boatlost: 0.35, mortar: 0.15, watch: 0.2, dive: 0.2 };
+// LAS-88 habituation (the 10-minute mix check): a voice that keeps coming back gets quieter. h = its play count decayed over
+// ~12 s; past HAB[k] plays in that window its level goes x sqrt(HAB/h) (a 14-a-second gun hail sits ~7 dB under a lone shot)
+const FIGHT = { shot: 1, hit: 1, crit: 1, kill: 1, wall: 1, battery: 1, mortar: 1, ballista: 1, tesla: 1 };
+const HAB = { wallboss: 4, shot: 24, hit: 16, crit: 14, kill: 16, wall: 5, battery: 14, mortar: 8, ballista: 10, tesla: 10, tbell: 3, hornb: 2, rocket: 3, watch: 3, roar: 2, surge: 2, dive: 6 };
+function play(k, gap, to, pan) {
   const C = audio(false); if (!C || !FX.vol || C.state !== "running") return;
   const now = C.currentTime;
   if (gap && A.last[k] && now - A.last[k] < gap) return;   // throttle: a hail of 200 shots is still ~14 thumps a second
-  A.last[k] = now; A.n++;
-  const o = C.createGain(); o.gain.value = VOL[k] || 0.5; o.connect(to || A.sfx);
+  A.last[k] = now; A.n++; A.cnt[k] = (A.cnt[k] || 0) + 1;
+  let hv = 1; if (HAB[k]) { const h = A.hab[k] || (A.hab[k] = { n: 0, t: now }); h.n = h.n * Math.exp(-(now - h.t) / 12) + 1; h.t = now; hv = Math.min(1, Math.sqrt(HAB[k] / h.n)); }
+  if (FIGHT[k]) { A.dens = (A.dens || 0) * Math.exp(-(now - (A.densT || now)) / AMB.densTau) + 1; A.densT = now; }
+  let dst = to || (FIGHT[k] ? A.fight : A.sfx), pn = null; if (pan) { pn = C.createStereoPanner(); pn.pan.value = pan; pn.connect(dst); dst = pn; }
+  const o = C.createGain(); o.gain.value = (VOL[k] || 0.5) * hv; o.connect(dst);
   let s = null; if (VERB[k]) { s = C.createGain(); s.gain.value = VERB[k]; o.connect(s); s.connect(A.verb); }
   try { SYN[k](C, o, now + 0.005, P[A.n % P.length]); } catch (e) {}
-  setTimeout(() => { o.disconnect(); if (s) s.disconnect(); }, 7000);
+  setTimeout(() => { o.disconnect(); if (s) s.disconnect(); if (pn) pn.disconnect(); }, 7000);
+}
+// a sim position -> stereo pan from where the camera sees it (with a little slop)
+function panOf(x, y, k) {
+  if (!F.cam || !F.T3) return 0;
+  const [vx, vz] = V(x, y), v = (B.pv || (B.pv = new F.T3.Vector3())).set(vx, 0, vz).project(F.cam);
+  const p = isFinite(v.x) ? v.x * (v.z > 1 ? -1 : 1) : 0; return Math.max(-0.85, Math.min(0.85, p * (k || 0.8)));
+}
+// wood under load: a buzzing saw through a narrow band, chopped by a stick-slip pulse, the pitch rising as it strains
+function creak(C, o, t, v) {
+  const d = 0.5 + Math.random() * 0.6, s = C.createOscillator(), b = C.createBiquadFilter(), env = C.createGain(), ch = C.createGain(), am = C.createOscillator(), ag = C.createGain();
+  const f = 55 + Math.random() * 30; s.type = 'sawtooth'; s.frequency.setValueAtTime(f, t); s.frequency.linearRampToValueAtTime(f * (1.2 + Math.random() * 0.4), t + d);
+  b.type = 'bandpass'; b.frequency.value = 600 + Math.random() * 500; b.Q.value = 5;
+  am.type = 'square'; am.frequency.setValueAtTime(18 + Math.random() * 14, t); ag.gain.value = 0.5; ch.gain.value = 0.5; am.connect(ag); ag.connect(ch.gain);
+  env.gain.setValueAtTime(0.0001, t); env.gain.exponentialRampToValueAtTime(v, t + d * 0.3); env.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  s.connect(b); b.connect(ch); ch.connect(env); env.connect(o); s.start(t); s.stop(t + d + 0.05); am.start(t); am.stop(t + d + 0.05);
+}
+// a chain running out over iron: quick bright links
+function chain(C, o, t, d, v) { for (let at = 0; at < d; at += 0.025 + Math.random() * 0.03) { const f = 2600 + Math.random() * 2400;
+  synT(C, o, t + at, f, f * 0.98, 0.05, 'sine', v * 0.3, 0.001); synN(C, o, t + at, 0.02, 'bandpass', f * 0.7, f * 0.5, 4, v * 0.5, 0.001); } }
+// wet things close to the wall (LAS-88): squelch, slap, drip, gurgle, drag
+function wet(C, o, t, kind) {
+  if (kind === 'squelch') { synN(C, o, t, 0.18, 'bandpass', 350, 1400, 6, 0.5, 0.02); synN(C, o, t + 0.12, 0.14, 'bandpass', 900, 300, 5, 0.35, 0.01); return; }
+  if (kind === 'slap') { synN(C, o, t, 0.07, 'lowpass', 1200, 300, 1, 0.6, 0.002); synT(C, o, t, 160, 90, 0.06, 'sine', 0.3, 0.002); return; }
+  if (kind === 'drip') { synT(C, o, t, 1500, 700, 0.04, 'sine', 0.2, 0.001); synT(C, o, t + 0.21, 1300, 650, 0.04, 'sine', 0.12, 0.001); return; }
+  if (kind === 'drag') { synN(C, o, t, 0.9, 'bandpass', 260, 170, 2, 0.45, 0.3); synN(C, o, t + 0.1, 0.7, 'bandpass', 700, 500, 4, 0.15, 0.2); return; }
+  for (let i = 0, at = 0; i < 4 + ((Math.random() * 3) | 0); i++, at += 0.05 + Math.random() * 0.05) synT(C, o, t + at, 250 + Math.random() * 100, 600 + Math.random() * 200, 0.03, 'sine', 0.25, 0.003);   // gurgle
+}
+// the voice out there (LAS-88): a huge slow throat shaping a vowel (aa -> oo -> uu) through three formants, pitch sagging
+function vox(C, o, t, v) {
+  const d = 3.5 + Math.random() * 2, f0 = 62 + Math.random() * 18, s = C.createOscillator(), out = C.createGain(), l = C.createBiquadFilter(), vb = C.createOscillator(), vg = C.createGain();
+  s.type = 'sawtooth'; s.frequency.setValueAtTime(f0 * 0.9, t); s.frequency.linearRampToValueAtTime(f0 * 1.12, t + d * 0.35); s.frequency.exponentialRampToValueAtTime(f0 * 0.62, t + d);
+  vb.frequency.value = 3.1; vg.gain.value = f0 * 0.03; vb.connect(vg); vg.connect(s.frequency);
+  l.type = 'lowpass'; l.frequency.value = 1500; out.connect(l); l.connect(o);
+  out.gain.setValueAtTime(0.0001, t); out.gain.exponentialRampToValueAtTime(v, t + d * 0.35); out.gain.setValueAtTime(v, t + d * 0.55); out.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  [[700, 450, 320, 1], [1100, 800, 650, 0.6], [2400, 2300, 2200, 0.2]].forEach(([a, b, c, g]) => { const f = C.createBiquadFilter(), fg = C.createGain(); f.type = 'bandpass'; f.Q.value = 9;
+    f.frequency.setValueAtTime(a, t); f.frequency.linearRampToValueAtTime(b, t + d * 0.5); f.frequency.linearRampToValueAtTime(c, t + d); fg.gain.value = g * 2.2; s.connect(f); f.connect(fg); fg.connect(out); });
+  s.start(t); s.stop(t + d + 0.05); vb.start(t); vb.stop(t + d + 0.05); return d;
 }
 
 // ---------- the night beds: started once the audio is awake, driven each frame from the sim state (read only)
@@ -5880,8 +5974,16 @@ const AMB = {
   silence: 2.6, dip: 1.1,               // s of near silence before a boss wave; s of dip before every other wave
   heart: 0.3, bpm: [62, 104],           // heartbeat under 30% HP, BPM from 30% down to 0
   callGap: [18, 50], callFirst: [7, 14], // s between calls from the dark (spec 20-90 s; our waves are 20 s)
+  // LAS-88 the city (levels on the bed group, x city size 0..1 = (building levels + 2 per extra ring) / cityFull)
+  cityFull: 24, crowd: 0.16, talkers: 7, fire: 0.05, crackle: 2.5, cbell: [35, 80], harbour: [0.8, 2], creak: [5, 12],
+  // LAS-88 the dark: something huge passing (s between, first), the voice (share of Drowned calls from wave voxFrom),
+  // wet sounds from unlit creatures within wetR m of the wall (per s: wetBase + wetPer x sqrt(n), at most wetMax), tension before bosses
+  densTau: 4, densOk: 6,   // combat sounds a second (decayed over densTau s) the fight bus takes at full level; above, x sqrt(densOk / rate)
+  levi: [55, 120], leviFirst: [25, 45], vox: 0.3, voxFrom: 3, wetR: 9, wetBase: 0.15, wetPer: 0.12, wetMax: 0.8, tension: 0.22,
 };
-const B = { on: false, nextGust: 0, nextCall: 0, nextHeart: 0, nextWash: 0, lastSimT: -1, simAt: 0, cnt: { beats: 0, clanks: 0, washes: 0 }, a: null, dir: 0, turn: 0, th: 0, thT: 0, lvl: 1 };
+const B = { on: false, nextGust: 0, nextCall: 0, nextHeart: 0, nextWash: 0, lastSimT: -1, simAt: 0, a: null, dir: 0, turn: 0, th: 0, thT: 0, lvl: 1,
+  cnt: { beats: 0, clanks: 0, washes: 0, syl: 0, crackles: 0, laps: 0, creaks: 0, cbells: 0, levi: 0, vox: 0, wet: 0 }, near: [], city: 0, nBraz: 0, harb: 0, ten: null };
+const VOW = [[730, 1090], [530, 1840], [270, 2290], [570, 840], [300, 870], [660, 1720], [490, 1350], [440, 1020]];
 function bedsOn(C) {
   const t = C.currentTime, src = (buf, rate) => { const s = C.createBufferSource(); s.buffer = buf; s.loop = true; s.playbackRate.value = rate || 1; s.start(t); return s; };
   const lfo = (hz, depth, param) => { const o = C.createOscillator(), g = C.createGain(); o.frequency.value = hz; g.gain.value = depth; o.connect(g); g.connect(param); o.start(t); return o; };
@@ -5902,6 +6004,23 @@ function bedsOn(C) {
   const lf = filt('lowpass', 120, 3), lg = gain(0); src(brown, 1.7).connect(lf); lf.connect(lg); lg.connect(A.bed);
   Object.assign(B, { on: true, sea: sg, wind: wg, windF: wf, drone: dg, droneF: df, lamp: lg,
     nextGust: t + 1, nextCall: t + rr(AMB.callFirst), nextWash: t + 4 });
+  // LAS-88 the crowd: talkers (a voiced buzz + a breath of noise through two formant band-passes; amb() moves the formants
+  // per syllable), far away (low-passed, mostly hall), silent until the town has buildings
+  const cl = filt('lowpass', 1300), cg = gain(0), cw = gain(0.9); cl.connect(cg); cg.connect(A.bed); cg.connect(cw); cw.connect(A.verb);
+  B.talk = []; for (let i = 0; i < AMB.talkers; i++) {
+    const s = C.createOscillator(), n = C.createBufferSource(), ng = gain(0.3), f1 = filt('bandpass', 500, 7), f2 = filt('bandpass', 1200, 7), g = gain(0);
+    s.type = 'sawtooth'; s.frequency.value = 92 + i * 19 + Math.random() * 10; n.buffer = noise(C); n.loop = true;
+    s.connect(f1); s.connect(f2); n.connect(ng); ng.connect(f1); ng.connect(f2); f1.connect(g); f2.connect(g); g.connect(cl); s.start(t); n.start(t, i * 0.13);
+    B.talk.push({ s, f1, f2, g, f0: s.frequency.value, next: t + Math.random() * 2 }); }
+  // the braziers: a low fire roar (crackles are one-shots into the same panner)
+  const ff = filt('lowpass', 380), fg = gain(0); src(brown, 1.3).connect(ff); ff.connect(fg); fg.connect(A.bed);
+  // tension before a boss wave: a low detuned cluster rising ~5 semitones, opening and trembling faster as the wave runs out
+  const tf = filt('lowpass', 200, 2), tt = gain(0.5), tg = gain(0); tf.connect(tt); tt.connect(tg); tg.connect(A.bed);
+  const tl = lfo(1.5, 0.5, tt.gain);
+  const to = [[55, 'sawtooth', 0.4], [55.6, 'sawtooth', 0.4], [77.8, 'sawtooth', 0.25], [110.4, 'triangle', 0.3], [164.8, 'sawtooth', 0.12]].map(([f, ty, v]) => {
+    const o = C.createOscillator(), g = gain(v); o.type = ty; o.frequency.value = f; o.f0 = f; o.connect(g); g.connect(tf); o.start(t); return o; });
+  Object.assign(B, { crowd: cg, fire: fg, ten: tg, tenF: tf, tenL: tl, tenO: to, nextCrk: t + 1, nextLap: t + 2, nextCreak: t + rr(AMB.creak),
+    nextCbell: t + rr(AMB.cbell), nextLevi: t + rr(AMB.leviFirst), nextWet: t + 1 });
 }
 const rr = ([a, b]) => a + Math.random() * (b - a);   // audio only: Math.random never touches the sim
 function amb(S, dt) {
@@ -5919,7 +6038,19 @@ function amb(S, dt) {
     B.th = live ? Math.min(1, 0.55 * Math.min(1, n / 120) + 0.45 * Math.max(0, 1 - near / R)) : 0;
     B.dg = AMB.drone[0] + (AMB.drone[1] - AMB.drone[0]) * B.th * B.th;
     B.drone.gain.setTargetAtTime(B.dg, now, 1.5); B.droneF.frequency.setTargetAtTime(110 + 260 * B.th, now, 1.5);
+    // LAS-88: what is close to the wall and unseen (wet sounds), and how big the city is (its beds)
+    B.near.length = 0; const wr = (S.rim || 4) + AMB.wetR;
+    for (let i = 0; i < E.length; i++) { const e = E[i]; if (!e.dead && !(e.litT >= S.t) && Math.hypot(e.x, e.y) < wr) B.near.push(e); }
+    const tw = S.town; let lv = 0, nb = 0, boat = 0;
+    if (tw) for (const s of tw.slots) { lv += s.lv || 1; if (s.id === 'brazier') nb += s.lv || 1; if (s.id === 'boat' || s.id === 'cave' || s.id === 'harbour') boat = 1; }
+    B.city = tw ? Math.min(1, (lv + 2 * Math.max(0, (tw.rings || 1) - 1)) / AMB.cityFull) : 0; B.nBraz = Math.min(6, nb); B.harb = boat || (tw && tw.rings >= 2) ? 1 : 0;
+    B.crowd.gain.setTargetAtTime(AMB.crowd * Math.sqrt(B.city) * (live ? 0.7 + 0.5 * B.th : 0.5), now, 2);
+    B.fire.gain.setTargetAtTime(AMB.fire * Math.sqrt(B.nBraz), now, 1.5);
+    const rate = (A.dens || 0) * Math.exp(-(now - (A.densT || now)) / AMB.densTau) / AMB.densTau; B.duck = Math.min(1, Math.sqrt(AMB.densOk / Math.max(1e-6, rate)));
+    A.fight.gain.setTargetAtTime(B.duck, now, 0.6);
   }
+  city(S, C, now, live);
+  dark(S, C, now, live, S.nextWave - S.t, S.T && S.T.boss && S.T.boss.every > 0 && (S.wave + 1) % S.T.boss.every === 0);
   // silence before surges: near silence before a boss wave, a dip before the others
   const to = S.nextWave - S.t, bossNext = S.T && S.T.boss && S.T.boss.every > 0 && (S.wave + 1) % S.T.boss.every === 0;
   const hpF = S.maxHp ? S.hp / S.maxHp : 1, heart = live && hpF < AMB.heart && hpF > 0;
@@ -5958,6 +6089,67 @@ function amb(S, dt) {
     else { B.nextCall = now + rr(AMB.callGap); darkCall(C, S, now); }
   }
 }
+// LAS-88 the city as it grows: the crowd's syllables, brazier crackles, the harbour (lapping, a hull creaking, a chain),
+// city bells tolling far off; more of all of it as the town fills (B.city 0..1)
+function city(S, C, now, live) {
+  const k = B.city; if (!k) return;
+  // the crowd: active talkers ~ city size, faster and higher when the threat is up (the town is afraid)
+  const nT = Math.max(1, Math.round(AMB.talkers * k));
+  for (let i = 0; i < B.talk.length; i++) { const T = B.talk[i]; if (now < T.next - 0.05) continue;
+    if (i >= nT) { T.next = now + 1; continue; }
+    const t0 = Math.max(now, T.next), d = 0.1 + Math.random() * 0.2, [a, b] = VOW[(Math.random() * VOW.length) | 0], v = 0.25 + Math.random() * 0.35;
+    T.f1.frequency.setTargetAtTime(a, t0, 0.03); T.f2.frequency.setTargetAtTime(b, t0, 0.03); T.s.frequency.setTargetAtTime(T.f0 * (1 + 0.15 * B.th) * (0.94 + Math.random() * 0.12), t0, 0.05);
+    T.g.gain.setTargetAtTime(v, t0, 0.025); T.g.gain.setTargetAtTime(0, t0 + d, 0.04); B.cnt.syl++;
+    T.next = t0 + d + (Math.random() < 0.2 ? 0.5 + Math.random() * 1.6 : 0.04 + Math.random() * 0.12) / (1 + 0.6 * B.th); }
+  // brazier crackles: tiny pops, a few a second per brazier level, mid band (not a bright hiss)
+  if (B.nBraz && now >= B.nextCrk) { B.nextCrk = now + (0.3 + Math.random()) / (AMB.crackle * Math.sqrt(B.nBraz)); B.cnt.crackles++;
+    const o = C.createGain(); o.gain.value = 0.08 + Math.random() * 0.1; o.connect(A.bed);
+    synN(C, o, now + 0.01, 0.008 + Math.random() * 0.01, 'bandpass', 1400 + Math.random() * 1600, 1200, 1.4, 0.6, 0.001); setTimeout(() => o.disconnect(), 400); }
+  if (B.harb && now >= B.nextLap) { B.nextLap = now + rr(AMB.harbour); B.cnt.laps++;   // water lapping at the piers
+    const o = C.createStereoPanner(); o.pan.value = Math.random() * 1.2 - 0.6; o.connect(A.bed);
+    synN(C, o, now + 0.01, 0.35 + Math.random() * 0.3, 'bandpass', 280 + Math.random() * 300, 160, 1.2, 0.12 + 0.08 * k, 0.07); setTimeout(() => o.disconnect(), 1500); }
+  if (B.harb && now >= B.nextCreak) { B.nextCreak = now + rr(AMB.creak) / (0.6 + 0.6 * k); B.cnt.creaks++;   // a hull or a rope taking the swell; now and then a mooring chain
+    const o = C.createStereoPanner(); o.pan.value = Math.random() * 1.4 - 0.7; o.connect(A.bed); const w = C.createGain(); w.gain.value = 0.4; o.connect(w); w.connect(A.verb);
+    creak(C, o, now + 0.01, 0.12); if (Math.random() < 0.25) chain(C, lowp(C, o, 2400), now + 0.4, 0.3, 0.12); setTimeout(() => { o.disconnect(); w.disconnect(); }, 2500); }
+  if (now >= B.nextCbell) { B.nextCbell = now + rr(AMB.cbell) / (0.4 + 1.2 * k);   // a chapel bell tolls somewhere in the city (2-4 strokes)
+    if (live && k > 0.15) { B.cnt.cbells++; const o = C.createStereoPanner(), w = C.createGain(); o.pan.value = Math.random() * 1.2 - 0.6; o.connect(A.bed); w.gain.value = 0.9; o.connect(w); w.connect(A.verb);
+      const f = [294, 330, 262, 349][(Math.random() * 4) | 0], n = 2 + ((Math.random() * 3) | 0), l = lowp(C, o, 1200);
+      for (let i = 0; i < n; i++) bellT(C, l, now + 0.02 + i * 1.6, f, 0.05 + 0.04 * k, 3.5); setTimeout(() => { o.disconnect(); w.disconnect(); }, (n * 1.6 + 5) * 1000); } }
+}
+// LAS-88 the dark: something huge passes far out; wet sounds at the wall from what the light has not found; the tension bed
+// rising through the wave before a boss (cut dead by the silence, then the horn)
+function dark(S, C, now, live, to, bossNext) {
+  // tension
+  const ev = (S.T && S.T.wave && S.T.wave.every) || 20, q = live && bossNext && to > AMB.silence ? Math.max(0, Math.min(1, 1 - (to - AMB.silence) / (ev - AMB.silence))) : 0;
+  if (Math.abs(q - (B.tq || 0)) > 0.01 || (q === 0 && B.tq)) { B.tq = q;
+    B.ten.gain.setTargetAtTime(AMB.tension * Math.pow(q, 1.6), now, q ? 0.8 : 0.15); B.tenF.frequency.setTargetAtTime(200 + 1300 * q * q, now, 0.8);
+    B.tenL.frequency.setTargetAtTime(1.5 + 7 * q, now, 0.8); for (const o of B.tenO) o.frequency.setTargetAtTime(o.f0 * Math.pow(2, 5 * q / 12), now, 0.8); }
+  // something large moving far out (from wave 2; more often late)
+  if (now >= B.nextLevi) {
+    if (!live || B.lvl <= 0.3 || S.wave < 2) B.nextLevi = now + 2;
+    else { B.nextLevi = now + rr(AMB.levi) * (S.wave >= 15 ? 0.7 : 1); levi(C, now); }
+  }
+  // wet sounds near the wall: what is there and unlit (they keep coming in the silence: that is the point)
+  const n = B.near.length;
+  if (live && n && now >= B.nextWet) { B.nextWet = now + rr([0.5, 1.5]) / Math.min(AMB.wetMax, AMB.wetBase + AMB.wetPer * Math.sqrt(n)); B.cnt.wet++;
+    const e = B.near[(Math.random() * n) | 0], p = C.createStereoPanner(), o = C.createGain(), w = C.createGain(), l = lowp(C, p, 1800);
+    p.pan.value = panOf(e.x, e.y, 0.9); o.gain.value = 0.35 + Math.random() * 0.25; p.connect(o); o.connect(A.call); w.gain.value = 0.25; o.connect(w); w.connect(A.verb);
+    wet(C, l, now + 0.01, ['squelch', 'slap', 'drip', 'gurgle', 'drag', 'squelch'][(Math.random() * 6) | 0]);
+    setTimeout(() => { l.disconnect(); p.disconnect(); o.disconnect(); w.disconnect(); }, 2500); }
+}
+// something the size of a ship turns over far out: a slow sub swell and the water it pushes, moving across the stereo field; half the time it calls
+function levi(C, t) {
+  const d = 9 + Math.random() * 4, dir = Math.random() < 0.5 ? -1 : 1, p = C.createStereoPanner(), g = C.createGain(), lp = C.createBiquadFilter(), w = C.createGain();
+  lp.type = 'lowpass'; lp.frequency.value = 170; p.pan.setValueAtTime(-0.85 * dir, t); p.pan.linearRampToValueAtTime(0.85 * dir, t + d);
+  lp.connect(g); g.connect(p); p.connect(A.call); w.gain.value = 0.6; p.connect(w); w.connect(A.verb);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(1, t + d * 0.45); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  [[29, 'sawtooth', 0.5], [31.3, 'sawtooth', 0.4], [22, 'sine', 0.7]].forEach(([f, ty, v]) => { const s = C.createOscillator(), a = C.createGain(); s.type = ty; a.gain.value = v;
+    s.frequency.setValueAtTime(f, t); s.frequency.linearRampToValueAtTime(f * 1.08, t + d * 0.5); s.frequency.linearRampToValueAtTime(f * 0.92, t + d); s.connect(a); a.connect(lp); s.start(t); s.stop(t + d + 0.05); });
+  synN(C, p, t, d, 'lowpass', 120, 260, 0.7, 0.5, d * 0.45);   // the water it pushes aside
+  B.cnt.levi++; B.lastLevi = { t, dir };
+  if (Math.random() < 0.5) { B.cnt.vox++; vox(C, p, t + d * 0.4, 0.5); }
+  setTimeout(() => { p.disconnect(); g.disconnect(); w.disconnect(); }, (d + 7) * 1000);
+}
 function wash(C, t, pan) {
   const p = C.createStereoPanner(), g = C.createGain(); p.pan.value = pan; g.gain.value = 0.5; p.connect(g); g.connect(A.bed);
   const d = 2 + Math.random() * 2; synN(C, p, t, d, 'bandpass', 320, 900, 0.6, 0.35, d * 0.45);
@@ -5971,7 +6163,8 @@ function darkCall(C, S, t) {
   let pan = 0;
   if (F.cam && F.T3) { const [x, z] = V(e.x, e.y), v = (B.pv || (B.pv = new F.T3.Vector3())).set(x, 0, z).project(F.cam); pan = isFinite(v.x) ? v.x : 0; }
   pan = Math.max(-0.85, Math.min(0.85, pan * 0.8 + (Math.random() - 0.5) * 0.3));
-  const kind = e.boss ? 'groan' : e.fly ? 'keen' : e.dive ? 'clicks' : e.kind === 'brute' ? 'groan' : 'moan';
+  let kind = e.boss ? 'groan' : e.fly ? 'keen' : e.dive ? 'clicks' : e.kind === 'brute' ? 'groan' : 'moan';
+  if (kind === 'moan' && S.wave >= AMB.voxFrom && Math.random() < AMB.vox) { kind = 'vox'; B.cnt.vox++; }   // LAS-88: now and then it is almost a voice
   const p = C.createStereoPanner(), dry = C.createGain(), wet = C.createGain(), lp = C.createBiquadFilter();
   lp.type = 'lowpass'; lp.frequency.value = 2200 - 1500 * dist; p.pan.value = pan;
   dry.gain.value = 0.55 - 0.35 * dist; wet.gain.value = 0.5 + 0.4 * dist;
@@ -5987,6 +6180,7 @@ function call(C, o, t, kind, size) {
   const env = (g, a, s, d, v) => { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + a); g.gain.setValueAtTime(v, t + a + s); g.gain.exponentialRampToValueAtTime(0.0001, t + d); };
   const osc = (ty, f) => { const s = C.createOscillator(); s.type = ty; s.frequency.setValueAtTime(f, t); return s; };
   const vib = (s, hz, depth, d) => { const l = osc('sine', hz), g = C.createGain(); g.gain.value = depth; l.connect(g); g.connect(s.frequency); l.start(t); l.stop(t + d); };
+  if (kind === 'vox') return vox(C, o, t, 0.55);
   if (kind === 'moan') {
     const d = 2.4 + Math.random() * 1.4, f0 = 120 + Math.random() * 50, s = osc('sawtooth', f0), out = gain(1, o);
     s.frequency.linearRampToValueAtTime(f0 * 1.22, t + d * 0.4); s.frequency.exponentialRampToValueAtTime(f0 * 0.7, t + d);
@@ -6012,7 +6206,7 @@ function call(C, o, t, kind, size) {
 
 // ui.js adds its UI voices (hover, buy, deny, deal, count tick...) here: voice(key, (C, o, t, p, synT, synN) => ..., vol)
 function voice(k, fn, vol) { SYN[k] = (C, o, t, p) => fn(C, o, t, p, synT, synN); VOL[k] = vol || 0.5; }
-root.TWFx = { init, reset, hideBanner, frame, draw, fmt, setVolume, sound: k => play(k, 0.03), voice, tap, AMB, B, A, shake, kick, intro, held, FX, F,
+root.TWFx = { init, reset, hideBanner, frame, draw, fmt, setVolume, sound: k => play(k, 0.03), voice, tap, AMB, B, A, HAB, shake, kick, intro, held, FX, F,
   get volume() { return FX.vol; } };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
@@ -8172,8 +8366,7 @@ function townFx(S, TW, t, dt) {
   const X = tfxInit(TW), F = root.TWFx;
   if (S.ev) for (const ev of S.ev) {
     if (ev.k === 'bell') { const rec = slotRecAt(S, ev.x, ev.y); if (rec) rec.bellT = t; const r1 = viewR(ev.r);
-      tfxRing(X, t, { c: TFX.bell, r0: 3, r1, y: 1.0, dur: 0.8, op: 0.55, add: 1 }); tfxRing(X, t, { c: TFX.bell, r0: 3, r1: r1 * 0.92, y: 0.9, dur: 0.9, op: 0.28, add: 1, delay: 0.16 });
-      if (F && F.sound) F.sound('bell'); }
+      tfxRing(X, t, { c: TFX.bell, r0: 3, r1, y: 1.0, dur: 0.8, op: 0.55, add: 1 }); tfxRing(X, t, { c: TFX.bell, r0: 3, r1: r1 * 0.92, y: 0.9, dur: 0.9, op: 0.28, add: 1, delay: 0.16 }); }   // LAS-88: its sound is fx.js's ('tbell', panned)
     else if (ev.k === 'horn') { const r1 = viewR(ev.r);
       tfxRing(X, t, { c: TFX.horn, r0: 4, r1, y: 0.7, dur: 1.8, op: 0.34 }); tfxRing(X, t, { c: TFX.horn, r0: 4, r1: r1 * 0.85, y: 0.6, dur: 2.0, op: 0.2, delay: 0.35 });
       for (let j = 0; j < 18; j++) { const a = j / 18 * 6.283, d = r1 * (0.45 + 0.1 * Math.random()); puff(Math.cos(a) * d, 0.5, Math.sin(a) * d, 0.55, 2.6, 0.15, 3.2); } }
