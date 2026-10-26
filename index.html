@@ -6287,6 +6287,11 @@ const SYN = {
   kill: (C, o, t, p) => { synN(C, o, t, 0.32, 'bandpass', 380 * p, 110, 1.2, 0.38, 0.015); synT(C, o, t, 120 * p, 52, 0.24, 'sine', 0.2, 0.01); },
   wall: (C, o, t, p) => { synT(C, o, t, 86 * p, 44, 0.18, 'triangle', 0.4); synN(C, o, t, 0.13, 'lowpass', 620, 120, 1, 0.36); },
   wallboss: (C, o, t, p) => { synT(C, o, t, 70 * p, 30, 0.5, 'sine', 0.9, 0.004); synN(C, o, t, 0.35, 'lowpass', 400, 70, 1, 0.6); },
+  // LAS-132 a ring building up (~9 s): the low rumble of the land coming up and stone on the move, slow in and out, with the crews'
+  // mallets far off under it; course = one stone set down (a dull knock and grit)
+  build: (C, o, t, p) => { synN(C, o, t, 8.6, 'lowpass', 130, 90, 0.7, 0.55, 1.6); synT(C, o, t, 41, 38, 8.4, 'sine', 0.25, 1.2);
+    for (let i = 0; i < 16; i++) { const k = t + 2.1 + i * 0.33 + (i % 3) * 0.05; synN(C, o, k, 0.06, 'bandpass', 520 + (i % 4) * 90, 300, 2, 0.12, 0.002); } },
+  course: (C, o, t, p) => { synT(C, o, t, 105 * p, 60, 0.12, 'sine', 0.35, 0.003); synN(C, o, t, 0.16, 'lowpass', 900 * p, 200, 0.8, 0.22, 0.003); },
   // wave: a buoy bell somewhere out in the fog
   bell: (C, o, t, p) => { bellT(C, lowp(C, o, 1500), t, 233, 0.22, 3); },
   // boss wave (LAS-130, was a loud two-tone sawtooth foghorn): the crest of the approach swell, the one cue of an approach.
@@ -6343,15 +6348,15 @@ const SYN = {
   // a Sounder goes under: a heavy wet plunge and bubbles
   dive: (C, o, t, p) => { synN(C, o, t, 0.3, 'lowpass', 900, 150, 0.8, 0.5, 0.004); synT(C, o, t, 120 * p, 50, 0.25, 'sine', 0.35, 0.004); wet(C, o, t + 0.2, 'gurgle'); },
 };
-const VOL = { shot: 0.26, hit: 0.15, crit: 0.28, kill: 0.22, wall: 0.34, wallboss: 0.8, bell: 0.55, horn: 0.85, boss: 0.6, bossdie: 0.95, omen: 0.6,
+const VOL = { shot: 0.26, hit: 0.15, crit: 0.28, kill: 0.22, wall: 0.34, wallboss: 0.8, build: 0.7, course: 0.3, bell: 0.55, horn: 0.85, boss: 0.6, bossdie: 0.95, omen: 0.6,
   keg: 0.85, harpoon: 0.6, beam: 0.95, flood: 0.8, mile: 0.6, fall: 0.85, deep: 1, deepeye: 0.9, clank: 0.35, click: 0.5,
   battery: 0.22, mortar: 0.4, ballista: 0.4, tesla: 0.6, tbell: 0.4, hornb: 0.4, roar: 0.75, rocket: 0.45, surge: 0.45, boatok: 0.6, boatlost: 0.45, watch: 1, dive: 0.3 };
-const VERB = { bell: 0.6, horn: 0.45, boss: 0.35, bossdie: 0.4, omen: 0.5, mile: 0.4, fall: 0.4, beam: 0.25, deep: 0.6, deepeye: 0.5, clank: 0.3, keg: 0.15, wallboss: 0.15,
+const VERB = { build: 0.2, course: 0.2, bell: 0.6, horn: 0.45, boss: 0.35, bossdie: 0.4, omen: 0.5, mile: 0.4, fall: 0.4, beam: 0.25, deep: 0.6, deepeye: 0.5, clank: 0.3, keg: 0.15, wallboss: 0.15,
   tbell: 0.5, hornb: 0.4, roar: 0.15, rocket: 0.2, surge: 0.25, boatok: 0.3, boatlost: 0.35, mortar: 0.15, watch: 0.2, dive: 0.2 };
 // LAS-88 habituation (the 10-minute mix check): a voice that keeps coming back gets quieter. h = its play count decayed over
 // ~12 s; past HAB[k] plays in that window its level goes x sqrt(HAB/h) (a 14-a-second gun hail sits ~7 dB under a lone shot)
 const FIGHT = { shot: 1, hit: 1, crit: 1, kill: 1, wall: 1, battery: 1, mortar: 1, ballista: 1, tesla: 1 };
-const HAB = { wallboss: 4, shot: 24, hit: 16, crit: 14, kill: 16, wall: 5, battery: 14, mortar: 8, ballista: 10, tesla: 10, tbell: 3, hornb: 2, rocket: 3, watch: 3, roar: 2, surge: 2, dive: 6 };
+const HAB = { course: 5, wallboss: 4, shot: 24, hit: 16, crit: 14, kill: 16, wall: 5, battery: 14, mortar: 8, ballista: 10, tesla: 10, tbell: 3, hornb: 2, rocket: 3, watch: 3, roar: 2, surge: 2, dive: 6 };
 function play(k, gap, to, pan) {
   const C = audio(false); if (!C || !FX.vol || C.state !== "running") return;
   const now = C.currentTime;
@@ -7943,7 +7948,7 @@ function buildOuter(scene, i) {
     f.halo = new T3.Mesh(new T3.PlaneGeometry(1, 1), new T3.MeshBasicMaterial({ color: RLOOK.fire, map: haloTex(), transparent: true, depthWrite: false, depthTest: false, blending: T3.AdditiveBlending, opacity: 0.55, fog: false }));   // LAS-94: soft light (see the beacons)
     f.halo.position.set(...f.p); f.halo.renderOrder = 5; dyn.add(f.halo); f.ph = jr() * 6.28; f.puff = 0;
   }
-  return { g, hz, fires, Ro: Ro * WS, walkY: (y0 + OH) * WS, tA, dyn, W };
+  return { g, hz, fires, Ro: Ro * WS, walkY: (y0 + OH) * WS, top: (y0 + TH + 0.8) * WS, tA, dyn, W };   // LAS-132: top = the highest course (beacon baskets)
 }
 
 // ---------- the citadel (warm stone, amber windows). Static stone is baked; what can break or move lives in `dyn`:
@@ -8916,15 +8921,17 @@ function hexTick(S, t, dt) {
   const X = R.hex; if (!X) return;
   const src = R.townSrc, L = hexSlots(src), key = L.length + ':' + TOWN.n.join(','), show = !(R.town && R.town.dev && R.town.dev.line);
   X.tiles.visible = show;
-  if (key !== X.key) { X.key = key; X.list = L; const d = X.d0;
-    L.forEach((s, j) => { const w = TOWN.k * hexS(s.ring); d.position.set(s.x, s.y, s.z); d.rotation.set(0, s.a, 0); d.scale.set(w, TOWN.k, w); d.updateMatrix(); X.tiles.setMatrixAt(j, d.matrix); X.tiles.cuts.setMatrixAt(j, d.matrix); });
+  const hin = R.hexIn;   // LAS-132: a new ring's empty slots rise out of its paving at the end of its build
+  if (key !== X.key || hin) { X.key = hin ? '' : key; X.list = L; const d = X.d0;
+    L.forEach((s, j) => { const e = hin && s.ring === hin.ring ? 1 - Math.pow(1 - hin.q, 3) : 1, w = TOWN.k * hexS(s.ring) * (0.75 + 0.25 * e);
+      d.position.set(s.x, s.y - 0.5 * (1 - e), s.z); d.rotation.set(0, s.a, 0); d.scale.set(e > 0.01 ? w : 0, TOWN.k * e, e > 0.01 ? w : 0); d.updateMatrix(); X.tiles.setMatrixAt(j, d.matrix); X.tiles.cuts.setMatrixAt(j, d.matrix); });
     X.tiles.count = X.tiles.cuts.count = L.length; X.tiles.instanceMatrix.needsUpdate = X.tiles.cuts.instanceMatrix.needsUpdate = true; }
   // hover: the mouse ray against each ring's top plane, then the nearest slot centre inside the hex
   let hit = null;
   if (show && X.mouse.on && !(S && S.over)) {
     const nx = X.mouse.x / root.innerWidth * 2 - 1, ny = -(X.mouse.y / root.innerHeight) * 2 + 1, o = X.o.set(nx, ny, -1).unproject(R.cam), dv = X.dv.set(nx, ny, 1).unproject(R.cam).sub(o).normalize();
     let best = 1e9;
-    for (const s of X.list) { const tt = (s.y + HEX.top * TOWN.k - o.y) / dv.y; if (!(tt > 0)) continue;
+    for (const s of X.list) { const tt = (s.y + HEX.top * TOWN.k - o.y) / dv.y; if (!(tt > 0) || (hin && s.ring === hin.ring && hin.q < 1)) continue;
       const px = o.x + dv.x * tt - s.x, pz = o.z + dv.z * tt - s.z, dd = Math.hypot(px, pz);
       if (dd < HEX.r * TOWN.k * hexS(s.ring) * 1.25 && dd < best) { best = dd; hit = s; } }
   }
@@ -9235,9 +9242,9 @@ R.screenOf = (x, y, z) => { const v = new T3.Vector3(x, y, z).project(R.cam); re
 // ---------- LAS-86 the fortress city. Each open town ring is new land round the lighthouse: a stone terrace cut out of the sea
 // (inner rings higher), a retaining wall with a parapet and lanterns at its edge (the old outer wall's line once the next ring
 // stands), and the city filling it between the building hexes: tall narrow houses with steep roofs, some lit windows, watch
-// towers with spires, chimneys that smoke. Baked per ring (a few draws each). A ring that opens mid-run rises out of the sea
-// with its wall (2 s since LAS-92, water sheeting off as spray), so the run's growth spurt is something you see.
-const CITY = { rise: 2.0, depth: 5, house: ['#3f3a35', '#4a433b', '#38352f', '#463d36', '#2f2d2b'], roof: ['#24201e', '#2b2422', '#1d1b1b', '#33261f'], pave: '#3a3835', face: '#4b4844', win: '#ffb466' };
+// towers with spires, chimneys that smoke. Baked per ring (a few draws each). A ring that opens mid-run builds up over ~9 s
+// (LAS-132, buildTick): its land rises out of the sea, then its houses and wall go up course by course.
+const CITY = { depth: 5, house: ['#3f3a35', '#4a433b', '#38352f', '#463d36', '#2f2d2b'], roof: ['#24201e', '#2b2422', '#1d1b1b', '#33261f'], pave: '#3a3835', face: '#4b4844', win: '#ffb466' };
 function cityRing(k) {   // the land and the town of ring k (1..4), into a fresh group
   const g = new T3.Group(); R.scene.add(g); jseed = 101 + k * 17; g.userData.clip = 'city' + k;
   // LAS-94: the parapet (gp) stands just inside the foot of this ring's outer wall (Ro - 1.53) and shows only once that wall has given
@@ -9293,23 +9300,150 @@ function cityTick(TW, src, t, dt) {
   const C = TW.city || (TW.city = { rings: [], shown: 0, rise: null, smoke: 0 }), n = Math.max(1, Math.min(4, src.rings || 1)), line = TW.dev && TW.dev.line;
   for (let k = C.rings.length + 1; k <= 4; k++) { const c = cityRing(k); c.baked = bakeStatic(R.scene, [c.g]); c.pbaked = bakeStatic(R.scene, [c.gp]); C.rings.push(c); }
   if (n !== C.shown) {
-    if (n > C.shown && C.shown > 0) { C.rise = { k: n, t0: t }; if (root.TWFx) { if (root.TWFx.kick) root.TWFx.kick(0.3); if (root.TWFx.sound) root.TWFx.sound('wallboss'); } }
+    if (n > C.shown && C.shown > 0) (R.bldQ || (R.bldQ = {})).ring = n;   // LAS-132: the new ring builds up (buildTick)
     C.shown = n;
   }
   C.rings.forEach((c, i) => { c.baked.forEach(m => { m.visible = !line && i < n; }); c.pbaked.forEach(m => { m.visible = !line && i < n && (R.isleStep || 0) > i + 1; }); });   // LAS-94: a parapet once its wall is gone
-  // the newest ring (and its outer wall) rises out of the sea; spray sheets off its rim while it comes up
-  let dy = 0;
-  if (C.rise) { const q = (t - C.rise.t0) / CITY.rise;
-    if (q >= 1 || q < 0) C.rise = null; else {
-      const e = 1 - Math.pow(1 - q, 3); dy = -CITY.depth * (1 - e);
-      const ro = RLOOK.outerR[C.rise.k]; for (let j = 0; j < 6; j++) { const a = Math.random() * 6.283; puff(Math.cos(a) * ro, 0.3 + Math.random() * 1.5 * e, Math.sin(a) * ro, 0.85, 1.2 + Math.random(), 1.4 - q, 2.4); }
-    } }
-  const c = C.rise ? C.rings[C.rise.k - 1] : null, O = C.rise ? R.outer[TOWN.step[C.rise.k - 1] - 1] : null;
-  C.rings.forEach(r => { const y = r === c ? dy : 0; if (r.y !== y) { r.y = y; r.baked.concat(r.pbaked).forEach(m => { m.position.y = y; }); } });
-  R.outer.forEach(o => { const y = o === O ? dy : 0; if (o.y !== y) { o.y = y; o.baked.forEach(m => { m.position.y = y; }); o.dyn.position.y = o.fires.position.y = y; } });
   // chimney smoke from the open rings
   if (!line && (C.smoke -= dt) <= 0) { C.smoke = 0.18; const r = C.rings[Math.floor(Math.random() * n)], p = r.chim[Math.floor(Math.random() * r.chim.length)];
     if (p) puff(p[0], p[1], p[2], 0.12, 3.5 + Math.random() * 2, 0.7, 2.2); }
+}
+// ---------- LAS-132 (Philippe: "when the lighthouse base expands, it should slowly build into it, not suddenly appear"). An expansion
+// (a new town ring, a new island step with its wall) is a ~9 s event that runs during the wave: the new land rises out of the sea
+// (0-2 s) while scaffolding goes up round it and the work crews come out with their lanterns; then the wall and the houses go up course
+// by course (BUILD.crews fronts lay each course round the ring, stones drop into place in dust; the towers' courses come last because
+// they are the tallest); the old wall comes down as the parapet on its line goes up, the scaffolding is struck and the empty hex slots
+// rise in. The reveal is a course mask in the shader (courseMat: a fragment shows once its course is laid) on clones of the baked
+// materials while the build runs; nothing else changes, so the end state is the old one. Light: the crews' lanterns only (two point
+// lights that travel with crews 0 and 3, always in the scene at 0 like the hex light, and small lantern pools).
+const BUILD = { land: 2.0, wall: [2.0, 7.2], city: [2.3, 6.8], down: [7.0, 8.2], para: [7.2, 8.4], tiles: [7.3, 8.7], scaf: [0.5, 2.0, 7.4, 8.6], end: 8.9,
+  course: 0.55, crews: 6, crewN: 3, every: 0.2, fall: 0.42, lamp: '#ffc27a', pool: '#ff9a4a', wood: '#5e4a36', man: '#2b2725', light: 60, lightD: 14, bays: 128, stones: 72 };
+function courseMat(m0, u) {
+  const m = m0.clone(), pre = m0.onBeforeCompile, ck = m0.customProgramCacheKey();
+  m.onBeforeCompile = (sh, r) => { pre.call(m0, sh, r); sh.uniforms.uB = u;
+    sh.vertexShader = 'varying vec3 vBW;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  vBW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = 'uniform vec4 uB;\nvarying vec3 vBW;\n' + sh.fragmentShader.replace('void main() {', 'void main() {\n  float bc = floor((vBW.y - uB.y) / uB.z), pc = floor(uB.x), fr = fract((atan(vBW.z, vBW.x) / 6.2831853 + 0.5 - uB.w) * ' + BUILD.crews.toFixed(1) + ');\n  if (bc > pc || (bc == pc && fr >= fract(uB.x))) discard;'); };
+  m.customProgramCacheKey = () => 'course|' + ck; return m;
+}
+// a job: the meshes' materials swapped for course-masked clones; p runs from -> to (courses laid) over [t0, t1] s of the build
+function bJob(meshes, base, t0, t1, from, to) {
+  const u = { value: [from, base, BUILD.course, 0.25] }, cache = new Map();   // w 0.25 = the fronts start at the gate
+  for (const m of meshes) { const m0 = m.material; let c = cache.get(m0); if (!c) cache.set(m0, c = courseMat(m0, u)); m.userData.bm0 = m0; m.userData.bcs = m.castShadow; m.material = c; m.castShadow = false; }
+  return { meshes, u, cache, t0, t1, from, to, p: from, done: false };
+}
+function bJobTick(j, q) { if (j.done) return; const k = Math.max(0, Math.min(1, (q - j.t0) / (j.t1 - j.t0))); j.p = j.from + (j.to - j.from) * k; j.u.value[0] = j.p; if (q >= j.t1) bJobEnd(j); }
+function bJobEnd(j) { if (j.done) return; j.done = true; for (const m of j.meshes) if (m.userData.bm0) { m.material = m.userData.bm0; m.castShadow = m.userData.bcs; m.userData.bm0 = null; } j.cache.forEach(c => c.dispose()); }
+function buildInit() {
+  if (R.bI) return R.bI;
+  const inst = (geo, m, n) => { const im = new T3.InstancedMesh(geo, m, n); im.count = 0; im.frustumCulled = false; im.instanceMatrix.setUsage(T3.DynamicDrawUsage); R.scene.add(im); return im; };
+  // a worker: a hunched body, a hood, a pack of stone on the back (1.6 m: the houses are 2-4 m)
+  const body = new T3.CylinderGeometry(0.2, 0.27, 0.95, 6); body.translate(0, 0.55, 0);
+  const head = new T3.IcosahedronGeometry(0.17, 0); head.translate(0, 1.2, 0.06);
+  const pack = new T3.BoxGeometry(0.42, 0.36, 0.26); pack.translate(0, 0.86, -0.22);
+  const legs = new T3.BoxGeometry(0.3, 0.2, 0.2); legs.translate(0, 0.1, 0);
+  const men = inst(T3.mergeGeometries([body, head, pack, legs].map(g => g.index ? g.toNonIndexed() : g)), new T3.MeshStandardMaterial({ color: BUILD.man, roughness: 0.9, flatShading: true }), BUILD.crews * BUILD.crewN);
+  const lan = inst(new T3.BoxGeometry(0.24, 0.3, 0.24), new T3.MeshBasicMaterial({ color: BUILD.lamp }), BUILD.crews * BUILD.crewN);
+  const pg = new T3.PlaneGeometry(1, 1);
+  const halo = inst(pg, new T3.MeshBasicMaterial({ color: BUILD.pool, map: haloTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false, opacity: 0.5 * RLOOK.warmK }), BUILD.crews * BUILD.crewN); halo.renderOrder = 5;
+  const gp = new T3.PlaneGeometry(1, 1); gp.rotateX(-Math.PI / 2);   // the lantern's pool on the planks / the ground
+  const pool = inst(gp, new T3.MeshBasicMaterial({ color: BUILD.pool, map: haloTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false, opacity: 0.45 * RLOOK.warmK }), BUILD.crews); pool.renderOrder = 4;
+  const stones = inst(new T3.BoxGeometry(0.75, 0.42, 0.48), mat(RLOOK.stone), BUILD.stones); stones.castShadow = true;
+  // a scaffold bay (1 m tall, scaled to the wall's height): two poles, three ledgers, a plank deck at the top, a brace
+  const bay = [], P = (w, h, d, x, y, z, rz) => { const b = new T3.BoxGeometry(w, h, d); if (rz) b.rotateZ(rz); b.translate(x, y, z); bay.push(b); };
+  for (const x of [-0.75, 0.75]) for (const z of [-0.3, 0.3]) P(0.07, 1, 0.07, x, 0.5, z);
+  for (const y of [0.35, 0.68, 0.98]) for (const z of [-0.3, 0.3]) P(1.6, 0.04, 0.05, 0, y, z);
+  P(1.5, 0.04, 0.62, 0, 0.99, 0); P(1.7, 0.03, 0.04, 0, 0.5, 0.3, 0.55);
+  const scaf = inst(T3.mergeGeometries(bay), new T3.MeshStandardMaterial({ color: BUILD.wood, roughness: 0.9, flatShading: true }), BUILD.bays); scaf.castShadow = true;
+  const L = [0, 1].map(() => { const l = new T3.PointLight(BUILD.lamp, 0, BUILD.lightD, 1.6); R.scene.add(l); return l; });   // always in the scene: no shader recompile
+  // warm the course shaders with the rest (warm()): one lit stone, one glow
+  for (const c of [RLOOK.stone, RLOOK.lamp]) { const m = new T3.Mesh(new T3.BoxGeometry(0.1, 0.1, 0.1), courseMat(mat(c, { glow: c === RLOOK.lamp }), { value: [1, -9, 1, 0] })); m.receiveShadow = true; m.visible = false; R.scene.add(m); }
+  return (R.bI = { men, lan, halo, pool, stones, scaf, L, S: [], d: new T3.Object3D() });
+}
+function buildStart(t, Q) {
+  if (R.bld) buildEnd(R.bld);
+  const C = R.town && R.town.city, B = R.bld = { t0: t, jobs: [], land: [], last: 0, stoneT: 0 };
+  if (Q.step) { const [s0, s1] = Q.step; B.O = R.outer[s1 - 1]; B.Op = s0 ? R.outer[s0 - 1] : null; B.s1 = s1;
+    B.wall = bJob(B.O.baked, -1.0, BUILD.wall[0], BUILD.wall[1], 0, Math.ceil((B.O.top + 1.0) / BUILD.course) + 1); B.jobs.push(B.wall);
+    if (B.Op) B.jobs.push(B.down = bJob(B.Op.baked, -1.0, BUILD.down[0], BUILD.down[1], Math.ceil((B.Op.top + 1.0) / BUILD.course) + 1, 0));
+    R.isle.slice(s0, s1).forEach(g => B.land.push(...g.baked));
+    if (C) { const pm = C.rings.filter((c, i) => i + 1 >= s0 && i + 1 < s1).flatMap(c => c.pbaked);   // the parapets on the old wall lines
+      if (pm.length) B.jobs.push(bJob(pm, Math.min(...TOWN.y) - 0.2, BUILD.para[0], BUILD.para[1], 0, Math.ceil(2.0 / BUILD.course) + 1)); } }
+  if (Q.ring && C && C.rings[Q.ring - 1]) { const c = C.rings[Q.ring - 1]; B.ring = Q.ring; B.cTop = c.top; B.land.push(...c.baked);
+    B.city = bJob(c.baked, c.top - 0.03, BUILD.city[0], BUILD.city[1], 0, Math.ceil(9 / BUILD.course)); B.jobs.push(B.city); }
+  if (!B.jobs.length && !B.land.length) { R.bld = null; return; }
+  // where the crews work: on scaffolding outside the new wall, or (a town ring inside a standing wall) among its houses
+  B.r = B.O ? B.O.Ro + 1.05 : (parapetB(B.ring - 1) + parapetB(B.ring)) / 2;
+  B.y0 = B.O ? RLOOK.isleTop : B.cTop;
+  B.ref = B.wall || B.city;
+  if (B.O) {   // the scaffold bays: round the curtain, clear of the gate and the flanking towers
+    const dA = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))), n = Math.min(BUILD.bays, Math.round(Math.PI * 2 * B.r / 2.0)); B.bays = [];
+    for (let i = 0; i < n; i++) { const a = (i + 0.5) / n * Math.PI * 2; if (dA(a, -Math.PI / 2) < 3.0 / B.r || B.O.tA.some(b => dA(a, b) < 2.9 / B.r)) continue; B.bays.push(a); } }
+  B.hW = B.O ? B.O.walkY + 0.9 : 0;   // the scaffold stops a little over the wall-walk
+  const F = root.TWFx; if (F && F.sound) F.sound('build');
+}
+function buildEnd(B) {
+  for (const j of B.jobs) bJobEnd(j);
+  B.land.forEach(m => { m.position.y = 0; });
+  const cur = R.outer[(R.isleStep || 0) - 1];
+  for (const o of [B.O, B.Op]) if (o) { const on = o === cur; o.baked.forEach(m => { m.visible = on; }); o.dyn.visible = o.fires.visible = on; }
+  const I = R.bI; if (I) { for (const k of ['men', 'lan', 'halo', 'pool', 'stones', 'scaf']) I[k].count = 0; I.L.forEach(l => { l.intensity = 0; }); I.S.length = 0; }
+  R.hexIn = null; if (R.hex) R.hex.key = ''; R.bld = null;
+}
+function buildTick(t, dt) {
+  const Q = R.bldQ; if (Q) { R.bldQ = null; if (!(R.town && R.town.dev && R.town.dev.line)) buildStart(t, Q); }
+  const B = R.bld; if (!B) return;
+  const q = t - B.t0; if (q >= BUILD.end || q < 0) { buildEnd(B); return; }
+  const I = buildInit(), d = I.d, cl = x => Math.max(0, Math.min(1, x)), F = root.TWFx;
+  for (const j of B.jobs) bJobTick(j, q);
+  // the land comes up out of the sea, spray sheeting off its rim
+  const kl = cl(q / BUILD.land), dy = -CITY.depth * Math.pow(1 - kl, 3);
+  B.land.forEach(m => { m.position.y = dy; });
+  if (kl < 1) for (let j = 0; j < 2; j++) { const a = Math.random() * 6.283, ro = B.O ? B.O.Ro + 1.5 : B.r + 2; puff(Math.cos(a) * ro, 0.3 + Math.random() * 1.2 * kl, Math.sin(a) * ro, 0.85, 1.2 + Math.random(), 1.4 - kl, 2.4); }
+  if (B.city) B.city.u.value[1] = B.cTop - 0.03 + dy;
+  // the old wall stands until it is pulled down; the new one's merlons, fires and beacons wait for the last course
+  if (B.Op) { const up = q < BUILD.down[0]; B.Op.baked.forEach(m => { m.visible = !B.down.done; }); B.Op.dyn.visible = B.Op.fires.visible = up; }
+  if (B.O) B.O.dyn.visible = B.O.fires.visible = q >= BUILD.wall[1];
+  // the crews: fade in on the new land, work at the course fronts, fade out once the scaffolding is struck
+  const cv = cl((q - BUILD.scaf[0]) / 1.0) * (1 - cl((q - BUILD.scaf[2]) / 1.0)), J = B.ref, p = J ? J.p : 0, pc = Math.floor(p), fr = p - pc;
+  const laying = J && q > J.t0 && q < J.t1, yC = J ? Math.max(B.y0, J.u.value[1] + pc * BUILD.course) : B.y0;   // the course being laid
+  const yW = B.O ? Math.min(yC, B.hW) : B.y0;   // where they stand: on the scaffold deck (stops at the walk) or on the street
+  let nm = 0, nh = 0, np = 0;
+  const cq = R.cam.quaternion, A = [];
+  for (let c = 0; c < BUILD.crews; c++) {
+    const a = ((0.25 + (c + (laying ? fr : 0)) / BUILD.crews) - 0.5) * Math.PI * 2; A.push(a);
+    for (let m = 0; m < BUILD.crewN; m++) {
+      const back = (0.9 + m * 1.2) / B.r, aa = a - back, rr = B.r + (m % 2 ? 0.25 : -0.2), bob = laying ? Math.abs(Math.sin(t * 7 + c * 1.7 + m * 2.1)) * 0.12 : 0;
+      const x = Math.cos(aa) * rr, z = Math.sin(aa) * rr, s = 1.25 * cv;
+      if (s < 0.02) continue;
+      d.position.set(x, yW + bob, z); d.rotation.set(0, Math.PI / 2 - aa + (m === 1 ? Math.PI : 0), m === 0 && laying ? 0.25 * Math.sin(t * 7 + c) : 0); d.scale.setScalar(s); d.updateMatrix(); I.men.setMatrixAt(nm, d.matrix);
+      // each one carries a lantern on a short pole at the hip
+      const lx = x + Math.cos(aa + Math.PI / 2) * 0.35, lz = z + Math.sin(aa + Math.PI / 2) * 0.35, ly = yW + bob + 1.0 * s;
+      d.rotation.set(0, 0, 0); d.position.set(lx, ly, lz); d.scale.setScalar(s); d.updateMatrix(); I.lan.setMatrixAt(nm, d.matrix);
+      d.quaternion.copy(cq); d.position.set(lx, ly, lz); d.scale.setScalar(2.6 * cv * (0.9 + 0.1 * Math.sin(t * 13 + c * 3 + m))); d.updateMatrix(); I.halo.setMatrixAt(nh++, d.matrix);
+      nm++;
+    }
+    d.rotation.set(0, 0, 0); const pr = B.r - (B.O ? 1.0 : 0); d.position.set(Math.cos(a - 1.4 / B.r) * pr, yW + 0.04, Math.sin(a - 1.4 / B.r) * pr); d.scale.setScalar(5.5 * cv);   // inside the island's edge (pureblack) d.updateMatrix(); I.pool.setMatrixAt(np++, d.matrix);
+  }
+  I.men.count = I.lan.count = nm; I.halo.count = nh; I.pool.count = np;
+  for (const k of ['men', 'lan', 'halo', 'pool']) I[k].instanceMatrix.needsUpdate = true;
+  I.L.forEach((l, i) => { const a = A[i * 3] - 1.4 / B.r; l.position.set(Math.cos(a) * (B.r + 0.6), yW + 1.8, Math.sin(a) * (B.r + 0.6)); l.intensity = BUILD.light * cv; });
+  // stones swing down onto the course fronts and settle in a puff of dust; a stone knock as each lands
+  if (laying && (B.stoneT -= dt) <= 0) { B.stoneT = BUILD.every;
+    for (let c = 0; c < BUILD.crews; c++) if (I.S.length < BUILD.stones) { const a = A[c] - (0.2 + Math.random() * 0.8) / B.r, rr = B.O ? B.O.Ro - 0.5 : B.r + (Math.random() - 0.5) * 3;
+      I.S.push({ a, r: rr, y1: B.O ? J.u.value[1] + (pc + 0.5) * BUILD.course : B.cTop + 0.2, t: 0, sp: Math.random() * 6.28, hit: false }); } }
+  let ns = 0;
+  for (let i = I.S.length - 1; i >= 0; i--) { const s = I.S[i]; s.t += dt; if (s.t > BUILD.fall + 0.3) { I.S.splice(i, 1); continue; } }
+  for (const s of I.S) { const u = Math.min(1, s.t / BUILD.fall), y = s.y1 + 2.6 * (1 - u * u), x = Math.cos(s.a) * s.r, z = Math.sin(s.a) * s.r;
+    if (u >= 1 && !s.hit) { s.hit = true; puff(x, s.y1 + 0.1, z, 0.55, 0.9 + Math.random() * 0.5, 0.35, 1.3); if (F && F.sound && Math.random() < 0.35) F.sound('course'); }
+    d.position.set(x, y, z); d.rotation.set((1 - u) * 1.5 + s.sp * 0.1, Math.PI / 2 - s.a + (1 - u) * s.sp, 0); d.scale.setScalar(1); d.updateMatrix(); I.stones.setMatrixAt(ns++, d.matrix); }
+  I.stones.count = ns; I.stones.instanceMatrix.needsUpdate = true;
+  // the scaffolding: up as the land surfaces, climbing with the courses, struck at the end
+  if (B.bays) { const h = Math.min(B.hW, Math.max(1.6, yC - B.y0 + 1.2)) * cl((q - BUILD.scaf[0]) / (BUILD.scaf[1] - BUILD.scaf[0])) * (1 - cl((q - BUILD.scaf[2]) / (BUILD.scaf[3] - BUILD.scaf[2])));
+    let nb = 0; if (h > 0.05) for (const a of B.bays) { d.position.set(Math.cos(a) * B.r, B.y0 + dy, Math.sin(a) * B.r); d.rotation.set(0, Math.PI / 2 - a, 0); d.scale.set(1, h, 1); d.updateMatrix(); I.scaf.setMatrixAt(nb++, d.matrix); }
+    I.scaf.count = nb; I.scaf.instanceMatrix.needsUpdate = true; }
+  // the empty hex slots of a new town ring rise in last
+  R.hexIn = B.ring ? { ring: B.ring, q: cl((q - BUILD.tiles[0]) / (BUILD.tiles[1] - BUILD.tiles[0])) } : null;
+  if (!B.clank && q >= BUILD.tiles[0]) { B.clank = true; if (F && F.sound) F.sound('clank'); }
 }
 // ---------- LAS-86 part 3: the buildings at work, like Vampire Survivors weapons: each shows its effect in the battle, in its own colour
 // and shape, read from the sim's events (S.ev): the Bell Tower's toll runs a pale shock ring out across the brazier ring, the Fog Horn
@@ -9670,7 +9804,7 @@ function warm() {
 }
 
 function init(S) {
-  if (!R.on) { initGL(); buildScene(); R.braz = [0, 1, 2, 3].map(makeBrazier); townInit(); hexInit(); upInit(); resize(); root.addEventListener('resize', resize); warm(); R.on = true; }
+  if (!R.on) { initGL(); buildScene(); R.braz = [0, 1, 2, 3].map(makeBrazier); townInit(); hexInit(); buildInit(); upInit(); resize(); root.addEventListener('resize', resize); warm(); R.on = true; }
   setRun(S);
   root.TWPerf = R.perf = { fps: 0, worst: 0, n: 0, shots: 0, calls: 0, tris: 0, drowned: R.tris.drowned, kinds: R.tris.kinds };
 }
@@ -9744,6 +9878,7 @@ function growth(S, dt, t) {
   let pw = 6 * Math.max(0, (S.mounts || []).length - 1) + 5 * nk; for (const k in lv) pw += lv[k] || 0;
   const step = Math.max(RLOOK.isleAt.filter(x => pw >= x).length, R.townStep || 0), O = step ? R.outer[step - 1] : null;
   if (step !== R.isleStep) {
+    if (R.isleStep != null && step > R.isleStep) (R.bldQ || (R.bldQ = {})).step = [R.isleStep, step];   // LAS-132: the new wall builds up (buildTick)
     R.isleStep = step; R.isle.forEach((g, i) => g.baked.forEach(m => { m.visible = i < step; }));
     R.outer.forEach((o, i) => { const on = i === step - 1; o.baked.forEach(m => { m.visible = on; }); o.fires.visible = o.dyn.visible = on; if (on) o.W.fresh = true; });
     R.towerR = O ? O.Ro - 0.35 : TOWER_R; R.walkY = O ? O.walkY : 0;
@@ -10332,7 +10467,7 @@ function frame(S, alpha, now) {
   }
 
   // the mounts turn, fire and recoil; the citadel shows its damage; smoke drifts
-  flankTick(t); mountsTick(S, t, dtR, alpha); guardsTick(S, t, dtR, alpha); townTick(S, t, dtR); hexTick(S, t, dtR); occTick(S, dtR); upTick(S, t); growth(S, dtR, t); damage(S, t, dtR); smokeTick(dtR); ringsTick(t);
+  flankTick(t); mountsTick(S, t, dtR, alpha); guardsTick(S, t, dtR, alpha); townTick(S, t, dtR); hexTick(S, t, dtR); occTick(S, dtR); upTick(S, t); growth(S, dtR, t); buildTick(t, dtR); damage(S, t, dtR); smokeTick(dtR); ringsTick(t);
   const dT = camFrame(S);
   R.camD = R.camD ? R.camD + (dT - R.camD) * Math.min(1, dtR * RLOOK.camEase) : dT; camBase(R.camD);
 
