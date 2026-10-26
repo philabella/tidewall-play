@@ -6259,7 +6259,9 @@ const RLOOK = {
   vignette: 'none',   // LAS-65: vignette + grain are in the final pass
   maxEnemies: 6000, maxShots: 1024, maxSparks: 512, plateau: 1.2, shore: 7.5, gunY: 4.6, deck: 4.1, walk: 1.7,
   skyTop: '#040b10', skyMid: '#0b2129', moon: '#e8f4ee', moonGlow: '#8fd6e0', foam: '#bff3ea', crest: '#2f7f80',
-  smoke: '#2a3134', fire: '#ff8a3a', bossScale: 2.1, bossRise: 2.4, creatureK: 1.8, creatureQ: 1.67, warmK: 0.55,   // LAS-104: warmK = every fire glow card x this (the lamp stays the brightest thing in the late city); // LAS-73: creatureQ = more facets (loft 6 -> 10 sides)
+  smoke: '#2a3134', fire: '#ff8a3a', bossScale: 2.1, bossRise: 2.4, creatureK: 1.8, creatureQ: 1.67,
+  kindK: { drowned: 1.5, swarmer: 1.85 },   // LAS-117: the small kinds read at the game camera (Drowned was x1.15: 21 px tall at 2560; Spawn 8 px)
+ warmK: 0.55,   // LAS-104: warmK = every fire glow card x this (the lamp stays the brightest thing in the late city); // LAS-73: creatureQ = more facets (loft 6 -> 10 sides)
     // LAS-49: creatures 80% bigger, the boss x2.1 (it must read from 74 m)
   // LAS-26: the camera orbits the lighthouse (world origin) at camPitch deg; its distance follows the mounts' reach
   // (reach x camK, clamped camMin..camMax, eased ~1 s). Fog thins as it pulls back so the island stays clear.
@@ -6497,6 +6499,7 @@ function eyesGeo(kind) {
 const KIND = { drowned: 0, swarmer: 1, brute: 2, flyer: 3, diver: 4, dimmer: 5, leviathan: 6, siren: 7, kraken: 8, mirror: 9 };
 const KLIST = Object.keys(KIND), BOSSK = 6;   // ki >= BOSSK = a boss
 KIND.shade = 1;   // LAS-32: Shadelings use the Spawn model (alias added after KLIST, so the model list is unchanged)
+const kindK = ki => (RLOOK.kindK && RLOOK.kindK[KLIST[ki]]) || 1;   // LAS-117: per-kind size on top of creatureK
 
 // ---------- walk / swim cycles (LAS-21): a vertex shader on each kind's instanced meshes (body and eyes alike, so
 // heads and eyes stay together). The stride phase comes from the creature's distance to the citadel (read from the
@@ -7175,7 +7178,8 @@ function buildSea(scene) {
 }
 // LAS-98 (audit p31 #1): the cone's light = spill + core x bcore(): the sea and the fog are faint across the cone, bright only
 // near its axis (the lit creatures stay lit across the whole cone: their light is not this). fog*: the same for the haze.
-const BCONE = { spill: 0.25, core: 1.15, fogSpill: 0.07, fogCore: 0.75 };
+// LAS-117: lit creatures must stand out of the cone: the sea and the haze under the beam are darker (pale flesh on dark water)
+const BCONE = { spill: 0.12, core: 0.7, fogSpill: 0.04, fogCore: 0.5 };
 const BMASK = 'float bmask(vec2 q,float a,float w,float L){float r=length(q);if(a>8.0||r<0.05)return 0.0;float c=dot(q/r,vec2(cos(a),sin(a)));float ang=acos(clamp(c,-1.0,1.0));float sf=clamp(0.8/r,0.004,0.12);float m=smoothstep(w*0.5+sf,w*0.5-sf-w*0.22,ang);return m*smoothstep(L+1.0,L-0.22*L,r);}\n' +
   // LAS-98: a searchlight: a narrow soft core (sigma 14% of the cone, 2.6-6.3 deg) over a faint spill the width of the cone
   'float bcore(float ang,float w){float sg=clamp(w*0.14,0.045,0.11);return exp(-ang*ang/(2.0*sg*sg));}\n' +
@@ -9415,7 +9419,7 @@ function frame(S, alpha, now) {
     const hx0 = m.rx && R.hx ? R.hx.get(e.id) : null;   // LAS-109: lit, it stops wobbling and faces the lamp square
     const yaw = Math.atan2(-p.x, -p.z) + 0.12 * Math.sin(t * 3 * fast + ph) * (hx0 ? 1 - hx0.l : 1);
     const bob = e.fly ? 0 : e.atWall ? 0.12 * Math.abs(Math.sin(t * 6 * fast + ph)) : 0.05 * Math.sin(t * 5 * fast + ph);
-    const s = hid ? 0 : ki >= BOSSK ? RLOOK.bossScale : (0.92 + 0.16 * ((e.id * 7919) % 13) / 13) * (ki === 0 ? 1.15 : 1) * RLOOK.creatureK;
+    const s = hid ? 0 : ki >= BOSSK ? RLOOK.bossScale : (0.92 + 0.16 * ((e.id * 7919) % 13) / 13) * kindK(ki) * RLOOK.creatureK;
     let rise = 0;
     if (e.boss) {   // the entry: the boss heaves up out of the sea over bossRise s, throwing foam and spray
       let t0 = R.bossT0.get(e.id); if (t0 === undefined) { t0 = t; R.bossT0.set(e.id, t0); }   // LAS-81: no foam ring at the boss's entry (a teal gizmo in the dark); the beam reveals it
@@ -9512,7 +9516,7 @@ function frame(S, alpha, now) {
     const q = Math.min(1, Math.max(0, 1 - (s.left - alpha * S.T.dt) / t0)), e = s.tgt, p = dispPos(e, alpha), ki = KIND[e.kind] || 0;
     const mz = R.muzzle.get(s.x + ',' + s.y), kind = R.SHOT[s.kind] ? s.kind : 'cannon', M = R.SHOT[kind];
     const sx = mz ? mz[0] : s.x, sy = mz ? mz[1] : RLOOK.plateau + RLOOK.gunY, sz = mz ? mz[2] : s.y;
-    const ex = p.x, ey = p.y + CHEST[ki] * (ki >= BOSSK ? RLOOK.bossScale : RLOOK.creatureK), ez = p.z, d = Math.hypot(ex - sx, ez - sz);
+    const ex = p.x, ey = p.y + CHEST[ki] * (ki >= BOSSK ? RLOOK.bossScale : RLOOK.creatureK * kindK(ki)), ez = p.z, d = Math.hypot(ex - sx, ez - sz);
     const arc = kind === 'mortar' ? 0.45 : kind === 'ballista' || kind === 'harpoon' ? 0.03 : kind === 'tesla' ? 0 : 0.1;
     const x = sx + (ex - sx) * q, z = sz + (ez - sz) * q, y = sy + (ey - sy) * q + Math.sin(q * Math.PI) * d * arc, j = SC[kind]++;
     if (j >= RLOOK.maxShots) continue;
