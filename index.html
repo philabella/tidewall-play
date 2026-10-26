@@ -6236,8 +6236,8 @@ root.TWFx = { init, reset, hideBanner, frame, draw, fmt, tag, setVolume, sound: 
 // and the camera are -z. Look: Polygon kit materials (one flat-shaded MeshStandardMaterial per colour, MeshBasic only
 // for emitters, art/poly/kit.js) under Look C "Cinema grade" (balance/v19/arlook.js: hemi teal sky / dark teal ground,
 // low amber key from the side, teal rim, ACES, CSS vignette + grain). Warm amber on the citadel, cold teal on the Tide.
-// Enemies and shots are InstancedMesh: per creature kind 2 draw calls (body + eyes; Nightgaunts +2 wings +1 shadow),
-// shots 1, sparks 1. Creature models: ART (Polygon-kit lofts, vertex colours, all under 800 triangles).
+// Enemies and shots are InstancedMesh: per creature kind 2 draw calls (body + eyes; Nightgaunts +1 shadow),
+// shots 1, sparks 1. Creature models: HART (the six wave creatures, boned, LAS-109) and ART (the bosses).
 // API: TWRender.init(S) once (or again for a new run), pre(S) before each sim step (for interpolation),
 // frame(S, alpha, nowMs) once per animation frame. #fps overlay: fps, worst frame, enemies, shots, draw calls, tris.
 (function (root) {
@@ -6252,7 +6252,7 @@ const RLOOK = {
   rimCol: '#4fc3c8', rim: 0, rimPos: [10, 14, 60], exposure: 1.15, shadow: 3072, shadowBox: 26,   // LAS-86: the shadow box covers the wave-50 city (wall 21.8 m); more texels to keep the density
   amber: '#ffb36b', lamp: '#ffd08a', stone: '#6d6a66', stoneDark: '#45474a', roof: '#3a2f2c', rock: '#3b4446', rockDark: '#262d30',
   sea: '#0e3238', tide: '#7fb3aa', tideDeep: '#3e6863', eye: '#9ff5ea', boss: '#24413f', shot: '#ffc27a', spark: '#ffb36b', splash: '#7fe8dc',
-  horror: false, eyeH: '#cfc79a',   // LAS-109: the horror creature set (off until Philippe approves the turntable; #horror turns it on); eyeshine, not a cyan dot
+  eyeH: '#cfc79a',   // LAS-109: the wave creatures' eyeshine (the beam caught in their eyes), not a cyan dot
   filter: 'none',
   vignette: 'none',   // LAS-65: vignette + grain are in the final pass
   maxEnemies: 6000, maxShots: 1024, maxSparks: 512, plateau: 1.2, shore: 7.5, gunY: 4.6, deck: 4.1, walk: 1.7,
@@ -6334,14 +6334,22 @@ function loft(secs, n = 6, sq = 3) {
 function model(smooth) {   // smooth (LAS-73): keep the primitives' own normals (round cylinders and balls, crisp boxes)
   const parts = [], c = new T3.Color(), up = new T3.Vector3(0, 1, 0), d = new T3.Vector3(), q = new T3.Quaternion();
   const put = (g, col) => {
-    const hadN = smooth && !!g.getAttribute('normal');
+    let hadN = smooth && !!g.getAttribute('normal');
+    if (M.lump && g.index) {   // LAS-109: lumpy flesh: push the skin in and out by a noise of its position (shared vertices move together), smooth normals after
+      const P = g.getAttribute('position'), N0 = g.getAttribute('normal') || (g.computeVertexNormals(), g.getAttribute('normal')), L = M.lump;
+      for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), h = Math.sin(x * 29.7 + z * 11.3) * Math.sin(y * 23.1 - x * 7.7) + 0.5 * Math.sin(z * 47.3 + y * 31.9 + x * 13.7);
+        P.setXYZ(i, x + N0.getX(i) * h * L, y + N0.getY(i) * h * L, z + N0.getZ(i) * h * L); }
+      g.computeVertexNormals(); hadN = true;
+    }
     g = g.index ? g.toNonIndexed() : g; if (g.getAttribute('uv')) g.deleteAttribute('uv');
     if (!hadN) g.computeVertexNormals(); c.set(col);
     const n = g.getAttribute('position').count, a = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; }
     if (M.rg) { const P = g.getAttribute('position');   // LAS-109: mottled dead skin: blotches by position, blood pooled dark and purple low on the body
-      for (let i = 0; i < n; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), h = Math.sin(x * 41.3 + y * 27.1 + z * 33.7) * 0.5 + Math.sin(x * 13.1 - z * 17.9 + y * 9.3) * 0.5, k = 0.88 + 0.12 * h, lv = Math.max(0, Math.min(1, (0.28 - y) / 0.28)) * 0.45;
-        a[i * 3] = a[i * 3] * k * (1 - lv) + 0.2 * lv; a[i * 3 + 1] = a[i * 3 + 1] * k * (1 - lv) + 0.12 * lv; a[i * 3 + 2] = a[i * 3 + 2] * k * (1 - lv) + 0.18 * lv; } }
+      for (let i = 0; i < n; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), h = Math.sin(x * 41.3 + y * 27.1 + z * 33.7) * 0.5 + Math.sin(x * 13.1 - z * 17.9 + y * 9.3) * 0.5, k = 0.76 + 0.24 * h, lv = Math.max(0, Math.min(1, (0.28 - y) / 0.28)) * 0.45, h2 = Math.sin(x * 9.1 + z * 6.3 - y * 4.7) * Math.sin(y * 8.3 + x * 3.9), bz = Math.max(0, h2 - 0.45) * 1.4;   // bz: bruise patches
+        let cr = 1; if (M.cr) for (const q of M.cr) { const dd = Math.hypot(x - q[0], y - q[1], z - q[2]) / q[3]; if (dd < 1) cr = Math.min(cr, 0.45 + 0.55 * dd * dd); }   // wet dark creases at the joints
+        const R0 = a[i * 3] * k * (1 - lv) + 0.2 * lv, G0 = a[i * 3 + 1] * k * (1 - lv) + 0.12 * lv, B0 = a[i * 3 + 2] * k * (1 - lv) + 0.18 * lv, bm = Math.min(0.7, bz) * (M.lumpC || 0);
+        a[i * 3] = (R0 * (1 - bm) + 0.3 * bm) * cr; a[i * 3 + 1] = (G0 * (1 - bm) + 0.22 * bm) * cr; a[i * 3 + 2] = (B0 * (1 - bm) + 0.3 * bm) * cr; } }
     g.setAttribute('color', new T3.BufferAttribute(a, 3));
     if (M.rg) { const r = M.rg, A = new Float32Array(n * 4), B = new Float32Array(n * 4);   // LAS-109: each vertex's bone (own joint + parent joint)
       for (let i = 0; i < n; i++) for (let k = 0; k < 4; k++) { A[i * 4 + k] = r[k]; B[i * 4 + k] = r[4 + k]; }
@@ -6392,149 +6400,6 @@ const secAt = (S, y) => {   // a loft's section [y, hw, f, b, z] interpolated at
 // ---------- the creatures (face +z, feet at y = 0). Cold teal flesh, bone, kelp; eyes are a separate glowing mesh.
 const CK = { skin: '#86b8ad', belly: '#a9cfc0', fin: '#3e6863', kelp: '#4b7352', bone: '#cfc5a6', dark: '#2c4a47' };
 const ART = {
-  // the Drowned (~1.2): hunched, head low and forward, long arms, a kelp rag, three spine fins
-  // LAS-104: the spine curves forward into a long skull with a hanging jaw and teeth; ribs show through the chest, gills on the
-  // neck, a torn fin down the back, long arms ending in three clawed fingers, digitigrade legs on webbed feet
-  drowned() {
-    const M = model(true), sk = CK.skin;
-    const T = [[0.44, 0.13, 0.1, 0.11, -0.02], [0.56, 0.16, 0.12, 0.14, 0], [0.68, 0.2, 0.14, 0.17, 0.03], [0.8, 0.23, 0.16, 0.2, 0.07], [0.9, 0.24, 0.16, 0.21, 0.12], [0.99, 0.2, 0.14, 0.18, 0.18], [1.06, 0.11, 0.09, 0.1, 0.25]];
-    M.add(sloft(T, 8, 2.6), sk);
-    M.add(sloft([[0.5, 0.11, 0.05, 0.02, 0.09], [0.6, 0.14, 0.06, 0.02, 0.11], [0.68, 0.15, 0.05, 0.02, 0.14]], 6, 2.4), CK.belly);   // the sunken belly
-    for (let i = 0; i < 4; i++) { const y = 0.72 + i * 0.07, q = secAt(T, y), r = q.hw * 0.95;   // ribs under the skin
-      M.add(new T3.TorusGeometry(r, 0.014, 3, 10, Math.PI * 0.8), CK.bone, [0, y, q.z + q.f + 0.012 - r * 0.72], [Math.PI / 2, -0.1 * Math.PI, 0], [1, 0.72, 1]); }
-    // the skull: long and low, a bony brow, the jaw hanging open with needle teeth, gill slits behind it
-    M.add(ico(0.15, 1), CK.belly, [0, 1.11, 0.36], [0.25, 0, 0], [1, 0.92, 1.4]);
-    M.add(ico(0.1), CK.skin, [0, 1.18, 0.45], [0.3, 0, 0], [1.35, 0.32, 0.55]);   // the brow ridge
-    M.add(cone(0.11, 0.3, 7), CK.belly, [0, 0.97, 0.47], [2.5, 0, 0], [1, 1, 0.55]);
-    for (let i = 0; i < 5; i++) { const x = (i - 2) * 0.034; spike(M, [x, 1.05, 0.53 - Math.abs(i - 2) * 0.02], [0, -1, 0.15], 0.075, 0.014, CK.bone, 4); }
-    for (let i = 0; i < 4; i++) { const x = (i - 1.5) * 0.04; spike(M, [x, 0.9, 0.56 - Math.abs(i - 1.5) * 0.02], [0, 1, 0.3], 0.06, 0.012, CK.bone, 4); }
-    M.sym(s => { for (let i = 0; i < 3; i++) M.add(new T3.BoxGeometry(0.012, 0.075, 0.045), CK.dark, [0.13 * s, 1.03 - i * 0.04, 0.29], [0, 0.4 * s, 0]); });
-    // the arms (gait: |x| > 0.2, z > 0.14): shoulder, elbow, wrist, three long fingers, a bone claw on each
-    M.sym(s => {
-      M.add(ico(0.075, -1), sk, [0.24 * s, 0.96, 0.17]);
-      chain(M, [[0.25 * s, 0.95, 0.17], [0.33 * s, 0.64, 0.3], [0.31 * s, 0.37, 0.43]], [0.068, 0.052, 0.04], sk, 7, true);
-      M.add(ico(0.045, -1), sk, [0.31 * s, 0.34, 0.45], [0, 0, 0], [1, 1.2, 0.8]);
-      for (let f = -1; f <= 1; f++) { const a = [0.31 * s + f * 0.026, 0.32, 0.46], b = [0.31 * s + f * 0.045, 0.22, 0.5 + 0.01 * (1 - Math.abs(f))], c = [0.31 * s + f * 0.05, 0.13, 0.49];
-        chain(M, [a, b, c], [0.016, 0.013, 0.01], sk, 5); spike(M, c, [f * 0.2, -1, 0.15], 0.07, 0.012, CK.bone, 4); }
-    });
-    // the legs: hip, forward knee, back-bent ankle, a webbed three-toed foot
-    M.sym(s => {
-      chain(M, [[0.11 * s, 0.5, 0], [0.15 * s, 0.3, 0.1], [0.15 * s, 0.12, -0.06], [0.15 * s, 0.03, 0.0]], [0.088, 0.066, 0.046, 0.036], sk, 7, true);
-      M.add(ico(0.045, -1), CK.dark, [0.15 * s, 0.03, 0.03], [0, 0, 0], [1, 0.45, 1.6]);
-      for (let f = -1; f <= 1; f++) spike(M, [0.15 * s + f * 0.03, 0.025, 0.05], [f * 0.35, -0.1, 1], 0.1, 0.017, CK.bone, 4);
-    });
-    // a torn fin down the spine: bone rays and the membrane between them
-    const rays = [];
-    for (let i = 0; i < 5; i++) { const y = 1.0 - i * 0.1, q = secAt(T, y), z = q.z - q.b + 0.02, L = 0.27 - i * 0.035; spike(M, [0, y, z], [0, 0.55, -1], L, 0.028, CK.fin, 4); rays.push([[0, y, z], [0, y + 0.45 * L, z - 0.82 * L]]); }
-    const fp = [], ft = [];
-    rays.forEach(([b, t]) => fp.push(b, t)); for (let i = 0; i < 4; i++) { const a = i * 2; ft.push([a, a + 1, a + 3], [a, a + 3, a + 2]); }
-    fp[5] = [0, fp[5][1] - 0.06, fp[5][2] + 0.05];   // a tear in it
-    web(M, fp, ft, '#355a56');
-    // kelp hanging off one shoulder and the waist, barnacles crusting the other shoulder
-    M.add(new T3.BoxGeometry(0.2, 0.42, 0.02), CK.kelp, [-0.14, 0.62, -0.14], [0.15, 0.4, 0.1]);
-    M.add(new T3.BoxGeometry(0.12, 0.34, 0.02), CK.dark, [0.15, 0.58, -0.12], [0.1, -0.5, -0.15]);
-    M.add(new T3.BoxGeometry(0.06, 0.4, 0.015), CK.kelp, [-0.2, 0.78, 0.05], [0.05, 0.2, 0.25]);
-    for (let i = 0; i < 5; i++) M.add(ico(0.055 - i * 0.008, -1), CK.bone, [0.18 + i * 0.03, 1.0 - i * 0.045, 0.08 + (i % 2) * 0.05], [i, 0, 0], [1, 0.6, 1]);
-    return M.geo();
-  },
-  // the Spawn (~0.5): a six-legged crab-fish, small, low and fast; bone spikes on the back, four eyes
-  // LAS-104: a domed, ridged shell (belly flat, back high), six jointed legs on bone points, a pair of pincers, mandibles, a
-  // segmented tail ending in a fan; bone spikes down the ridge
-  swarmer() {
-    const M = model(true), sh = '#86b6a2', dk = CK.dark;
-    // the shell: sections run along z (rotated), f = belly depth, b = back height
-    const SH = [[0, 0.04, 0.03, 0.04], [0.1, 0.13, 0.06, 0.1], [0.22, 0.19, 0.08, 0.14], [0.36, 0.22, 0.08, 0.16], [0.5, 0.19, 0.07, 0.14], [0.62, 0.13, 0.06, 0.1], [0.7, 0.05, 0.03, 0.04]];
-    M.add(sloft(SH, 8, 2.4), sh, [0, 0.3, -0.34], [Math.PI / 2, 0, 0], [1, 1, 0.9]);
-    for (let i = 0; i < 3; i++) { const z = -0.12 + i * 0.13, q = secAt(SH, z + 0.34), r = q.hw + 0.006;   // the shell's plate seams, over the back
-      M.add(new T3.TorusGeometry(r, 0.012, 3, 10, Math.PI), dk, [0, 0.3, z], [0, 0, 0], [1, (q.b * 0.9 + 0.006) / r, 1]); }
-    for (let i = 0; i < 5; i++) spike(M, [0, 0.43 - Math.abs(i - 2) * 0.012, 0.2 - i * 0.11], [0, 1, -0.45], 0.15 - Math.abs(i - 2) * 0.02, 0.03, CK.bone, 4);
-    // legs (gait: |x| > 0.12, y < 0.46): up to a high knee, down to a bone point
-    M.sym(s => { for (let i = -1; i <= 1; i++) { const z = i * 0.14 + 0.02, a = [0.13 * s, 0.3, z], k = [0.3 * s, 0.44, z + i * 0.04 + 0.02], f = [0.43 * s, 0.05, z + i * 0.08 + 0.04];
-      chain(M, [a, k, f], [0.034, 0.028, 0.014], i ? sh : CK.skin, 6, true); spike(M, f, [0.25 * s, -1, i * 0.2], 0.08, 0.014, CK.bone, 4); } });
-    // pincers, held out in front
-    M.sym(s => { const a = [0.1 * s, 0.27, 0.3], b = [0.2 * s, 0.31, 0.43], c = [0.17 * s, 0.3, 0.55];
-      chain(M, [a, b, c], [0.03, 0.026, 0.04], sh, 6, true);
-      spike(M, [0.17 * s, 0.31, 0.56], [-0.25 * s, 0.15, 1], 0.14, 0.03, CK.bone, 5); spike(M, [0.17 * s, 0.28, 0.56], [-0.1 * s, -0.25, 1], 0.1, 0.022, CK.bone, 4); });
-    M.sym(s => spike(M, [0.05 * s, 0.25, 0.37], [0.35 * s, -0.4, 1], 0.17, 0.022, CK.bone, 4));   // mandibles
-    // the tail: three segments curling up, a fan of fin rays
-    chain(M, [[0, 0.3, -0.33], [0, 0.33, -0.45], [0, 0.39, -0.55], [0, 0.46, -0.62]], [0.06, 0.045, 0.032, 0.02], sh, 7);
-    for (let i = -2; i <= 2; i++) spike(M, [0, 0.46, -0.62], [i * 0.45, 0.4, -1], 0.17, 0.02, CK.fin, 3);
-    web(M, [[0, 0.46, -0.62], [-0.07, 0.52, -0.77], [0, 0.53, -0.79], [0.07, 0.52, -0.77]], [[0, 1, 2], [0, 2, 3]], CK.fin);
-    return M.geo();
-  },
-  // the Hulks (~2.0): a hunched mass with huge fists; a crust of bone-coloured barnacle plates on the back = armour
-  // LAS-104: a hunched mountain of wet hide; the head sunk low in front of the shoulders with an underbite and tusks; forearms
-  // thicker than the upper arms, knuckling on three clawed fingers; a crust of barnacle plates and a row of bone spines on the back
-  brute() {
-    const M = model(true), sk = '#5f8b81', dk = CK.dark;
-    const T = [[0.6, 0.34, 0.26, 0.26, 0], [0.85, 0.5, 0.36, 0.4, 0.04], [1.1, 0.62, 0.42, 0.5, 0.1], [1.35, 0.68, 0.46, 0.58, 0.18], [1.58, 0.64, 0.44, 0.56, 0.28], [1.76, 0.46, 0.34, 0.42, 0.38], [1.86, 0.22, 0.2, 0.24, 0.44]];
-    M.add(sloft(T, 9, 2.6), sk);
-    M.add(sloft([[0.8, 0.38, 0.06, 0.02, 0.3], [1.1, 0.46, 0.08, 0.02, 0.4], [1.38, 0.44, 0.06, 0.02, 0.56]], 6, 2.6), '#7fa69a');   // the paler chest
-    // the head: low, heavy brow, the lower jaw jutting past the upper, two tusks, a fringe of teeth
-    M.add(ico(0.21, 1), sk, [0, 1.63, 0.8], [0.3, 0, 0], [1.15, 0.85, 1.1]);
-    M.add(ico(0.2), sk, [0, 1.73, 0.9], [0.35, 0, 0], [1.1, 0.32, 0.55]);   // the brow ridge
-    M.add(sloft([[1.44, 0.16, 0.13, 0.06, 0.9], [1.53, 0.2, 0.17, 0.08, 0.92], [1.58, 0.17, 0.14, 0.07, 0.92]], 8, 2.6), '#557d74');
-    M.sym(s => spike(M, [0.13 * s, 1.55, 1.03], [0.25 * s, 1, 0.35], 0.22, 0.04, CK.bone, 5));
-    for (let i = 0; i < 4; i++) spike(M, [(i - 1.5) * 0.055, 1.57, 1.06], [0, 1, 0.2], 0.06, 0.014, CK.bone, 4);
-    // the arms (gait: |x| > 0.45, z > 0.2): shoulder knob, upper arm, a forearm that swells to the wrist, a fist on three fingers
-    M.sym(s => {
-      M.add(ico(0.24, -1), sk, [0.6 * s, 1.56, 0.24]);
-      chain(M, [[0.6 * s, 1.55, 0.25], [0.86 * s, 1.0, 0.48], [0.8 * s, 0.4, 0.62]], [0.21, 0.19, 0.27], sk, 8, true);
-      M.add(ico(0.26), dk, [0.78 * s, 0.3, 0.64], [0, 0, 0], [1.1, 0.85, 1.05]);
-      for (let f = -1; f <= 1; f++) { const a = [0.78 * s + f * 0.1, 0.22, 0.78], b = [0.78 * s + f * 0.11, 0.06, 0.84];
-        chain(M, [a, b], [0.075, 0.06], dk, 6); spike(M, b, [f * 0.2, -0.6, 1], 0.14, 0.035, CK.bone, 4); }
-      for (let i = 0; i < 3; i++) M.add(ico(0.06 - i * 0.012, -1), CK.bone, [(0.9 + i * 0.03) * s, 0.75 - i * 0.12, 0.5 + i * 0.03], [i, 0, 0], [1, 0.6, 1]);   // barnacles on the forearm
-      // short thick legs on a splayed foot
-      chain(M, [[0.3 * s, 0.78, 0], [0.37 * s, 0.42, 0.1], [0.36 * s, 0.12, -0.02]], [0.23, 0.2, 0.17], sk, 8, true);
-      M.add(ico(0.17, -1), dk, [0.36 * s, 0.07, 0.06], [0, 0, 0], [1.1, 0.5, 1.4]);
-      for (let f = -1; f <= 1; f++) spike(M, [0.36 * s + f * 0.08, 0.05, 0.2], [f * 0.3, -0.2, 1], 0.12, 0.03, CK.bone, 4);
-      spike(M, [0.62 * s, 1.72, 0.08], [0.5 * s, 0.7, -0.4], 0.36, 0.11, CK.bone, 5);   // the shoulder horn
-    });
-    // the back: barnacle plates (bone, flattened), bone spines down the ridge, kelp hanging off the shoulders
-    const pl = [[0, 1.62, -0.36, 0.3], [-0.3, 1.38, -0.5, 0.26], [0.32, 1.4, -0.48, 0.27], [0, 1.15, -0.58, 0.28], [-0.2, 0.9, -0.5, 0.22], [0.24, 0.92, -0.5, 0.2],
-      [-0.42, 1.12, -0.42, 0.17], [0.44, 1.18, -0.4, 0.16], [0.12, 0.72, -0.42, 0.15]];
-    for (const p of pl) M.add(ico(p[3], -1), CK.bone, [p[0], p[1], p[2]], [0.4, p[0] * 2, 0], [1.1, 0.75, 0.55]);
-    for (let i = 0; i < 5; i++) { const y = 1.75 - i * 0.2, q = secAt(T, y); spike(M, [0, y, q.z - q.b + 0.1], [0, 0.6, -1], 0.34 - i * 0.04, 0.07, CK.bone, 5); }
-    M.sym(s => { M.add(new T3.BoxGeometry(0.16, 0.7, 0.02), CK.kelp, [0.5 * s, 1.3, -0.2], [0.1, 0.3 * s, 0.15 * s]); M.add(new T3.BoxGeometry(0.08, 0.5, 0.02), dk, [0.34 * s, 1.45, -0.42], [0.25, 0.2 * s, -0.1 * s]); });
-    return M.geo();
-  },
-  // the Nightgaunts (~1.3, flying): faceless, horned, thin, pitched forward, a barbed tail; wings are their own mesh
-  flyer() {
-    // LAS-104: ribs under a thin hide, horns that sweep back in two bends, clawed hands, taloned feet, a long whip tail with a barb
-    const M = model(true), sk = '#3f5f63';
-    const T = [[0.45, 0.08, 0.06, 0.06, 0], [0.6, 0.12, 0.08, 0.09, 0], [0.75, 0.15, 0.1, 0.11, 0], [0.88, 0.17, 0.11, 0.12, 0.01], [0.98, 0.16, 0.1, 0.11, 0.02], [1.1, 0.08, 0.06, 0.07, 0.04]];
-    M.add(sloft(T, 8, 2.6), sk);
-    for (let i = 0; i < 3; i++) { const y = 0.7 + i * 0.09, q = secAt(T, y), r = q.hw;
-      M.add(new T3.TorusGeometry(r, 0.01, 3, 10, Math.PI * 0.8), '#5d7b7a', [0, y, q.z + q.f + 0.008 - r * 0.7], [Math.PI / 2, -0.1 * Math.PI, 0], [1, 0.7, 1]); }
-    M.add(ico(0.13, 1), sk, [0, 1.24, 0.08], [0.2, 0, 0], [0.9, 1.2, 1.25]);   // the faceless head
-    M.sym(s => {
-      chain(M, [[0.07 * s, 1.34, 0], [0.13 * s, 1.47, -0.08], [0.15 * s, 1.52, -0.26]], [0.04, 0.028, 0.008], CK.bone, 5);   // the horns
-      chain(M, [[0.15 * s, 1.0, 0], [0.24 * s, 0.7, 0.12], [0.22 * s, 0.45, 0.22]], [0.04, 0.03, 0.022], sk, 6, true);   // arms + clawed hands
-      for (let f = -1; f <= 1; f++) spike(M, [0.22 * s + f * 0.02, 0.44, 0.23], [f * 0.3, -1, 0.4], 0.1, 0.011, CK.bone, 3);
-      chain(M, [[0.07 * s, 0.47, 0], [0.1 * s, 0.1, -0.12], [0.1 * s, -0.25, -0.05]], [0.05, 0.032, 0.018], sk, 6, true);   // legs + talons
-      for (let f = -1; f <= 1; f++) spike(M, [0.1 * s, -0.25, -0.05], [f * 0.4, -0.6, 1], 0.1, 0.012, CK.bone, 3);
-    });
-    chain(M, [[0, 0.5, -0.06], [0, 0.18, -0.3], [0, 0.0, -0.5], [0, -0.18, -0.72], [0, -0.3, -0.88]], [0.045, 0.032, 0.022, 0.015, 0.01], sk, 5);
-    M.add(cone(0.07, 0.18, 4), CK.bone, [0, -0.35, -0.92], [-2.4, 0, 0]);
-    M.sym(s => spike(M, [0, -0.32, -0.88], [0.6 * s, 0.4, -0.3], 0.1, 0.015, CK.bone, 3));
-    const g = M.geo(); g.translate(0, -0.75, 0); g.rotateX(1.05); g.translate(0, 0.75, 0); return g;   // pitched into the dive
-  },
-  // a bat wing: membrane on five finger bones, shoulder at the origin, reaching +x (the right wing is mirrored). LAS-104: the
-  // trailing edge sags between the fingers (scallops), a thumb claw at the wrist
-  wing(side) {
-    const tip = [[1.2, 0.14, -0.02], [1.1, 0.06, -0.36], [0.92, 0.02, -0.6], [0.66, 0, -0.72], [0.34, 0, -0.6]], w = [0.5, 0.16, 0.06], sh = [0, 0, 0];
-    const P = [sh, w, ...tip], tri = [[0, 1, 2]];
-    for (let i = 0; i < tip.length - 1; i++) {   // between two fingers: a sag point pulled toward the wrist
-      const a = tip[i], b = tip[i + 1], m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 0.02, (a[2] + b[2]) / 2];
-      const k = P.push([m[0] + (w[0] - m[0]) * 0.22, m[1], m[2] + (w[2] - m[2]) * 0.22]) - 1; tri.push([1, i + 2, k], [1, k, i + 3]);
-    }
-    tri.push([0, 1, tip.length + 1]);
-    const M = model(true); web(M, P.map(q => [q[0] * side, q[1], q[2]]), tri, '#2e4547');
-    M.limb(sh, [w[0] * side, w[1], w[2]], 0.035, 0.028, CK.bone, 5);
-    for (const t of tip) M.limb([w[0] * side, w[1], w[2]], [t[0] * side, t[1], t[2]], 0.02, 0.008, CK.bone, 4);
-    spike(M, [w[0] * side, w[1], w[2]], [0.3 * side, 0.4, 1], 0.12, 0.016, CK.bone, 3);
-    return M.geo();
-  },
   // the Leviathan (~4): a crested fish-headed giant; a sail of fins down the back, a long jaw, claws to the knees
   leviathan() {
     const M = model(), sk = '#3f6a64';
@@ -6594,66 +6459,6 @@ const ART = {
 // LAS-43: the creatures that play against the light. Render names: diver (sinks when lit), dimmer (a dark halo eats the
 // beam), mirror (boss, shines back at the lighthouse). The mirror's glass disc is its own mesh (T.mirror.glass).
 Object.assign(ART, {
-  // the Diver (~0.9 long): a blind, seal-bodied eel-thing, low on the water, ridged back, paddle flippers, a bell of bone on the head
-  // LAS-104: a long seal-eel body, a webbed ridge fin, paddle flippers with finger bones, a ribbed bone bell on the blind head, a
-  // gaping underslung jaw, an upright tail fluke
-  diver() {
-    const M = model(true), dk = '#2f5a5c';
-    const B = [[0, 0.05, 0.06, 0.06], [0.14, 0.15, 0.12, 0.12], [0.3, 0.22, 0.16, 0.17], [0.5, 0.26, 0.18, 0.2], [0.68, 0.23, 0.16, 0.17], [0.86, 0.17, 0.12, 0.12], [1.05, 0.1, 0.08, 0.08], [1.25, 0.03, 0.03, 0.03]];
-    M.add(sloft(B, 8, 2.4), CK.skin, [0, 0.34, -0.55], [Math.PI / 2, 0, 0], [1, 1, 1]);   // (rotated: f = belly, b = back)
-    M.add(sloft([[0.12, 0.14, 0.04, 0.04, 0.15], [0.32, 0.17, 0.05, 0.04, 0.18], [0.5, 0.16, 0.04, 0.04, 0.2]], 6, 2.6), CK.belly, [0, 0.08, 0.05], [Math.PI / 2, 0, 0]);
-    // the blind head, its jaw hanging under it, the bell of bone on top ringed with ridges
-    M.add(ico(0.2, 1), '#8ec2b5', [0, 0.4, 0.5], [0.2, 0, 0], [1, 0.85, 1.2]);
-    M.add(cone(0.15, 0.3, 7), CK.belly, [0, 0.27, 0.6], [2.0, 0, 0], [1, 1, 0.45]);
-    for (let i = 0; i < 6; i++) spike(M, [(i - 2.5) * 0.045, 0.34, 0.7 - Math.abs(i - 2.5) * 0.025], [0, -1, 0.2], 0.06, 0.012, CK.bone, 3);
-    M.add(cone(0.12, 0.34, 8), CK.bone, [0, 0.66, 0.5], [0, 0, 0]);
-    for (let i = 0; i < 2; i++) M.add(new T3.TorusGeometry(0.1 - i * 0.03, 0.014, 3, 12), CK.bone, [0, 0.55 + i * 0.09, 0.5], [Math.PI / 2, 0, 0]);
-    // the ridge fin: bone rays with a web between them
-    const fp = [];
-    for (let i = 0; i < 6; i++) { const z = 0.2 - i * 0.18, y = 0.34 + secAt(B, z + 0.55).b, L = 0.3 - i * 0.03; spike(M, [0, y - 0.02, z], [0, 1, -0.6], L, 0.03, CK.fin, 4); fp.push([0, y - 0.02, z], [0, y - 0.02 + 0.86 * L, z - 0.5 * L]); }
-    const ft = []; for (let i = 0; i < 5; i++) { const a = i * 2; ft.push([a, a + 1, a + 3], [a, a + 3, a + 2]); }
-    web(M, fp, ft, '#2c4f4d');
-    // flippers (gait: |x| > 0.2, |z| < 0.6): flat paddles with three finger bones
-    M.sym(s => {
-      M.add(sloft([[0, 0.02, 0.07, 0.07], [0.18, 0.025, 0.11, 0.1], [0.34, 0.02, 0.1, 0.08], [0.42, 0.01, 0.04, 0.03]], 6, 2.4), dk, [0.18 * s, 0.22, 0.14], [0.1, 0, -s * (Math.PI / 2 + 0.35)], [1, 1, 1]);
-      for (let f = -1; f <= 1; f++) spike(M, [0.22 * s, 0.215, 0.14 + f * 0.04], [s, -0.3, f * 0.25], 0.36, 0.012, CK.bone, 3);
-      M.add(sloft([[0, 0.015, 0.05, 0.05], [0.16, 0.02, 0.08, 0.06], [0.26, 0.01, 0.03, 0.02]], 6, 2.4), dk, [0.14 * s, 0.2, -0.45], [0.1, 0, -s * (Math.PI / 2 + 0.25)], [1, 1, 1]);
-    });
-    // the tail fluke, upright and forked
-    M.sym(s => M.add(sloft([[0, 0.012, 0.05, 0.05], [0.14, 0.015, 0.07, 0.06], [0.24, 0.006, 0.02, 0.02]], 5, 2.4), dk, [0, 0.33, -1.15], [s > 0 ? -0.6 : -2.5, 0, 0], [1, 1, 1]));
-    return M.geo();
-  },
-  // the Dimmer (~1.4, hovering): a shroud of black cloth round a dead lantern; no body, strips of rag, a pale hollow for a face
-  // LAS-104: a tall shroud of wet black cloth in folds, a deep cowl round a black hollow, a ragged hem of many strips; bone
-  // fingers (too long, too many joints) clutch a caged dead lantern in front of it
-  dimmer() {
-    const M = model(true), cl = '#2b2f3f', ra = '#3b4056';
-    const SD = [[0.35, 0.05, 0.05, 0.05], [0.5, 0.15, 0.13, 0.14], [0.7, 0.22, 0.2, 0.2], [0.9, 0.27, 0.23, 0.23], [1.1, 0.3, 0.25, 0.25], [1.3, 0.27, 0.22, 0.22], [1.5, 0.2, 0.17, 0.17], [1.66, 0.13, 0.11, 0.12, -0.02], [1.78, 0.05, 0.05, 0.05, -0.04]];
-    M.add(sloft(SD, 10, 2.2), cl, [0, 0.3, 0]);
-    for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2 + 0.3, sn = Math.sin(a), cs = Math.cos(a);   // folds: ridges that ride the cloth's surface
-      M.add(sloft([0.5, 0.8, 1.1, 1.4, 1.62].map((y, j) => { const q = secAt(SD, y), w = [0.012, 0.03, 0.036, 0.03, 0.01][j];
-        return [y, w, w, w, q.z + cs * (cs > 0 ? q.f : q.b) * 0.97, sn * q.hw * 0.97]; }), 5, 2), i % 2 ? cl : ra, [0, 0.3, 0]); }
-    // the cowl: a raised rim round the face hollow, the hood's point bent back
-    M.add(new T3.TorusGeometry(0.17, 0.045, 5, 14), ra, [0, 1.3, 0.22], [0.15, 0, 0], [1, 1.25, 1]);
-    M.add(ico(0.17, 1), '#0c0e14', [0, 1.28, 0.2], [0, 0, 0], [1, 1.15, 0.6]);   // the face: a black hollow
-    chain(M, [[0, 1.86, -0.02], [0, 2.06, -0.12], [0, 2.18, -0.3]], [0.1, 0.05, 0.01], cl, 6);
-    // the dead lantern (cold, unlit glass) in an iron cage
-    M.add(ico(0.1, 1), '#6a7396', [0, 0.8, 0.32]);
-    M.add(new T3.CylinderGeometry(0.09, 0.11, 0.05, 8), '#474d63', [0, 0.95, 0.32]); M.add(new T3.CylinderGeometry(0.11, 0.09, 0.05, 8), '#474d63', [0, 0.66, 0.32]);
-    for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2 + 0.4; M.limb([Math.cos(a) * 0.1, 0.67, 0.32 + Math.sin(a) * 0.1], [Math.cos(a) * 0.1, 0.94, 0.32 + Math.sin(a) * 0.1], 0.008, 0.008, '#474d63', 4); }
-    M.add(new T3.TorusGeometry(0.05, 0.01, 3, 8), '#474d63', [0, 1.02, 0.32]);
-    // a ragged hem: many strips of different lengths
-    for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2, L = 0.55 - (i * 7 % 5) * 0.07;
-      M.add(new T3.BoxGeometry(0.08, L, 0.015), i % 2 ? cl : ra, [Math.sin(a) * 0.26, 0.68 - L / 2, Math.cos(a) * 0.24], [0.08 * Math.cos(a), a, 0.08 * Math.sin(a * 3)]); }
-    // the arms: cloth sleeves, then bone forearms and four long jointed fingers round the cage
-    M.sym(s => {
-      M.limb([0.2 * s, 1.22, 0.05], [0.36 * s, 0.98, 0.3], 0.06, 0.045, cl, 6);
-      chain(M, [[0.36 * s, 0.98, 0.3], [0.26 * s, 0.86, 0.4], [0.14 * s, 0.86, 0.38]], [0.022, 0.018, 0.016], CK.bone, 5, true);
-      for (let f = 0; f < 4; f++) { const y = 0.92 - f * 0.06, a = [0.14 * s, y, 0.38], b = [0.06 * s, y - 0.02, 0.46], c = [-0.02 * s, y - 0.05, 0.43];
-        chain(M, [a, b, c], [0.011, 0.009, 0.006], CK.bone, 4); }
-    });
-    return M.geo();
-  },
   // the Mirror Warden (boss, ~4.2): a drowned giant in a cracked glass cuirass, a crown of shards, one arm holding a great round
   // mirror out toward the lighthouse (the disc itself is mirrorGlass(), a separate mesh that flashes)
   mirror() {
@@ -6676,18 +6481,15 @@ function mirrorGlass() {
   M.add(new T3.TorusGeometry(1.25, 0.1, 5, 20), CK.bone, [0, 0, 0]);
   const g = M.geo(); g.translate(0, 2.3, 1.5); return g;
 }
-// eyes per kind: [halfSpacing, y, z, size] pairs mirrored (the Spawn has two pairs)
+// eyes per boss kind: [halfSpacing, y, z, size] pairs mirrored (LAS-109: the wave creatures' eyes are built with their bodies, HEYE)
 const EYES = {
-  diver: [[0.1, 0.46, 0.64, 0.035], [0.14, 0.4, 0.55, 0.03]], dimmer: [[0.07, 1.3, 0.3, 0.045]], mirror: [[0.2, 3.55, 1.0, 0.1]],
-  drowned: [[0.065, 1.14, 0.53, 0.045]], swarmer: [[0.06, 0.37, 0.26, 0.04], [0.11, 0.35, 0.18, 0.03]],
-  brute: [[0.1, 1.68, 0.98, 0.055]], flyer: [[0.05, 1.27, 0.21, 0.035]],
+  mirror: [[0.2, 3.55, 1.0, 0.1]],
   leviathan: [[0.3, 3.62, 1.45, 0.12]], siren: [[0.09, 3.28, 0.28, 0.06]], kraken: [[0.55, 1.75, 1.15, 0.22]],
 };
 function eyesGeo(kind) {
   const parts = [];
   for (const e of EYES[kind]) for (const s of [-1, 1]) { const g = new T3.OctahedronGeometry(e[3], 0); g.translate(e[0] * s, e[1], e[2]); parts.push(g); }
   const g = T3.mergeGeometries(parts);
-  if (kind === 'flyer') { g.translate(0, -0.75, 0); g.rotateX(1.05); g.translate(0, 0.75, 0); }
   return g;
 }
 const KIND = { drowned: 0, swarmer: 1, brute: 2, flyer: 3, diver: 4, dimmer: 5, leviathan: 6, siren: 7, kraken: 8, mirror: 9 };
@@ -6709,25 +6511,11 @@ const biped = (stride, hip, amp, armX, armZ, sh, armAmp, roll) => `{ vec3 p=posi
   transformed.z-=s*${armAmp}*am*clamp((${sh}-p.y)/${sh},0.0,1.0);
   transformed.x+=sin(ph)*${roll}*max(0.0,p.y-${hip}); transformed.y+=abs(sin(ph))*${amp}*0.12; }`;
 const GAIT = {
-  drowned: biped('4.0', '0.5', '0.14', '0.2', '0.14', '0.95', '0.16', '0.05'),
-  brute: biped('2.6', '0.78', '0.2', '0.45', '0.2', '1.6', '0.24', '0.04'),
   leviathan: biped('1.3', '1.5', '0.38', '0.85', '0.4', '3.0', '0.45', '0.03'),
-  // six legs in a ripple, front to back; the body skitters side to side
-  swarmer: `{ vec3 p=position; float ph=gPh(9.0); float sd=p.x>0.0?1.0:-1.0; float lw=step(0.12,abs(p.x))*step(p.y,0.46);
-    float s=sin(ph+p.z*9.0+sd*3.1416); transformed.z+=s*0.07*lw; transformed.y+=max(0.0,cos(ph+p.z*9.0+sd*3.1416))*0.05*lw;
-    transformed.x+=sin(ph*0.5)*0.03; }`,
-  // the Nightgaunt glides: the body breathes with the wingbeat, the barbed tail whips (model is pitched: tail = low z)
-  flyer: `{ vec3 p=position; float ph=uT*9.0+gId(); transformed.x+=sin(ph*0.5-p.z*2.5)*0.12*max(0.0,-p.z-0.1); transformed.y+=sin(ph)*0.03; }`,
   // the Siren swims upright: a wave runs down the fish tail, the raised arms sway with her song
   siren: `{ vec3 p=position; float ph=uT*1.7+gId(); float tw=clamp((1.9-p.y)/1.9,0.0,1.0);
     transformed.x+=sin(ph-p.y*1.6)*0.32*tw*tw; transformed.z+=cos(ph*0.5-p.y)*0.08*tw;
     float aw=step(0.4,abs(p.x))*step(2.8,p.y); transformed.x+=sin(uT*2.3+gId())*0.12*aw*(p.y-2.8); transformed.x+=sin(ph*0.5)*0.06*(1.0-tw); }`,
-  // LAS-43. The Diver swims: a wave runs down the body (z is the long axis), flippers paddle, the tail fluke sways
-  diver: `{ vec3 p=position; float ph=gPh(5.0)+gId(); float w=sin(ph-p.z*3.2); transformed.x+=w*0.09*(0.4-p.z*0.5); transformed.y+=abs(sin(ph*0.5))*0.03;
-    float fl=step(0.2,abs(p.x))*step(abs(p.z),0.6); transformed.y+=sin(ph+(p.x>0.0?0.0:3.1416))*0.06*fl; }`,
-  // the Dimmer drifts: the shroud billows, the rag hem trails, the whole shape bobs slowly and leans into its slow glide
-  dimmer: `{ vec3 p=position; float ph=uT*1.6+gId(); float hem=clamp((0.9-p.y)/0.9,0.0,1.0); transformed.x+=sin(ph*1.3+p.y*5.0)*0.1*hem*(0.3+hem);
-    transformed.z+=cos(ph+p.x*4.0)*0.08*hem; transformed.y+=sin(ph*0.7)*0.1; transformed.x+=sin(ph*0.5)*0.03*p.y; }`,
   // the Mirror Warden stands: heavy breath in the chest, the head and crown nod, the mirror arm holds steady
   mirror: `{ vec3 p=position; float ph=uT*0.9+gId(); float up=clamp((p.y-1.0)/3.0,0.0,1.0); transformed.y+=sin(ph)*0.05*up; transformed.x+=sin(ph*0.5)*0.05*up*up;
     transformed.z+=sin(ph+0.6)*0.04*up; }`,
@@ -6754,12 +6542,29 @@ const HC = { skin: '#c2bba0', pale: '#d6cfb6', grey: '#9a9888', bruise: '#6c656c
 const rmodel = () => model(true).bone();
 // flesh(): a limb through pts that reads as muscle and bone, not a tube: each segment swells past its joint and thins
 // into the next, a little flattened, with a smooth knuckle at every inner joint
-function flesh(M, pts, rs, col, n = 5, sw = 1.14) {
+function flesh(M, pts, rs, col, n = 4, sw = 1.14) {
+  // LAS-109 skin pass: no ball joints (each segment runs rounded into the next), the swell sits at a different place on each
+  // segment, the chain's end thins into a wrist/ankle, a bony knob on the outside of each bend, wet dark creases at the
+  // joints, and the skin pushed lumpy (M.lump) while the chain is built
+  const hs = (p, k) => { const v = Math.sin(p[0] * 91.7 + p[1] * 47.3 + p[2] * 23.9 + k * 3.1) * 43758.5453; return v - Math.floor(v); };
+  const cr = M.cr || (M.cr = []), lump0 = M.lump;
+  for (let i = 1; i < pts.length - 1; i++) cr.push([...pts[i], rs[i] * 1.35]);
+  cr.push([...pts[pts.length - 1], rs[rs.length - 1] * 1.25]);
   for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i], b = pts[i + 1], r0 = rs[i], r1 = rs[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
-    const sec = [[0, r0 * 0.9], [L * 0.22, r0 * sw], [L * 0.55, (r0 + r1) * 0.5], [L * 0.85, r1 * 0.9], [L, r1 * 0.86]].map(([y, r]) => [y, r, r * 0.84, r * 0.84]);
-    const g = sloft(sec, n, 2); g.applyQuaternion(new T3.Quaternion().setFromUnitVectors(UPV, new T3.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]).normalize())); g.translate(a[0], a[1], a[2]); M.add(g, col);
-    if (i > 0) M.add(new T3.IcosahedronGeometry(r0 * 0.88, r0 > 0.06 ? 1 : 0), col, a);
+    const a = pts[i], b = pts[i + 1], r0 = rs[i], r1 = rs[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]), last = i === pts.length - 2;
+    const t = 0.15 + 0.25 * hs(a, 1), k = sw * (0.92 + 0.22 * hs(b, 2)), fl = 0.78 + 0.12 * hs(a, 3);
+    const S = [[-r0 * 0.5, r0 * 0.55], [0, r0 * 0.88], [L * t, r0 * k], [L * 0.6, (r0 + r1) * 0.5 * (0.9 + 0.15 * hs(b, 4))]];
+    if (last) S.push([L * 0.82, r1 * 0.76], [L, r1 * 0.68], [L + r1 * 0.3, r1 * 0.42]);   // the wrist / ankle: thinner than the limb
+    else S.push([L * 0.86, r1 * 0.88], [L + r1 * 0.45, r1 * 0.5]);
+    M.lump = Math.min(0.022, r0 * 0.32); M.lumpC = 1;
+    const g = sloft(S.map(([y, r]) => [y, r, r * fl, r * fl]), n, 2);
+    g.applyQuaternion(new T3.Quaternion().setFromUnitVectors(UPV, new T3.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]).normalize())); g.translate(a[0], a[1], a[2]); M.add(g, col);
+    M.lump = lump0; M.lumpC = 0;
+    if (i > 0) {   // a bony knob on the outside of the bend (elbow, knee, knuckle)
+      const p = pts[i - 1], d1 = [a[0] - p[0], a[1] - p[1], a[2] - p[2]], d2 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], l1 = Math.hypot(...d1) || 1, l2 = Math.hypot(...d2) || 1;
+      const o = [d1[0] / l1 - d2[0] / l2, d1[1] / l1 - d2[1] / l2, d1[2] / l1 - d2[2] / l2], lo = Math.hypot(...o);
+      if (lo > 0.15) M.add(new T3.IcosahedronGeometry(r0 * 0.42, 0), col, [a[0] + o[0] / lo * r0 * 0.62, a[1] + o[1] / lo * r0 * 0.62, a[2] + o[2] / lo * r0 * 0.62], [0, 0, 0], [1, 1, 1.3]);
+    }
   }
   return M;
 }
@@ -6783,7 +6588,7 @@ const HART = {
     const M = rmodel(), E = rmodel(), th = Math.PI / 2 - 0.22, cT = Math.cos(th), sT = Math.sin(th);
     const T = [[0, 0.14, 0.07, 0.09], [0.14, 0.19, 0.09, 0.17], [0.3, 0.23, 0.1, 0.27], [0.46, 0.23, 0.1, 0.23], [0.6, 0.21, 0.09, 0.14], [0.72, 0.2, 0.08, 0.1], [0.8, 0.08, 0.05, 0.05]];
     const at = u => [0.72 + u * cT, -0.4 + u * sT];   // a loft height u -> its world (y, z) on the torso's axis
-    M.add(sloft(T, 9, 2.4), HC.skin, [0, 0.72, -0.4], [th, 0, 0]);
+    M.lump = 0.024; M.lumpC = 1; M.add(sloft(T, 9, 2.4), HC.skin, [0, 0.72, -0.4], [th, 0, 0]); M.lump = M.lumpC = 0;
     M.add(new T3.IcosahedronGeometry(0.17, 2), HC.pale, [0, 0.9, -0.12], [0.2, 0, 0], [1.25, 0.62, 1.3]);   // the drowned belly, swollen
     for (let i = 0; i < 5; i++) M.add(new T3.BoxGeometry(0.008, 0.004, 0.16), HC.bruise, [-0.12 + i * 0.06, 1.0 - Math.abs(i - 2) * 0.02, -0.12], [0, 0.3 * (i - 2), 0]);   // stretch marks
     for (let i = 0; i < 6; i++) { const u = 0.47 + i * 0.05, [cy, cz] = at(u), q = secAt(T, u);   // ribs over the chest
@@ -6807,8 +6612,9 @@ const HART = {
     // the arms reach back over the head to the ground, elbows bent the wrong way (bone 2/3 upper, 4/5 forearm + hand)
     M.sym(s => {
       const sh = [0.2 * s, 0.93, 0.3], el = [0.35 * s, 0.5, 0.4], wr = [0.33 * s, 0.07, 0.66], up = s > 0 ? 2 : 3, lo = s > 0 ? 4 : 5;
-      M.bone(up, sh); M.add(new T3.IcosahedronGeometry(0.05, 1), HC.skin, sh); flesh(M, [sh, el], [0.055, 0.038], HC.skin);
-      M.bone(lo, el, up, sh); M.add(new T3.IcosahedronGeometry(0.03, 1), HC.grey, el, [0, 0, 0], [1, 1, 1.4]); flesh(M, [el, wr], [0.04, 0.026], HC.skin);
+      const ak = s > 0 ? 1.18 : 0.94;   // one arm heavier than the other
+      M.bone(up, sh); flesh(M, [sh, el], [0.055 * ak, 0.038 * ak], HC.skin);
+      M.bone(lo, el, up, sh); flesh(M, [[el[0] - 0.01 * s, el[1] + 0.03, el[2] - 0.01], el, wr], [0.03 * ak, 0.04 * ak, 0.024], HC.skin);
       M.add(ico(0.04, -1), HC.skin, [wr[0], 0.04, wr[2]], [0, 0, 0], [1.2, 0.5, 1.4]);
       for (let f = 0; f < 4; f++) { const fx = wr[0] + (f - 1.5) * 0.028, a = [fx, 0.035, wr[2] - 0.02], b = [fx + (f - 1.5) * 0.03, 0.03, wr[2] - 0.12], c = [fx + (f - 1.5) * 0.05, 0.012, wr[2] - 0.22];
         chain(M, [a, b, c], [0.013, 0.011, 0.008], HC.skin, 4); spike(M, c, [(f - 1.5) * 0.1, -0.2, -1], 0.025, 0.007, HC.nail, 3); }
@@ -6818,7 +6624,7 @@ const HART = {
     M.sym(s => {
       const hp = [0.14 * s, 0.7, -0.42], kn = [0.27 * s, 0.42, -0.64], an = [0.25 * s, 0.07, -0.5], th0 = s > 0 ? 6 : 7, sh0 = s > 0 ? 8 : 9;
       M.bone(th0, hp); flesh(M, [hp, kn], [0.085, 0.055], HC.rag, 8);   // a torn trouser leg, soaked black
-      M.bone(sh0, kn, th0, hp); M.add(new T3.IcosahedronGeometry(0.04, 1), HC.grey, kn); flesh(M, [kn, an], [0.052, 0.032], HC.skin);
+      M.bone(sh0, kn, th0, hp); flesh(M, [[kn[0], kn[1] + 0.04, kn[2] - 0.02], kn, an], [0.04, 0.052, 0.03], HC.skin);
       M.add(ico(0.045, -1), HC.skin, [an[0], 0.035, an[2] - 0.06], [0, 0, 0], [0.8, 0.45, 1.8]);
       for (let f = 0; f < 4; f++) spike(M, [an[0] + (f - 1.5) * 0.022, 0.02, an[2] - 0.13], [(f - 1.5) * 0.15, -0.1, -1], 0.06, 0.01, HC.skin, 3);
     });
@@ -6855,13 +6661,16 @@ const HART = {
     M.bone(1, HIP); E.bone(1, HIP);
     const T = [[0, 0.32, 0.28, 0.28], [0.3, 0.46, 0.36, 0.42], [0.6, 0.56, 0.42, 0.5], [0.9, 0.6, 0.44, 0.52], [1.15, 0.52, 0.38, 0.42], [1.32, 0.28, 0.24, 0.28]];
     const ax = u => [HIP[1] + u * cT, HIP[2] + u * sT], top = u => { const [y, z] = ax(u), q = secAt(T, u); return [y + q.b * sT, z - q.b * cT]; };
-    M.add(sloft(T, 11, 2.6), HC.grey, HIP, [th, 0, 0]);
+    M.lump = 0.045; M.lumpC = 1; M.add(sloft(T, 11, 2.6), HC.grey, HIP, [th, 0, 0]); M.lump = M.lumpC = 0;
     M.add(sloft([[0, 0.14, 0.12, 0.14], [0.3, 0.24, 0.2, 0.24], [0.6, 0.26, 0.2, 0.24], [0.85, 0.15, 0.12, 0.13]], 8, 2.2), HC.skin, [0.4, 0.95, -0.35], [th + 0.2, 0.25, -0.5]);   // a second body's back, fused in at the side
     for (let i = 0; i < 11; i++) { const u = 0.08 + i * 0.115, [y, z] = top(u); M.add(new T3.IcosahedronGeometry(0.045, 1), HC.bone, [0.04 * Math.sin(i * 1.3), y + 0.01, z], [0, 0, 0], [1.3, 0.7, 1]); }   // the spine, every vertebra showing
     // growths: lumps of swollen flesh half sunk in the hide, bruised patches, the mass never one smooth egg
     for (let i = 0; i < 9; i++) { const u = 0.15 + (i * 0.37 % 1) * 1.05, a = (i % 2 ? 1 : -1) * (0.95 + (i * 0.61 % 1) * 0.6), [y, z] = ax(u), q = secAt(T, u), r = 0.09 + (i * 0.29 % 1) * 0.13;
       const x = Math.sin(a) * q.hw * 0.92, up = Math.cos(a) * q.b * 0.92; M.add(new T3.IcosahedronGeometry(r, 1), i % 3 ? HC.grey : HC.bruise, [x, y + up * sT, z - up * cT], [i, i * 2, 0], [1, 0.7, 1.15]); }
-    M.sym(s => M.add(new T3.IcosahedronGeometry(0.3, 2), HC.grey, [0.42 * s, 1.5, 0.35], [0, 0, 0.4 * s], [1.1, 0.8, 1.2]));   // the shoulders' hump of muscle
+    M.sym(s => M.add(new T3.IcosahedronGeometry(0.3, 1), HC.grey, [0.42 * s, 1.5, 0.35], [0, 0, 0.4 * s], [1.1, 0.8, 1.2]));   // the shoulders' hump of muscle
+    // bone spines breaking out along the back (long enough to read at 88-150 m) and barnacle crusts on the hump
+    for (let i = 0; i < 7; i++) { const u = 0.2 + i * 0.15, [y, z] = top(u), L = 0.22 + 0.2 * Math.sin(i * 1.7 + 0.5) ** 2 + (i === 3 || i === 4 ? 0.12 : 0); spike(M, [0.03 * Math.sin(i * 2.1), y, z], [0.25 * Math.sin(i * 1.3), 1, -0.55], L, 0.05, HC.bone, 5); }
+    for (const [u, x] of [[0.45, 0.32], [0.7, -0.35], [1.0, 0.28], [0.85, 0.1]]) { const [y, z] = top(u); for (let k = 0; k < 6; k++) { const a = k * 1.05 + u * 7; M.add(cone(0.05 - k * 0.004, 0.09, 6), k % 2 ? HC.bone : HC.nail, [x + Math.cos(a) * 0.08, y - Math.abs(x) * 0.3 + 0.02, z + Math.sin(a) * 0.08], [-0.5 + 0.2 * Math.cos(a), 0, 0.2 * Math.sin(a)]); } }
     // a third body's leg out of the flank, bent at the knee, the foot in the air
     flesh(M, [[-0.42, 0.95, -0.55], [-0.78, 1.3, -0.72], [-0.82, 1.18, -1.1]], [0.1, 0.075, 0.05], HC.skin);
     M.add(new T3.IcosahedronGeometry(0.06, 1), HC.skin, [-0.82, 1.16, -1.16], [0, 0, 0], [0.8, 0.6, 1.7]);
@@ -6873,7 +6682,7 @@ const HART = {
     const nb = [0, sT, -cT];
     [[0.3, -0.2, 1.3, 0.3], [0.62, 0.18, 1.2, -0.4], [0.9, -0.12, 1.4, 0.15], [0.5, 0.45, 1.0, 0.9]].forEach(([u, x, sc, ro], i) => {
       const [y, z] = top(u), q = secAt(T, u), off = x * q.hw / 0.56, nn = Math.hypot(off * 1.2, nb[1], nb[2]), P = onSurf([off + off * 1.2 / nn * 0.08, y - Math.abs(off) * 0.25 + nb[1] / nn * 0.08, z + nb[2] / nn * 0.08], [off * 1.2, nb[1], nb[2]], ro);
-      P(M, new T3.IcosahedronGeometry(0.12, 2), HC.pale, [0, 0, -0.03], [0.82 * sc, 1.12 * sc, 0.45 * sc]);
+      P(M, new T3.IcosahedronGeometry(0.12, 1), HC.pale, [0, 0, -0.03], [0.82 * sc, 1.12 * sc, 0.45 * sc]);
       for (const s of [-1, 1]) P(M, new T3.IcosahedronGeometry(0.026, 1), HC.mouth, [0.04 * s * sc, 0.03 * sc, 0.02 * sc], [1, 0.8, 0.6]);
       P(M, new T3.IcosahedronGeometry(0.03, 1), HC.mouth, [0, -0.06 * sc, 0.02 * sc], [0.8, 1.5 + 0.3 * i, 0.6]);
       P(M, cone(0.012, 0.03, 4), HC.skin, [0, -0.005 * sc, 0.045 * sc], [1, 1, 1]);
@@ -6882,8 +6691,8 @@ const HART = {
     // the great arms (bone 2/3, with the body): a fist on three thick fingers, knuckles on the ground
     M.sym(s => {
       const sh = [0.6 * s, 1.42, 0.5], el = [0.95 * s, 0.86, 0.8], wr = [0.86 * s, 0.32, 1.02];
-      M.bone(s > 0 ? 2 : 3, sh, 1, HIP); M.add(new T3.IcosahedronGeometry(0.24, 2), HC.grey, sh, [0, 0, 0], [1, 0.85, 1]);
-      flesh(M, [sh, el, wr], [0.21, 0.16, 0.23], HC.grey, 7, 1.22);
+      M.bone(s > 0 ? 2 : 3, sh, 1, HIP); M.add(new T3.IcosahedronGeometry(0.24, 1), HC.grey, sh, [0, 0, 0], [1, 0.85, 1]);
+      const ak = s > 0 ? 1.15 : 0.9; flesh(M, [sh, el, wr], [0.21 * ak, 0.16 * ak, 0.23 * ak], HC.grey, 6, 1.22);
       M.add(new T3.IcosahedronGeometry(0.2, 2), HC.skin, [0.86 * s, 0.2, 1.06], [0, 0, 0], [1.1, 0.75, 1.0]);
       for (let f = -1; f <= 1; f++) { const a = [0.86 * s + f * 0.1, 0.16, 1.18], b = [0.86 * s + f * 0.11, 0.04, 1.2]; flesh(M, [a, b], [0.07, 0.058], HC.skin, 6, 1); spike(M, b, [f * 0.2, -0.5, 1], 0.08, 0.03, HC.nail, 4); }
     });
@@ -6939,7 +6748,7 @@ const HART = {
   // open along the back like gills; a long neck lifts the head out of the water to look at the light before it dives.
   diver() {
     const M = rmodel(), E = rmodel();
-    M.add(sloft([[0, 0.05, 0.05, 0.05], [0.12, 0.14, 0.09, 0.09], [0.3, 0.19, 0.11, 0.12], [0.48, 0.18, 0.1, 0.11], [0.62, 0.15, 0.08, 0.09], [0.68, 0.06, 0.05, 0.05]], 9, 2.3), HC.skin, [0, 0.3, -0.38], [Math.PI / 2, 0, 0]);
+    M.lump = 0.02; M.lumpC = 1; M.add(sloft([[0, 0.05, 0.05, 0.05], [0.12, 0.14, 0.09, 0.09], [0.3, 0.19, 0.11, 0.12], [0.48, 0.18, 0.1, 0.11], [0.62, 0.15, 0.08, 0.09], [0.68, 0.06, 0.05, 0.05]], 9, 2.3), HC.skin, [0, 0.3, -0.38], [Math.PI / 2, 0, 0]); M.lump = M.lumpC = 0;
     for (let i = 0; i < 14; i++) { const z = -0.36 + i * 0.05; M.add(ico(0.022, -1), HC.bone, [0, 0.3 + 0.1 + Math.sin(i * 0.4) * 0.008, z], [0, 0, 0], [1, 0.8, 1.4]); }   // too many vertebrae
     M.sym(s => M.add(new T3.BoxGeometry(0.12, 0.02, 0.15), HC.pale, [0.1 * s, 0.4, 0.17], [0.2, 0.3 * s, 0.25 * s]));   // shoulder blades
     // the open back: rib bones arching out of a dark split, left (bone 8) and right (bone 7) flex like gills
@@ -6948,7 +6757,7 @@ const HART = {
     M.bone();
     // the legs trail behind, too long, the feet pointed like a drowned swimmer's, long toes (bone 6 sways them)
     const tb = [0, 0.3, -0.36]; M.bone(6, tb);
-    M.sym(s => { flesh(M, [[0.08 * s, 0.3, -0.36], [0.13 * s, 0.29, -0.72], [0.12 * s, 0.28, -1.06]], [0.07, 0.048, 0.03], s > 0 ? HC.skin : HC.grey, 7);
+    M.sym(s => { flesh(M, [[0.08 * s, 0.3, -0.36], [0.13 * s, 0.29, -0.72], [0.12 * s, 0.28, -1.06]], [0.07, 0.048, 0.03], s > 0 ? HC.skin : HC.grey);
       M.add(new T3.IcosahedronGeometry(0.04, 1), HC.skin, [0.12 * s, 0.28, -1.12], [0, 0, 0], [0.7, 0.45, 1.9]); for (let f = 0; f < 4; f++) spike(M, [0.12 * s + (f - 1.5) * 0.015, 0.28, -1.18], [(f - 1.5) * 0.12, -0.05, -1], 0.07, 0.007, HC.nail, 3); });
     // four arms rowing (bones 2-5), long fingers
     [[0.16, 0.24, 0.47, 0.42, 0.62, 0.3, 2], [0.16, 0.0, 0.43, -0.04, 0.56, -0.2, 4]].forEach(([sx, sz, ex, ez, hx, hz, b]) => M.sym(s => {
@@ -6999,14 +6808,15 @@ const HART = {
   },
 };
 // the poses: per kind a GLSL body that fills hA[bone] (euler x, y, z), hRot / hPiv (the whole body about a point) and hOff.
-// In scope: L (lit), tl (s since lit), F (the flinch, ~0.15 s), H (the held reaction), ph (stride phase), sp (the same phase
+// In scope: L (lit), tl (s since lit), FZ (frozen for the first 0.15 s), F (the jolt as it snaps), H (the held reaction), OV (the snap's overshoot), ph (stride phase), sp (the same phase
 // stepped: snaps, then holds), tw (a random twitch, -1..1, 10% of 0.2 s slots), mv (gait strength: freezes while lit), rn (0..1 per creature)
 const HRIG = '#ifdef USE_INSTANCING\nattribute vec2 aRx;\n#define HRX aRx\n#else\n#define HRX vec2(0.0, 30.0)\n#endif\nattribute vec4 rig; attribute vec4 rig2;\n' +
   'mat3 hrE(vec3 a){vec3 c=cos(a),s=sin(a);return mat3(c.z,s.z,0.0,-s.z,c.z,0.0,0.0,0.0,1.0)*mat3(c.y,0.0,-s.y,0.0,1.0,0.0,s.y,0.0,c.y)*mat3(1.0,0.0,0.0,0.0,c.x,s.x,0.0,-s.x,c.x);}\n' +
   'float hrH(float x){return fract(sin(x*12.9898)*43758.5453);}\nvec3 hA[12]; vec3 hOff; vec3 hRot; vec3 hPiv; mat3 hMA; mat3 hMB; mat3 hMG;\n';
-const HPOSE = (stride, body) => `void hPose(){ float L=HRX.x, tl=HRX.y, rn=hrH(gId()); float F=L*smoothstep(0.0,0.03,tl)*exp(-tl*8.0); float H=L*smoothstep(0.04,0.22,tl);
-  float ph=gPh(${stride})+rn*6.2832; float q=ph/1.5708; float sp=(floor(q)+smoothstep(0.0,0.32,fract(q)))*1.5708;
-  float sl=floor(uT*5.0+rn*17.0); float tw=step(0.9,hrH(sl+rn*3.1))*(hrH(sl*1.7+rn)*2.0-1.0); float mv=1.0-0.8*H*(1.0-smoothstep(1.4,3.2,tl));
+const HPOSE = (stride, body) => `void hPose(){ float L=HRX.x, tl=HRX.y, rn=hrH(gId()); float FZ=L*(1.0-step(0.15,tl)); float tz=max(tl-0.15,0.0); float F=L*step(0.15,tl)*exp(-tz*9.0);
+  float H=L*smoothstep(0.15,0.2,tl); float OV=L*step(0.15,tl)*sin(min(1.0,tz/0.3)*3.1416)*exp(-tz*3.0);
+  float ph=gPh(${stride})+rn*6.2832; float q=ph/1.5708; float sp=(floor(q)+smoothstep(0.0,0.32,fract(q))*(1.0-FZ))*1.5708;
+  float sl=floor(uT*5.0+rn*17.0); float tw=step(0.9,hrH(sl+rn*3.1))*(hrH(sl*1.7+rn)*2.0-1.0)*(1.0-FZ); float mv=1.0-0.8*H*(1.0-smoothstep(1.4,3.2,tl));
   hA[0]=vec3(0.0); hOff=vec3(0.0); hRot=vec3(0.0); hPiv=vec3(0.0);
   ${body}
   hMA=rig.w>-0.5?hrE(hA[int(rig.w+0.5)]):mat3(1.0); hMB=rig2.w>-0.5?hrE(hA[int(rig2.w+0.5)]):mat3(1.0); hMG=hrE(hRot); }
@@ -7019,7 +6829,7 @@ const HGAIT = {
     hA[2]=vec3(-s0-l0*0.3,0.0,0.0); hA[4]=vec3(l0*0.9,0.0,0.0); hA[3]=vec3(-s1-l1*0.3,0.0,0.0); hA[5]=vec3(l1*0.9,0.0,0.0);
     hA[6]=vec3(s1-l1*0.3,0.0,0.0); hA[8]=vec3(l1*0.7,0.0,0.0); hA[7]=vec3(s0-l0*0.3,0.0,0.0); hA[9]=vec3(l0*0.7,0.0,0.0);
     float hs=sin(uT*1.1+rn*6.0)*0.2*(1.0-H)+tw*0.6;
-    hA[1]=vec3(-0.4*H+F*0.5, 0.15*sin(uT*0.7+rn*5.0)*(1.0-H), hs+H*(2.95+0.2*sin(tl*40.0)*exp(-tl*3.0))); hA[10]=vec3(-1.2*H,0.0,-hA[1].z*0.92);
+    hA[1]=vec3(-0.4*H+F*0.5, 0.15*sin(uT*0.7+rn*5.0)*(1.0-H), hs+OV*0.45+H*(2.95+0.2*sin(tl*40.0)*exp(-tl*3.0))); hA[10]=vec3(-1.2*H,0.0,-hA[1].z*0.92);
     hPiv=vec3(0.0,0.7,0.0); hRot=vec3(abs(sin(sp))*0.03-F*0.2, 0.0, sin(sp)*0.07*mv); hOff=vec3(0.0, abs(sin(sp*2.0))*0.025*mv, -F*0.12);`),
   // the rib-legs ripple front to back in snaps, the spine skitters, the jaw hangs and clacks; lit: the ribs clench under
   // it (it drops onto its belly), it trembles and the jaw chatters, then it runs
@@ -7039,7 +6849,7 @@ const HGAIT = {
   flyer: HPOSE('1.0', `float fq=(uT*2.6+rn*6.2832)/1.5708; float fs=(floor(fq)+smoothstep(0.0,0.45,fract(fq)))*1.5708; float fl=sin(fs)*0.55*(1.0-H);
     hA[2]=vec3(0.0,-1.35*H, fl+0.1); hA[3]=vec3(0.0,1.35*H,-fl-0.1); hA[4]=vec3(0.0,-1.1*H, sin(fs-0.8)*0.35*(1.0-H)); hA[5]=vec3(0.0,1.1*H,-sin(fs-0.8)*0.35*(1.0-H));
     hA[6]=vec3(sin(uT*1.1+rn*3.0)*0.12-0.9*H,0.0,0.05); hA[7]=vec3(sin(uT*1.1+rn*3.0+0.9)*0.12-0.7*H,0.0,-0.05);
-    hA[8]=vec3(sin(uT*3.0+rn)*0.3, sin(uT*2.1)*0.4, 0.0); hA[1]=vec3(0.45*(1.0-H)-0.35*H+tw*0.5, tw*0.8, 0.5*(1.0-H)*(rn>0.5?1.0:-1.0));   // the head lolls like a hanged man's; lit: it jerks up at the light
+    hA[8]=vec3(sin(uT*3.0+rn)*0.3, sin(uT*2.1)*0.4, 0.0); hA[1]=vec3(0.45*(1.0-H)-0.35*H-OV*0.3+tw*0.5, tw*0.8, 0.5*(1.0-H)*(rn>0.5?1.0:-1.0));   // the head lolls like a hanged man's; lit: it jerks up at the light
     hPiv=vec3(0.0,0.9,0.0); hRot=vec3(0.25-0.3*H+F*0.4, 0.0, sin(uT*0.8+rn)*0.08); hOff=vec3(0.0, -fl*0.12-0.45*H, 0.0);`),
   // four arms row in a stepped stroke, the tail sways, the back's ribs flex; lit: the neck lifts the head out to look
   diver: HPOSE('5.0', `float w=sin(ph*0.8); float r1=sp+1.5708;
@@ -7049,7 +6859,7 @@ const HGAIT = {
     hA[6]=vec3(0.0, sin(ph*0.8-1.0)*0.35, 0.0); float g=0.15+0.25*sin(uT*2.2+rn*5.0); hA[7]=vec3(0.0,0.0,-g); hA[8]=vec3(0.0,0.0,g);
     hPiv=vec3(0.0,0.3,0.0); hRot=vec3(0.0, w*0.08, w*0.04); hOff=vec3(0.0, F*0.1, 0.0);`),
   // it drifts, the face lies on its shoulder and jerks; lit: the face snaps upright at you, the arms spread wide
-  dimmer: HPOSE('1.0', `float fp=uT*1.4+rn*6.2832; float tilt=(1.25+0.1*sin(uT*0.5+rn*3.0))*(1.0-H)+tw*0.5;
+  dimmer: HPOSE('1.0', `float fp=uT*1.4+rn*6.2832; float tilt=(1.25+0.1*sin(uT*0.5+rn*3.0))*(1.0-H)+tw*0.5-OV*0.3;
     hA[1]=vec3(-0.2*H+F*0.3, sin(uT*0.4+rn)*0.2*(1.0-H), tilt*(rn>0.5?1.0:-1.0));
     hA[2]=vec3(sin(fp)*0.06-F*0.4-0.3*H, 0.0, 0.08+0.75*H); hA[3]=vec3(sin(fp+1.3)*0.06-F*0.4-0.3*H, 0.0, -0.08-0.75*H);
     hRot=vec3(0.08*sin(fp*0.5)-F*0.2, 0.0, 0.03*sin(fp*0.7)); hOff=vec3(0.0, -F*0.1, 0.0);`),
@@ -7063,7 +6873,6 @@ function horrorMat(m, kind, std) {
     vAfter(sh, 'begin_vertex', (std ? '' : 'hPose(); ') + 'transformed = hP(transformed);' + (HEXTRA[kind] || ''));
   });
 }
-const horrorOn = () => RLOOK.horror || /[?&#]horror\b/.test(root.location ? root.location.search + root.location.hash : '');
 
 const R = { on: false, view: null };
 
@@ -7219,9 +7028,9 @@ function buildScene() {
   const col = new T3.Color(), T = {};
   const cap = k => k === 'drowned' || k === 'swarmer' ? RLOOK.maxEnemies : k === 'brute' || k === 'flyer' || k === 'diver' || k === 'dimmer' ? 2000 : 16;
   const inst = (g, m, n) => { const x = new T3.InstancedMesh(g, m, n); x.instanceMatrix.setUsage(T3.DynamicDrawUsage); x.count = 0; x.frustumCulled = false; scene.add(x); return x; };
-  const HZ = horrorOn(); R.horror = HZ;
+  R.horror = true;   // LAS-109: the horror set is the only wave set (LAS-104 removed)
   for (const k of KLIST) {
-    const hz = HZ && !!HART[k];   // LAS-109: the horror set (bones + light reaction) replaces the six wave creatures
+    const hz = !!HART[k];   // LAS-109: the six wave creatures (bones + light reaction); the bosses keep ART
     const bodyMat = (hz ? horrorMat : gaitMat)(new T3.MeshStandardMaterial({ vertexColors: true, flatShading: KIND[k] >= BOSSK, roughness: KIND[k] >= BOSSK ? 0.6 : 0.4, metalness: 0.1 }), k, hz);   // LAS-104: the wave creatures are smooth wet flesh: the sheen shows only where a light falls (no rim, no glow)
     const eyeMat = (hz ? horrorMat : gaitMat)(new T3.MeshBasicMaterial({ color: hz ? RLOOK.eyeH : RLOOK.eye }), k, false);
     LQ = RLOOK.creatureQ; const g = (hz ? HART : ART)[k](); LQ = 1; const n = cap(k), body = inst(g, bodyMat, n);
@@ -7235,10 +7044,6 @@ function buildScene() {
     if (hz) { const rx = new T3.InstancedBufferAttribute(new Float32Array(n * 2), 2); rx.setUsage(T3.DynamicDrawUsage);   // LAS-109: [lit, s since lit] per creature
       for (let i = 0; i < n; i++) rx.array[i * 2 + 1] = 30; g.setAttribute('aRx', rx); eyes.geometry.setAttribute('aRx', rx); T[k].rx = rx; }
   }
-  const flapMat = new T3.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.7, side: T3.DoubleSide });
-  LQ = RLOOK.creatureQ; const wg = [ART.wing(1), ART.wing(-1)]; LQ = 1;
-  T.flyer.wings = wg.map(g => inst(g, flapMat, 2000));
-  if (HZ) T.flyer.wings.forEach(w => { w.visible = false; }); else T.flyer.tris += tris(wg[0]) * 2;   // LAS-109: the horror Nightgaunt's wings are in its body
   // LAS-57: no warm pool, no wake ring: a lit creature is lit only by the beam itself
   const pg = new T3.PlaneGeometry(2, 2); pg.rotateX(-Math.PI / 2);
   T.shadowP = inst(pg, new T3.MeshBasicMaterial({ color: '#000', map: haloTex(), transparent: true, opacity: 0.55, depthWrite: false, fog: false }), RLOOK.maxEnemies + 64); T.shadowP.renderOrder = 1;
@@ -9373,14 +9178,6 @@ function putM(a, i, yaw, s, x, y, z) {
   a[o + 8] = n; a[o + 9] = 0; a[o + 10] = c; a[o + 11] = 0;
   a[o + 12] = x; a[o + 13] = y; a[o + 14] = z; a[o + 15] = 1;
 }
-// a wing: yaw, then a roll about the body's forward axis (the flap), its root at the shoulder (ox, oy, oz) x s
-function putW(a, i, yaw, roll, s, x, y, z, ox, oy, oz) {
-  const c = Math.cos(yaw), n = Math.sin(yaw), C = Math.cos(roll), N = Math.sin(roll), o = i * 16;
-  a[o] = c * C * s; a[o + 1] = N * s; a[o + 2] = -n * C * s; a[o + 3] = 0;
-  a[o + 4] = -c * N * s; a[o + 5] = C * s; a[o + 6] = n * N * s; a[o + 7] = 0;
-  a[o + 8] = n * s; a[o + 9] = 0; a[o + 10] = c * s; a[o + 11] = 0;
-  a[o + 12] = x + (c * ox + n * oz) * s; a[o + 13] = y + oy * s; a[o + 14] = z + (-n * ox + c * oz) * s; a[o + 15] = 1;
-}
 
 // ---------- LAS-26: the citadel grows with the run (render-only, read from S): the wall stage from max HP, a wall gun
 // per Loaders tier, a standard per keystone, the island steps from power, the second lamp. Cheap when nothing changes.
@@ -9600,7 +9397,7 @@ function frame(S, alpha, now) {
   const X = specialBegin(S, t, dtR), baseR = baseRad(S);
   let nw = 0;
   const SHP = T.shadowP.instanceMatrix.array;
-  const F = T.flyer, WL = F.wings[0].instanceMatrix.array, WR = F.wings[1].instanceMatrix.array, SH = F.shadow.instanceMatrix.array;
+  const F = T.flyer, SH = F.shadow.instanceMatrix.array;
   for (let i = 0; i < n; i++) {
     const e = E[i], ki = KIND[e.kind] || 0, m = T[KLIST[ki]];
     // LAS-55: pure black outside the light: a creature is drawn (with its wake, pool, eyes) only while the beam, the Flare or the base ring lights it
@@ -9613,7 +9410,8 @@ function frame(S, alpha, now) {
     let sinkQ = 0;
     if (j >= m.body.instanceMatrix.count) { cnt[ki]--; continue; }
     const ph = e.id * 1.7, fast = ki === 1 ? 2.2 : ki === 2 ? 0.6 : 1;
-    const yaw = Math.atan2(-p.x, -p.z) + 0.12 * Math.sin(t * 3 * fast + ph);
+    const hx0 = m.rx && R.hx ? R.hx.get(e.id) : null;   // LAS-109: lit, it stops wobbling and faces the lamp square
+    const yaw = Math.atan2(-p.x, -p.z) + 0.12 * Math.sin(t * 3 * fast + ph) * (hx0 ? 1 - hx0.l : 1);
     const bob = e.fly ? 0 : e.atWall ? 0.12 * Math.abs(Math.sin(t * 6 * fast + ph)) : 0.05 * Math.sin(t * 5 * fast + ph);
     const s = hid ? 0 : ki >= BOSSK ? RLOOK.bossScale : (0.92 + 0.16 * ((e.id * 7919) % 13) / 13) * (ki === 0 ? 1.15 : 1) * RLOOK.creatureK;
     let rise = 0;
@@ -9626,9 +9424,7 @@ function frame(S, alpha, now) {
     const yy = p.y + bob + rise - (ki === 4 ? 0.82 * sinkQ * s : 0) + (ki === 5 ? 0.55 + 0.12 * Math.sin(t * 1.6 + ph) : 0);
     putM(m.body.instanceMatrix.array, j, yaw, s, p.x, yy, p.z); putM(m.eyes.instanceMatrix.array, j, yaw, s, p.x, yy, p.z);
     if (ki === 9) putM(m.glass.instanceMatrix.array, j, yaw, s, p.x, yy, p.z);
-    if (e.fly) {   // wings flap (fast up, slow down), a shadow on the water under it
-      const fl = Math.sin(t * 9 + ph), roll = 0.15 + 0.6 * fl * Math.abs(fl);
-      putW(WL, j, yaw, roll, s, p.x, p.y, p.z, 0.12, 0.88, 0.2); putW(WR, j, yaw, -roll, s, p.x, p.y, p.z, -0.12, 0.88, 0.2);
+    if (e.fly) {   // a shadow on the water under it (LAS-109: the wings beat in its own shader)
       const gy = Math.max(0.16, hAt(Math.hypot(p.x, p.z)) + 0.04);
       putM(SH, j, 0, 0.7 + 0.15 * (p.y - gy), p.x, gy, p.z + 0.4);
     }
@@ -9638,6 +9434,8 @@ function frame(S, alpha, now) {
     // la = 1 exactly when the beam / Flare lights it now (sim isLit: e.litT >= S.t), else 0; inside the brazier ring the Wall Guard sees it too (LAS-53)
     const lr = 0.62 * lb2, lg = 0.66 * lb2, lb = 0.7 * lb2;   // LAS-57: neutral, no warm tint or boost: just the beam's strength   // LAS-55: the unlit ones are not drawn at all
     const C = m.body.instanceColor.array; C[j * 3] = v * (0.8 + 0.2 * k) * lr; C[j * 3 + 1] = v * lg; C[j * 3 + 2] = v * lb;
+    if (m.rx) { const hb = (e.id * 0.6180339) % 1, hv = 0.88 + 0.16 * ((e.id * 0.7548777) % 1);   // LAS-109: pale to bruised, per creature
+      C[j * 3] *= hv * (1 - 0.1 * hb); C[j * 3 + 1] *= hv * (1 - 0.2 * hb); C[j * 3 + 2] *= hv * (1 - 0.06 * hb); }
     const EC = m.eyes.instanceColor.array; EC[j * 3] = EC[j * 3 + 1] = EC[j * 3 + 2] = lb2;
     if (m.rx) {   // LAS-109: the light reaction's clock: when this creature's light came on, and how lit it is (eased)
       const HX = R.hx || (R.hx = new Map()); let h = HX.get(e.id); if (!h) HX.set(e.id, h = { t0: -99, l: 0, on: false });
@@ -9659,8 +9457,8 @@ function frame(S, alpha, now) {
   }
   if (R.hx && R.hx.size > 20000) R.hx.clear();
   specialEnd(X, cnt);
-  F.wings[0].count = F.wings[1].count = F.shadow.count = cnt[3];
-  F.wings[0].instanceMatrix.needsUpdate = F.wings[1].instanceMatrix.needsUpdate = F.shadow.instanceMatrix.needsUpdate = true;
+  F.shadow.count = cnt[3];
+  F.shadow.instanceMatrix.needsUpdate = true;
 
   // the lighthouse: the flare breathes and faces the camera; the idle sweep turns slowly, hidden while the Beam burns
   const Fx0 = root.TWFx, bm = Fx0 && Fx0.F && Fx0.F.beam, burning = bm && bm.age < bm.life;
@@ -9939,8 +9737,7 @@ function creature(kind) {
   const T = TW.R.T && TW.R.T[kind]; if (!T) return null;
   const g = new T3.Group();
   g.add(new T3.Mesh(T.body.geometry, P.cmat || (P.cmat = new T3.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.12, flatShading: true }))));
-  g.add(new T3.Mesh(T.eyes.geometry, P.eye || (P.eye = new T3.MeshBasicMaterial({ color: '#7fb8b0' }))));
-  if (kind === 'flyer' && T.wings) for (const w of T.wings) g.add(new T3.Mesh(w.geometry, P.cmat));
+  g.add(new T3.Mesh(T.eyes.geometry, P.eye || (P.eye = new T3.MeshBasicMaterial({ color: '#cfc79a' }))));   // LAS-109: eyeshine, not teal (the Nightgaunt's wings are in its body)
   return g;
 }
 function build(id) {
