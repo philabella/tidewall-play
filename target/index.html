@@ -1,0 +1,292 @@
+<!doctype html>
+<!-- LAS-64 one-screen visual target: the lighthouse, a cool 360-degree beam in fog and rain over a dark Gerstner sea.
+     Standalone (three.js r160 from ./vendor, MIT). Not the game: a look to copy into src/render.js.
+     URL options: ?t=12.5 freezes time (screenshots), #fps shows the frame counter, ?q=0.5 sets the fog resolution scale. -->
+<html><head><meta charset="utf-8"><title>Tidewall look target</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}canvas{display:block}
+#fps{position:fixed;left:12px;top:10px;font:12px/1.3 monospace;color:#8a8d90;display:none}</style></head>
+<body><div id="fps"></div>
+<script src="vendor/three-r160.min.js"></script>
+<script>
+'use strict';
+const T = THREE, Q = new URLSearchParams(location.search);
+const FREEZE = Q.has('t') ? +Q.get('t') : null, VOLQ = +(Q.get('q') || 0.5);
+// ---- LOOK SPEC (look-target.md section 1): every number the game should copy ----
+const LOOK = {
+  turn: 8,                       // s per full 360-degree turn (game: TUNE beam turn; real lights 5-30 s)
+  wideHalf: 34.5,                // deg: the gameplay wedge (69 deg) = soft spill on sea and fog
+  coreHalf: 4.2,                 // deg: the real Fresnel shaft (a few degrees of divergence)
+  tilt: -4,                      // deg: shaft aims just below the horizon
+  coolRGB: [0.72, 0.84, 1.0],    // shaft and spill: cool blue-white (~6500 K LED), never gold
+  coreRGB: [1.0, 0.93, 0.80],    // lamp core: warm-white (~3500 K) only inside the lantern
+  shaftI: 1.7, spillI: 0.035,     // in-scatter strength: core shaft vs wide spill
+  fog: 0.042, fogNoise: 0.9, fogHeight: 0.06,   // density, noise contrast, height falloff (sea fog hugs the water)
+  exposure: 0.95, bloom: 0.4, bloomThr: 1.4, grain: 0.045, vignette: 0.55
+};
+const F = x => (+x).toFixed(5), V = a => a.map(F).join(',');
+const W = innerWidth, H = innerHeight;
+const R = new T.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+R.setPixelRatio(1); R.setSize(W, H); R.toneMapping = T.NoToneMapping;
+R.shadowMap.enabled = true; R.shadowMap.type = T.PCFSoftShadowMap;
+document.body.appendChild(R.domElement);
+const scene = new T.Scene(); scene.background = new T.Color(0, 0, 0);
+const cam = new T.PerspectiveCamera(34, W / H, 1, 600);
+cam.position.set(0, 62, 74); cam.lookAt(0, 0, -4);
+
+// ---- random + helpers ----
+let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const std = (hex, rough, metal = 0, extra = {}) => new T.MeshStandardMaterial(Object.assign({ color: hex, roughness: rough, metalness: metal }, extra));
+const add = (m, cast = true, recv = true) => { m.castShadow = cast; m.receiveShadow = recv; scene.add(m); return m; };
+const jitter = (g, a) => { const p = g.attributes.position; for (let i = 0; i < p.count; i++) p.setXYZ(i, p.getX(i) + (rnd() - .5) * a, p.getY(i) + (rnd() - .5) * a, p.getZ(i) + (rnd() - .5) * a); g.computeVertexNormals(); return g; };
+
+// ---- materials: weathered, not toy (bone stone, wet black rock, rusted iron, slate) ----
+const M = {
+  rock: std(0x2b2b2a, 0.92, 0, { flatShading: true }), wetRock: std(0x1c1d1e, 0.42, 0, { flatShading: true }),
+  stone: std(0x6f6a60, 0.88, 0, { flatShading: true }), wall: std(0x55514a, 0.9, 0, { flatShading: true }),
+  slate: std(0x222427, 0.7, 0.1, { flatShading: true }), iron: std(0x2a2522, 0.55, 0.6),
+  creature: std(0x1d2022, 0.28, 0.05, { flatShading: true }),
+  glass: new T.MeshStandardMaterial({ color: 0x0b0d10, roughness: 0.1, metalness: 0.2, emissive: new T.Color(0.05, 0.045, 0.04), transparent: true, opacity: 0.55 }),
+  window: new T.MeshBasicMaterial({ color: new T.Color(2.2, 0.75, 0.25) }),
+  lamp: new T.MeshBasicMaterial({ color: new T.Color(9, 8.2, 7) })
+};
+
+// ---- the island and citadel ----
+const plateau = add(new T.Mesh(jitter(new T.CylinderGeometry(13.5, 17, 5, 30, 3), 1.1), M.rock)); plateau.position.y = -1.6;
+for (let i = 0; i < 58; i++) {                       // shore rocks at the waterline, wet and dark
+  const a = rnd() * 6.283, r = 15 + rnd() * 5.5, s = 0.8 + rnd() * 2.2;
+  const m = add(new T.Mesh(jitter(new T.IcosahedronGeometry(s, 0), s * 0.5), rnd() < 0.5 ? M.wetRock : M.rock));
+  m.position.set(Math.cos(a) * r, -0.6 + rnd() * 0.6, Math.sin(a) * r); m.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3); m.scale.y = 0.6 + rnd() * 0.5;
+}
+const WALL_R = 10.5, TOWERS = 7;
+for (let k = 0; k < TOWERS; k++) {
+  const a0 = k / TOWERS * 6.283, a1 = (k + 1) / TOWERS * 6.283;
+  const p0 = new T.Vector3(Math.cos(a0) * WALL_R, 0, Math.sin(a0) * WALL_R), p1 = new T.Vector3(Math.cos(a1) * WALL_R, 0, Math.sin(a1) * WALL_R);
+  const len = p0.distanceTo(p1), mid = p0.clone().add(p1).multiplyScalar(.5), yaw = Math.atan2(p1.x - p0.x, p1.z - p0.z);
+  const wall = add(new T.Mesh(jitter(new T.BoxGeometry(1.3, 3.6, len, 1, 2, 6), 0.12), M.wall)); wall.position.set(mid.x, 2.7, mid.z); wall.rotation.y = yaw;
+  for (let j = 0; j < 7; j++) {                      // merlons
+    const f = (j + .5) / 7, m = add(new T.Mesh(new T.BoxGeometry(1.35, 0.8, len / 14), M.wall));
+    m.position.set(p0.x + (p1.x - p0.x) * f, 4.9, p0.z + (p1.z - p0.z) * f); m.rotation.y = yaw;
+  }
+  const tw = add(new T.Mesh(jitter(new T.CylinderGeometry(1.5, 1.8, 6, 10, 2), 0.1), M.stone)); tw.position.set(p0.x, 3.6, p0.z);
+  const roof = add(new T.Mesh(new T.ConeGeometry(2.0, 2.6, 10), M.slate)); roof.position.set(p0.x, 7.9, p0.z);
+  const win = add(new T.Mesh(new T.BoxGeometry(0.28, 0.5, 0.1), M.window), false, false);
+  win.position.set(p0.x * 1.17, 4.6, p0.z * 1.17); win.lookAt(p0.x * 3, 4.6, p0.z * 3);
+}
+for (let i = 0; i < 9; i++) {                        // inner houses: stone with slate gables
+  const a = i / 9 * 6.283 + .3, r = 5.6 + rnd() * 2.2, w = 1.8 + rnd(), d = 2.4 + rnd() * 1.4, h = 1.8 + rnd() * 1.4;
+  const g = new T.Group(); g.position.set(Math.cos(a) * r, 0.6, Math.sin(a) * r); g.rotation.y = -a + rnd() * .3;
+  const b = new T.Mesh(jitter(new T.BoxGeometry(w, h, d), 0.08), M.wall); b.position.y = h / 2; g.add(b);
+  const rf = new T.Mesh(new T.CylinderGeometry(0.01, w * 0.78, d * 1.04, 3, 1), M.slate); rf.rotation.z = Math.PI / 2; rf.rotation.y = Math.PI / 2; rf.scale.set(1, 1, 0.55); rf.position.y = h + 0.5; g.add(rf);
+  if (rnd() < 0.6) { const wi = new T.Mesh(new T.BoxGeometry(0.3, 0.4, 0.05), M.window); wi.position.set(0, h * 0.55, d / 2 + 0.03); g.add(wi); }
+  g.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = o.material !== M.window; } }); scene.add(g);
+}
+// lighthouse: pale weathered stone, iron gallery, lantern room. Lamp at LAMP_Y.
+const prof = [[2.7, 0.5], [2.5, 2], [2.05, 9], [1.75, 14.2], [2.25, 14.4], [2.25, 14.9], [1.45, 15.0]].map(([r, y]) => new T.Vector2(r, y));
+add(new T.Mesh(new T.LatheGeometry(prof, 18), M.stone));
+const gal = add(new T.Mesh(new T.TorusGeometry(2.3, 0.07, 4, 28), M.iron)); gal.rotation.x = Math.PI / 2; gal.position.y = 15.9;
+for (let i = 0; i < 18; i++) { const a = i / 18 * 6.283, p = add(new T.Mesh(new T.CylinderGeometry(.04, .04, 1, 4), M.iron)); p.position.set(Math.cos(a) * 2.3, 15.4, Math.sin(a) * 2.3); }
+const LAMP_Y = 16.1;
+const lant = add(new T.Mesh(new T.CylinderGeometry(1.15, 1.15, 1.9, 12, 1, true), M.glass), false, false); lant.position.y = LAMP_Y;
+const cap = add(new T.Mesh(new T.ConeGeometry(1.45, 1.3, 12), M.iron)); cap.position.y = LAMP_Y + 1.6;
+const lampCore = add(new T.Mesh(new T.SphereGeometry(0.3, 12, 8), M.lamp), false, false); lampCore.position.y = LAMP_Y;
+// rotating lens shroud: the dark back half, so the lamp reads as a turning lens, not an omni bulb
+const shroud = new T.Mesh(new T.CylinderGeometry(0.62, 0.62, 1.3, 16, 1, true, 0.9, 4.5), new T.MeshBasicMaterial({ color: 0x050505, side: T.DoubleSide }));
+shroud.position.y = LAMP_Y; scene.add(shroud);
+
+// ---- base lights: dim rust-amber braziers on the wall (only small warm pools; the cool beam is the star) ----
+const BRAZ = [];
+for (let k = 0; k < 4; k++) {
+  const a = (k + .5) / 4 * 6.283 + .2, p = new T.Vector3(Math.cos(a) * (WALL_R + .1), 5.6, Math.sin(a) * (WALL_R + .1));
+  const L = new T.PointLight(0xff7a3a, 9, 11, 1.6); L.position.copy(p); scene.add(L); BRAZ.push(p);
+  const f = new T.Mesh(new T.SphereGeometry(0.16, 6, 4), new T.MeshBasicMaterial({ color: new T.Color(6, 2.2, 0.7) })); f.position.copy(p); scene.add(f);
+}
+
+const leak = new T.PointLight(0xc9d6e8, 38, 19, 1.2); leak.position.set(0, 12.5, 0); scene.add(leak);   // inside the tower: lights the town below, not the lantern or the sea
+// ---- the beam's surface light: a shadowed spot = the gameplay wedge (69 deg) ----
+const spot = new T.SpotLight(new T.Color(...LOOK.coolRGB), 2600, 95, LOOK.wideHalf * Math.PI / 180, 0.55, 1.9);
+spot.position.set(0, LAMP_Y, 0); spot.castShadow = true; spot.shadow.mapSize.set(2048, 2048); spot.shadow.camera.near = 1; spot.shadow.camera.far = 100; spot.shadow.bias = -0.0004;
+scene.add(spot); scene.add(spot.target);
+
+// ---- creatures: half-seen wet shapes in the water (no glow, no rim, no eyes) ----
+const cg = (() => {
+  const parts = [];
+  const body = new T.CapsuleGeometry(0.55, 1.3, 3, 7); body.rotateX(0.5); body.translate(0, 0.9, 0); parts.push(body);
+  const head = new T.IcosahedronGeometry(0.42, 0); head.translate(0, 1.85, 0.45); parts.push(head);
+  for (const s of [-1, 1]) { const arm = new T.CylinderGeometry(0.09, 0.16, 1.9, 5); arm.rotateZ(s * 0.6); arm.rotateX(0.7); arm.translate(s * 0.75, 1.1, 0.7); parts.push(arm); }
+  const g = new T.BufferGeometry(); // simple merge
+  let n = 0; parts.forEach(p => n += (p.index ? p.index.count : p.attributes.position.count));
+  const pos = [], nor = [];
+  parts.forEach(p => { const q = p.index ? p.toNonIndexed() : p; pos.push(...q.attributes.position.array); nor.push(...q.attributes.normal.array); });
+  g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3)); return g;
+})();
+const NC = 140, crowd = new T.InstancedMesh(cg, M.creature, NC); crowd.castShadow = true; crowd.receiveShadow = true; scene.add(crowd);
+const CR = []; for (let i = 0; i < NC; i++) { const a = rnd() * 6.283, r = 19 + Math.pow(rnd(), 0.7) * 34; CR.push({ a, r, s: 0.8 + rnd() * 0.7, ph: rnd() * 6 }); }
+const o3 = new T.Object3D();
+function placeCrowd(t) {
+  CR.forEach((c, i) => { const r = c.r - (t * 0.35 + c.ph) % 3; o3.position.set(Math.cos(c.a) * r, -0.9 + Math.sin(t * 1.3 + c.ph) * 0.12, Math.sin(c.a) * r);
+    o3.rotation.set(0, Math.atan2(-o3.position.x, -o3.position.z), Math.sin(t + c.ph) * 0.08); o3.scale.setScalar(c.s); o3.updateMatrix(); crowd.setMatrixAt(i, o3.matrix); });
+  crowd.instanceMatrix.needsUpdate = true;
+}
+
+// ---- shared GLSL: the beam shape (core shaft + wide spill) ----
+const BEAM_GLSL = `
+uniform vec3 uLamp; uniform vec3 uDir; uniform float uCosCoreIn, uCosCoreOut, uCosWideIn, uCosWideOut;
+float beamCore(vec3 v){ return smoothstep(uCosCoreOut, uCosCoreIn, dot(normalize(v), uDir)); }
+float beamWide(vec3 v){ vec2 h = normalize(v.xz + 1e-5); float c = dot(h, normalize(uDir.xz)); float down = smoothstep(0.05, -0.12, normalize(v).y);
+  return smoothstep(uCosWideOut, uCosWideIn, c) * mix(0.25, 1.0, down); }
+float beamAtt(float d){ return 1.0 / (1.0 + 0.045 * d + 0.0009 * d * d); }`;
+const beamU = { uLamp: { value: new T.Vector3(0, LAMP_Y, 0) }, uDir: { value: new T.Vector3(1, 0, 0) },
+  uCosCoreIn: { value: Math.cos(LOOK.coreHalf * 0.55 * Math.PI / 180) }, uCosCoreOut: { value: Math.cos(LOOK.coreHalf * Math.PI / 180) },
+  uCosWideIn: { value: Math.cos(LOOK.wideHalf * 0.78 * Math.PI / 180) }, uCosWideOut: { value: Math.cos(LOOK.wideHalf * Math.PI / 180) },
+  uTime: { value: 0 } };
+
+// ---- the sea: Gerstner waves (vertex) + analytic ripple normals, beam glitter, rock foam (fragment). No reflection pass. ----
+const seaMat = new T.ShaderMaterial({
+  uniforms: Object.assign({ uBraz: { value: BRAZ }, uCam: { value: cam.position } }, beamU),
+  vertexShader: `uniform float uTime; varying vec3 vW; varying vec3 vN;
+  vec3 gerst(vec2 d, float st, float wl, vec3 p, inout vec3 T, inout vec3 B){ float k = 6.2832 / wl, c = sqrt(9.8 / k); vec2 dn = normalize(d);
+    float f = k * (dot(dn, p.xz) - c * uTime), a = st / k;
+    T += vec3(-dn.x*dn.x*st*sin(f), dn.x*st*cos(f), -dn.x*dn.y*st*sin(f)); B += vec3(-dn.x*dn.y*st*sin(f), dn.y*st*cos(f), -dn.y*dn.y*st*sin(f));
+    return vec3(dn.x * a * cos(f), a * sin(f), dn.y * a * cos(f)); }
+  void main(){ vec3 p = (modelMatrix * vec4(position, 1.)).xyz; vec3 Tt = vec3(1,0,0), Bb = vec3(0,0,1), q = p;
+    q += gerst(vec2(1., .3), .16, 22., p, Tt, Bb); q += gerst(vec2(-.4, 1.), .13, 13., p, Tt, Bb);
+    q += gerst(vec2(.7, -.8), .10, 7.5, p, Tt, Bb); q += gerst(vec2(-1., -.2), .08, 4.2, p, Tt, Bb);
+    float shore = smoothstep(14., 30., length(p.xz)); q.y = mix(p.y + (q.y - p.y) * .35, q.y, shore);
+    vW = q; vN = normalize(cross(Bb, Tt)); gl_Position = projectionMatrix * viewMatrix * vec4(q, 1.); }`,
+  fragmentShader: `uniform float uTime; uniform vec3 uBraz[4]; uniform vec3 uCam; varying vec3 vW; varying vec3 vN;` + BEAM_GLSL + `
+  float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f); return mix(mix(h21(i), h21(i+vec2(1,0)), f.x), mix(h21(i+vec2(0,1)), h21(i+vec2(1,1)), f.x), f.y); }
+  vec2 ripple(vec2 p, float t){ vec2 g = vec2(0.); for (int i = 0; i < 9; i++){ float fi = float(i); float an = fi * 2.399 + 0.7; vec2 d = vec2(cos(an), sin(an));
+      float k = 0.9 + fi * 0.62, w = sqrt(9.8 * k) * 0.55; float s = 0.075 / (1. + fi * 0.45); g += d * k * s * cos(dot(d, p) * k - w * t + fi * 1.7); } return g; }
+  void main(){
+    vec2 rg = ripple(vW.xz, uTime) * 0.8 + ripple(vW.xz * 2.1 + 13., uTime * 1.2) * 0.25;
+    vec3 N = normalize(vN + vec3(-rg.x, 0., -rg.y));
+    vec3 V = normalize(uCam - vW), Lv = uLamp - vW; float d = length(Lv); vec3 L = Lv / d;
+    float wide = beamWide(-Lv), core = beamCore(-Lv), att = beamAtt(d);
+    float lit = (wide * 1.0 + core * 3.0) * att, leak = 0.01 * att;          // lantern leak: a faint omni glow very close only
+    vec3 cool = vec3(${V(LOOK.coolRGB)});
+    // water is almost black: deep body colour + tiny diffuse, the beam shows as specular glitter
+    vec3 Hh = normalize(L + V); float nh = max(dot(N, Hh), 0.);
+    float fres = 0.02 + 0.98 * pow(1. - max(dot(N, V), 0.), 5.);
+    float spec = (pow(nh, 180.) * 14. * (0.3 + core) + pow(nh, 40.) * 0.9) * fres;
+    vec3 col = vec3(0.030, 0.048, 0.056) * lit * (0.35 + 0.65 * max(dot(N, L), 0.)) + cool * spec * (lit + leak * 4.);
+    // foam where waves hit the rocks: only visible where light reaches it
+    float r = length(vW.xz), n = vn(vW.xz * 0.45 + uTime * 0.2) * 0.65 + vn(vW.xz * 1.3 - uTime * 0.3) * 0.35;
+    float band = smoothstep(20., 15.5, r + n * 3.) * smoothstep(0.3, 0.9, n + 0.3 * sin(r * 1.8 - uTime * 1.2));
+    float foamLight = lit * 0.55 + leak;
+    vec3 warm = vec3(0.);
+    for (int i = 0; i < 4; i++){ float db = length(uBraz[i] - vW); warm += vec3(1., .42, .16) * 0.9 / (1. + db * db * 0.09); }
+    col += band * (cool * foamLight * 0.35 + warm * 0.05);
+    col += warm * spec * 0.25 + warm * 0.0015;
+    gl_FragColor = vec4(col, 1.);
+  }`
+});
+const sea = new T.Mesh(new T.PlaneGeometry(420, 420, 320, 320), seaMat); sea.rotation.x = -Math.PI / 2; sea.position.y = -0.35; sea.receiveShadow = false; scene.add(sea);
+
+// ---- rain: streaks only visible inside the light ----
+const NR = 9000, rp = new Float32Array(NR * 6), re = new Float32Array(NR * 2);
+for (let i = 0; i < NR; i++) { const a = rnd() * 6.283, r = Math.sqrt(rnd()) * 75, x = Math.cos(a) * r, z = Math.sin(a) * r, y = rnd() * 34;
+  rp.set([x, y, z, x, y, z], i * 6); re[i * 2] = 0; re[i * 2 + 1] = 1; }
+const rgm = new T.BufferGeometry(); rgm.setAttribute('position', new T.BufferAttribute(rp, 3)); rgm.setAttribute('aEnd', new T.BufferAttribute(re, 1));
+const rain = new T.LineSegments(rgm, new T.ShaderMaterial({ uniforms: beamU, transparent: true, depthWrite: false, blending: T.AdditiveBlending,
+  vertexShader: `uniform float uTime; attribute float aEnd; varying vec3 vW;
+    void main(){ vec3 p = position; float sp = 19.; p.y = mod(p.y - uTime * sp, 34.) - 0.4; p.x += (34. - p.y) * 0.18 - 3.;
+      p += vec3(-0.12, 0.75, -0.04) * aEnd; vW = p; gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.); }`,
+  fragmentShader: `varying vec3 vW;` + BEAM_GLSL + `void main(){ vec3 v = vW - uLamp; float d = length(v);
+    float l = (beamWide(v) * 0.6 + beamCore(v) * 2.2) * beamAtt(d); gl_FragColor = vec4(vec3(${V(LOOK.coolRGB)}) * l * 0.42, 1.); }` }));
+rain.frustumCulled = false; scene.add(rain);
+
+// ---- render targets ----
+const rtOpt = { type: T.HalfFloatType, minFilter: T.LinearFilter, magFilter: T.LinearFilter };
+const sceneRT = new T.WebGLRenderTarget(W, H, rtOpt); sceneRT.depthTexture = new T.DepthTexture(W, H); sceneRT.depthTexture.type = T.UnsignedIntType;
+const vw = Math.round(W * VOLQ), vh = Math.round(H * VOLQ);
+const volRT = new T.WebGLRenderTarget(vw, vh, rtOpt), hdrRT = new T.WebGLRenderTarget(W, H, rtOpt);
+const bw = Math.round(W / 4), bh = Math.round(H / 4), bA = new T.WebGLRenderTarget(bw, bh, rtOpt), bB = new T.WebGLRenderTarget(bw, bh, rtOpt);
+const bw2 = Math.round(W / 8), bh2 = Math.round(H / 8), cA = new T.WebGLRenderTarget(bw2, bh2, rtOpt), cB = new T.WebGLRenderTarget(bw2, bh2, rtOpt);
+const quadCam = new T.OrthographicCamera(-1, 1, 1, -1, 0, 1), quadScene = new T.Scene(), quad = new T.Mesh(new T.PlaneGeometry(2, 2)); quadScene.add(quad);
+const VS = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }`;
+const pass = (mat, target) => { quad.material = mat; R.setRenderTarget(target); R.render(quadScene, quadCam); };
+
+// volumetric: ray-march the fog from the camera to the scene depth inside a sphere around the lamp
+const volMat = new T.ShaderMaterial({ uniforms: Object.assign({ tDepth: { value: sceneRT.depthTexture }, uInvPV: { value: new T.Matrix4() }, uCamP: { value: cam.position }, uRes: { value: new T.Vector2(vw, vh) } }, beamU),
+  vertexShader: VS, fragmentShader: `varying vec2 vUv; uniform sampler2D tDepth; uniform mat4 uInvPV; uniform vec3 uCamP; uniform float uTime; uniform vec2 uRes;` + BEAM_GLSL + `
+  float h31(vec3 p){ p = fract(p * 0.3183099 + .1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+  float n3(vec3 x){ vec3 i = floor(x), f = fract(x); f = f*f*(3.-2.*f);
+    return mix(mix(mix(h31(i), h31(i+vec3(1,0,0)), f.x), mix(h31(i+vec3(0,1,0)), h31(i+vec3(1,1,0)), f.x), f.y),
+               mix(mix(h31(i+vec3(0,0,1)), h31(i+vec3(1,0,1)), f.x), mix(h31(i+vec3(0,1,1)), h31(i+vec3(1,1,1)), f.x), f.y), f.z); }
+  float ign(vec2 p){ return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+  void main(){
+    float z = texture2D(tDepth, vUv).x; vec4 w = uInvPV * vec4(vUv * 2. - 1., z * 2. - 1., 1.); w /= w.w;
+    vec3 ro = uCamP, rd = w.xyz - ro; float tEnd = length(rd); rd /= tEnd;
+    vec3 oc = ro - uLamp; float b = dot(oc, rd), c = dot(oc, oc) - 85. * 85., disc = b * b - c;
+    if (disc < 0.) { gl_FragColor = vec4(0.); return; }
+    float s = sqrt(disc), t0 = max(-b - s, 0.), t1 = min(-b + s, tEnd); if (t1 <= t0) { gl_FragColor = vec4(0.); return; }
+    const int STEPS = 56; float dt = (t1 - t0) / float(STEPS), t = t0 + dt * ign(gl_FragCoord.xy + fract(uTime * 7.) * 61.);
+    vec3 acc = vec3(0.);
+    for (int i = 0; i < STEPS; i++){
+      vec3 p = ro + rd * t, v = p - uLamp; float d = length(v);
+      float core = beamCore(v), wide = beamWide(v);
+      if (core + wide > 0.001){
+        float dens = ${F(LOOK.fog)} * exp(-max(p.y, 0.) * ${F(LOOK.fogHeight)}) * mix(1., n3(p * 0.09 + vec3(uTime * 0.6, 0., uTime * 0.25)) * 1.4 + n3(p * 0.27 - uTime * 0.3) * 0.5, ${F(LOOK.fogNoise)});
+        float mu = dot(normalize(v), -rd), g = 0.55, ph = (1. - g * g) / pow(1. + g * g - 2. * g * mu, 1.5) * 0.0796;
+        vec3 col = mix(vec3(${V(LOOK.coreRGB)}), vec3(${V(LOOK.coolRGB)}), smoothstep(1.5, 14., d));
+        acc += col * (core * ${F(LOOK.shaftI)} + wide * ${F(LOOK.spillI)}) * beamAtt(d) * smoothstep(1.2, 4.5, d) * dens * (0.35 + ph * 6.) * dt;
+      }
+      t += dt;
+    }
+    gl_FragColor = vec4(acc * 9., 1.);
+  }` });
+const compMat = new T.ShaderMaterial({ uniforms: { tScene: { value: sceneRT.texture }, tVol: { value: volRT.texture }, uVt: { value: new T.Vector2(1.2 / vw, 1.2 / vh) } }, vertexShader: VS,
+  fragmentShader: `varying vec2 vUv; uniform sampler2D tScene, tVol; uniform vec2 uVt; void main(){ vec3 v = texture2D(tVol, vUv).rgb * 0.4 + (texture2D(tVol, vUv + vec2(uVt.x, 0.)).rgb + texture2D(tVol, vUv - vec2(uVt.x, 0.)).rgb + texture2D(tVol, vUv + vec2(0., uVt.y)).rgb + texture2D(tVol, vUv - vec2(0., uVt.y)).rgb) * 0.15;
+    gl_FragColor = vec4(texture2D(tScene, vUv).rgb + v, 1.); }` });
+const brightMat = new T.ShaderMaterial({ uniforms: { tSrc: { value: null }, uThr: { value: LOOK.bloomThr } }, vertexShader: VS,
+  fragmentShader: `varying vec2 vUv; uniform sampler2D tSrc; uniform float uThr; void main(){ vec3 c = texture2D(tSrc, vUv).rgb; float l = max(c.r, max(c.g, c.b));
+    gl_FragColor = vec4(c * max(l - uThr, 0.) / max(l, 1e-4), 1.); }` });
+const blurMat = new T.ShaderMaterial({ uniforms: { tSrc: { value: null }, uDir: { value: new T.Vector2() } }, vertexShader: VS,
+  fragmentShader: `varying vec2 vUv; uniform sampler2D tSrc; uniform vec2 uDir; void main(){ vec3 s = texture2D(tSrc, vUv).rgb * 0.227;
+    s += (texture2D(tSrc, vUv + uDir * 1.385).rgb + texture2D(tSrc, vUv - uDir * 1.385).rgb) * 0.316; s += (texture2D(tSrc, vUv + uDir * 3.231).rgb + texture2D(tSrc, vUv - uDir * 3.231).rgb) * 0.070;
+    gl_FragColor = vec4(s, 1.); }` });
+// final: bloom + ACES + pure-black floor + film grain + vignette -> sRGB
+const finalMat = new T.ShaderMaterial({ uniforms: { tHdr: { value: hdrRT.texture }, tB1: { value: bA.texture }, tB2: { value: cA.texture }, uTime: { value: 0 }, uRes: { value: new T.Vector2(W, H) } }, vertexShader: VS,
+  fragmentShader: `varying vec2 vUv; uniform sampler2D tHdr, tB1, tB2; uniform float uTime; uniform vec2 uRes;
+  vec3 aces(vec3 x){ return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0., 1.); }
+  float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+  void main(){
+    vec3 c = texture2D(tHdr, vUv).rgb + (texture2D(tB1, vUv).rgb * 0.6 + texture2D(tB2, vUv).rgb * 0.9) * ${F(LOOK.bloom)};
+    c = aces(c * ${F(LOOK.exposure)});
+    c = max(c - 0.004, 0.) * 1.004;                                   // the dark is pure black
+    vec2 q = vUv - .5; q.x *= uRes.x / uRes.y; c *= 1. - ${F(LOOK.vignette)} * smoothstep(0.35, 1.25, length(q));
+    c = pow(c, vec3(1. / 2.2));
+    float l = dot(c, vec3(.299, .587, .114)); float g = (h(gl_FragCoord.xy + fract(uTime * 13.7) * 97.) - .5) * ${F(LOOK.grain)} * (0.25 + 0.75 * smoothstep(0.02, 0.4, l));
+    gl_FragColor = vec4(c + g, 1.);
+  }` });
+
+// ---- loop ----
+const fpsEl = document.getElementById('fps'); if (location.hash === '#fps') fpsEl.style.display = 'block';
+let frames = 0, fpsT = performance.now(); window.__fps = 0; window.__frames = 0;
+const t0 = performance.now();
+function frame(now) {
+  const t = FREEZE !== null ? FREEZE : (now - t0) / 1000;
+  const ang = t / LOOK.turn * Math.PI * 2;                              // full 360-degree turn, never back and forth
+  const dir = new T.Vector3(Math.cos(ang), Math.sin(LOOK.tilt * Math.PI / 180), Math.sin(ang)).normalize();
+  beamU.uDir.value.copy(dir); beamU.uTime.value = t;
+  spot.target.position.set(Math.cos(ang) * 40, -2, Math.sin(ang) * 40); spot.target.updateMatrixWorld();
+  shroud.rotation.y = -ang + Math.PI * 0.95;
+  placeCrowd(t);
+  R.setRenderTarget(sceneRT); R.render(scene, cam);
+  volMat.uniforms.uInvPV.value.multiplyMatrices(cam.matrixWorld, cam.projectionMatrixInverse);
+  pass(volMat, volRT); pass(compMat, hdrRT);
+  brightMat.uniforms.tSrc.value = hdrRT.texture; pass(brightMat, bA);
+  blurMat.uniforms.tSrc.value = bA.texture; blurMat.uniforms.uDir.value.set(1 / bw, 0); pass(blurMat, bB);
+  blurMat.uniforms.tSrc.value = bB.texture; blurMat.uniforms.uDir.value.set(0, 1 / bh); pass(blurMat, bA);
+  blurMat.uniforms.tSrc.value = bA.texture; blurMat.uniforms.uDir.value.set(2 / bw2, 0); pass(blurMat, cB);
+  blurMat.uniforms.tSrc.value = cB.texture; blurMat.uniforms.uDir.value.set(0, 2 / bh2); pass(blurMat, cA);
+  blurMat.uniforms.tSrc.value = cA.texture; blurMat.uniforms.uDir.value.set(3 / bw2, 0); pass(blurMat, cB);
+  blurMat.uniforms.tSrc.value = cB.texture; blurMat.uniforms.uDir.value.set(0, 3 / bh2); pass(blurMat, cA);
+  finalMat.uniforms.uTime.value = t; pass(finalMat, null);
+  frames++; window.__frames++;
+  if (now - fpsT > 1000) { window.__fps = frames * 1000 / (now - fpsT); fpsEl.textContent = `${window.__fps.toFixed(1)} fps  ${W}x${H}  fog x${VOLQ}`; frames = 0; fpsT = now; }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>
