@@ -11808,6 +11808,25 @@ const LAS87CSS = `
 .fn.bld::after{display:none}
 .fg-view.far .fn:not(.key) i.ck{display:none}
 `;
+const LAS129CSS = `
+/* LAS-129: three card kinds, labelled build tiles, low-wall line, hint placement */
+.card .tg .br{font-weight:700!important}
+.card.k-new .tg .br{color:var(--lantern)!important;border-bottom:1px solid var(--lantern)!important;padding-bottom:2px!important}
+.card.k-lvl .tg .br{color:#e0b070!important;border-bottom:1px solid #e0b070!important;padding-bottom:2px!important}
+.card.k-shr .tg .br{color:#f0907a!important}
+.card.k-new .md{box-shadow:inset 0 0 0 2px rgba(217,228,234,.38)}
+.card.k-lvl .md{box-shadow:inset 0 0 0 2px rgba(224,176,112,.6),inset 0 -30px 40px -20px rgba(224,176,112,.25)}
+.card.k-shr .md{box-shadow:inset 0 0 0 2px rgba(180,50,38,.85),inset 0 0 40px rgba(120,14,10,.5)}
+.card.k-lvl .mid>.lb{font-family:var(--fell);font-style:normal;font-size:max(22px,2.1vh);letter-spacing:.06em;color:#e0b070;text-transform:none}
+.card.k-shr .lr{font-size:max(15px,1.4vh)!important;line-height:1.15;max-width:calc(100% - 44px);white-space:normal!important}
+.be{height:auto!important}
+.be .bnm{display:block;width:var(--bs);margin-top:3px;font:500 max(13px,1.25vh)/1.15 Barlow,"Segoe UI",sans-serif;color:var(--bone);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 0 3px #000,0 1px 2px #000;pointer-events:none}
+.be.sm .bnm{display:none}
+.be .bpips{bottom:auto!important;top:calc(var(--bs) - 12px)}
+.be .bp{position:relative!important;display:block;width:var(--bs)!important;height:var(--bs)!important}
+#tw-wallwarn{position:fixed;display:none;z-index:7;pointer-events:none;transform:translateX(-50%);white-space:nowrap;font-family:var(--fell);font-style:italic;font-size:max(20px,1.9vh);color:#f0a090;text-shadow:0 0 6px #000,0 1px 3px #000;animation:twWarn 4.5s ease-out forwards}
+@keyframes twWarn{0%{opacity:0}8%{opacity:1}22%{opacity:.55}34%{opacity:1}80%{opacity:1}100%{opacity:0}}
+`;
 const HORRORCSS = `
 /* LAS-76: the whole UI shrouded in darkness (spec: art/ui-horror.md). Appended last, so it wins. No frames, no brass, no dials: things
    come out of the black, lit from one lantern at the left edge. Type: Fell (names, words) + Barlow (numbers, body). */
@@ -12184,7 +12203,7 @@ function build() {
   const digits = () => { const ff = document.getElementById('tw-fonts'), bf = ff && ff.textContent.match(/@font-face{font-family:'Cinzel';font-style:normal;font-weight:400[^}]*}/);
     if (bf) { const f = el('style'); f.textContent = bf[0].replace("'Cinzel'", "'FellNum'").replace(/}$/, ';unicode-range:U+30-39,U+25,U+2B,U+2212}'); document.head.appendChild(f); } };
   if (document.readyState === 'complete') digits(); else root.addEventListener('load', digits);
-  const st = el('style'); st.textContent = CSS + TOWNCSS + CARTCSS + HORRORCSS + LAS83CSS + LAS87CSS + LAS82CSS + LAS95CSS + LAS99CSS + LAS112CSS + LAS115CSS; document.body.insertAdjacentHTML('afterbegin', TWArt.DEFS); document.head.appendChild(st);
+  const st = el('style'); st.textContent = CSS + TOWNCSS + CARTCSS + HORRORCSS + LAS83CSS + LAS87CSS + LAS82CSS + LAS95CSS + LAS99CSS + LAS112CSS + LAS115CSS + LAS129CSS; document.body.insertAdjacentHTML('afterbegin', TWArt.DEFS); document.head.appendChild(st);
   const ui = el('div'); ui.id = 'twui';
   ui.innerHTML = `
   <canvas id="tw-aim"></canvas><div id="tw-vig"></div><div id="tw-hit"></div>
@@ -12703,6 +12722,7 @@ function frame(S, now) {
   bar.children[1].style.width = f * 100 + '%';
   setTxt(bar.lastChild, 'citadel ' + fmt(Math.ceil(hp)) + ' of ' + fmt(S.maxHp));
   bar.classList.toggle('low', f < 0.3);
+  if (f < 0.3 && hp > 0 && !S.over && !S.pick && U.lwWave !== S.wave) { U.lwWave = S.wave; wallWarn(bar); }
   U.root.classList.toggle('lowhp', f < 0.3 && hp > 0 && !S.over);
   const g = Math.floor(S.gold);
   U.gd = U.gd == null || g < U.gd ? g : U.gd + (g - U.gd) * Math.min(1, dt * 9);
@@ -12784,8 +12804,14 @@ function goal(S) {
 }
 // run 1 only: the first time a creature is inside gun range but in the dark, a note hangs over it; once the beam
 // finds it, the note says so and goes. Shown once, ever (hint 'beam'); a click dismisses it.
+function wallWarn(bar) {   // LAS-129: once per wave under the HP bar (the bar itself already beats)
+  let w = $('tw-wallwarn'); if (!w) { w = el('div'); w.id = 'tw-wallwarn'; w.textContent = 'The wall is failing.'; U.root.appendChild(w); }
+  const r = bar.getBoundingClientRect(); w.style.left = (r.left + r.width / 2) + 'px'; w.style.top = (r.bottom + 10) + 'px';
+  restart(w, 'x'); w.style.display = 'block'; clearTimeout(w._t); w._t = setTimeout(() => { w.style.display = 'none'; }, 4600);
+}
 function teach(S, now) {
   const T = U.teach, h = $('tw-teach');
+  if (T && S.wave > 2 && (T.on || h.innerHTML)) { T.on = null; h.innerHTML = ''; h.style.display = 'none'; hintDone('beam'); return; }   // LAS-129: the lines end with wave 2
   if (!T || S.pick || U.paused || S.over) { if (h.style.display !== 'none') h.style.display = 'none'; return; }
   if (!T.on && !hints.beam && S.beam && !S.beam.flare && S.t > 3) {
     const R = Sim.stats(S).range;
@@ -12969,9 +12995,9 @@ const BLD = {
   horn: ['Fog Horn', 'strange', 'Every 20 s every creature within 25 m turns away for 2 s (bosses 0.5 s).', 'Every 16 s.', 'Every 12 s, for 3 s.'],
   well: ['The Old Well', 'strange', 'Every 8 s a hand drags one lit creature within 15 m under (bosses take 10× dmg instead).', 'Every 6 s.', 'Two hands.'],
   spire: ['Storm Spire', 'strange', 'Lightning every 4 s: 6× dmg in 3 m on a lit creature. The flash lights a 12 m circle for 0.25 s.', 'Every 3 s.', 'Every 2 s.'],
-  sh_pact: ['Pact Shrine', 'strange', 'All damage ×3, abilities too. The wall loses 33% of its max HP. Once built, it stays.'],
-  sh_rod: ['Rod Shrine', 'strange', 'Ability damage ×4. Once built, it stays.'],
-  sh_jack: ['Powder Shrine', 'strange', 'Every hit has a 1 in 50 chance to deal ×20 damage. Ability hits too. Once built, it stays.'],
+  sh_pact: ['Pact Shrine', 'strange', 'Everything you fire hits 3x harder, Flare and Flood Gate too. The wall loses 33% of its max HP. Stays forever.'],
+  sh_rod: ['Rod Shrine', 'strange', 'Your Flare and Flood Gate hit 4x harder. Stays forever.'],
+  sh_jack: ['Powder Shrine', 'strange', 'Every hit has a 1 in 50 chance to hit 20x harder, Flare and Flood Gate too. Stays forever.'],
   house: ['Counting House', 'greed', 'Pays 15 gold × the wave you are on, now.', 'Pays 15 gold × the wave, again.', 'Pays 15 gold × the wave, once more.'],
   yard: ['Mason’s Yard', 'hold', 'Max HP +110 and a full repair.', 'Max HP +110 more and a full repair.'],
   choir: ['Drowned Choir', 'strange', 'Every 20th kill in the brazier ring rises as a drowned gunner on the rim for 10 s (max 3).', 'Max 5.', '20 s.'],
@@ -13029,12 +13055,12 @@ function townCard(d, own, disc) {
       + (disc[ek] ? (main ? `III + ${on}` : `${on} III + this`) + ` = ${e[0]}.` : (main ? 'Raise it to III' : `Raise the ${on} to III`) + ' and see what wakes.') + '</span>';
   }
   const shr = /^sh_/.test(d.id);
-  return { cls: 'bld' + (shr ? ' loud' : ''), loud: shr, c: r[1], kicker: shr ? 'Shrine' : lv === 1 ? 'New building' : 'Level up', name: shr ? b[0] : `${b[0]} ${RN[lv]}`, art: TWArt.building(d.id), icons: `<span class="ev">${bIcon(d.id)}</span>`, text: d.text || b[1 + lv],
+  return { cls: 'bld' + (shr ? ' loud k-shr' : lv === 1 ? ' k-new' : ' k-lvl'), loud: shr, from: !shr && lv > 1 ? `${RN[lv - 1]} \u2192 ${RN[lv]}` : '', c: r[1], kicker: shr ? 'Shrine' : lv === 1 ? 'New building' : 'Level up', name: shr ? b[0] : `${b[0]} ${RN[lv]}`, art: TWArt.building(d.id), icons: `<span class="ev">${bIcon(d.id)}</span>`, text: d.text || b[1 + lv],
     pips: shr ? 0 : lv, role: r[0], home: slotWhere(d, b), line, chain: !!(has && disc[ek]), sig: e && !disc[ek] ? (has ? 'on' : 'dim') : '' };
 }
 function townHTML(t, i) {
   const pips = t.pips ? `<span class="tp">${[1, 2, 3].map(k => `<i class="${k < t.pips ? 'on' : k === t.pips ? 'nx' : ''}"></i>`).join('')}</span>` : '';
-  return `<i class="rv"></i><i class="rv"></i><i class="rv"></i><i class="rv"></i>${t.loud ? '<span class="lr">BUILD-BREAKER</span><s class="cfoil"></s>' : ''}
+  return `<i class="rv"></i><i class="rv"></i><i class="rv"></i><i class="rv"></i>${t.loud ? '<span class="lr">Shrine: stays forever, takes a hex</span><s class="cfoil"></s>' : ''}
     ${t.role ? `<span class="rt">${t.role}</span>` : ''}${t.chain ? '<s class="cb"></s>' : ''}${t.sig ? `<s class="sg ${t.sig}"></s>` : ''}
     <div class="md ${t.cls}">${t.art}${pips}</div><h3 class="disp">${escH(t.name)}</h3><div class="tg"><div class="br">${escH(t.kicker)}${t.role ? ' · ' + t.role : ''}</div>${t.home ? `<span class="sl">${t.home}</span>` : t.cls === 'evo' ? '<span class="sl">frees a slot</span>' : ''}</div>
     <div class="mid">${t.from ? `<div class="lb">${escH(t.from)}</div>` : ''}<p>${numHTML(escH(t.text))}</p>${t.note ? `<div class="nt">${escH(t.note)}</div>` : ''}${t.line ? `<div class="pl">${t.line}</div>` : ''}</div>
@@ -13114,12 +13140,13 @@ function hit(x, y, f, kind) {
 function placeHint(b) {
   const d = $('tw-dock'), ah = b.querySelector('.ah'); if (!d || !ah) return;
   const dr = d.getBoundingClientRect(), br = b.getBoundingClientRect();
-  ah.style.setProperty('--ahb', (br.bottom - dr.top + 12) + 'px'); ah.style.setProperty('--ahx', (dr.left + dr.width / 2 - br.left) + 'px');
+  const ar = ($('tw-abs') || b).getBoundingClientRect();   // LAS-129: above the dock, over the ability buttons only (left edge at the first button, reaching right)
+  ah.style.setProperty('--ahb', (br.bottom - dr.top + 12) + 'px'); ah.style.setProperty('--ahx', (ar.left - br.left) + 'px'); ah.style.translate = '0 0';
 }
 function abHint(S, k, b, a, now) {
   const key = 'ab' + k;
   if (hints[key]) return;
-  if (b._ah) { if (now - b._ah > 8000 || a.cd > 0 || S.pick) { hintDone(key); b.classList.remove('hint'); U.abHint = null; } return; }
+  if (b._ah) { if (now - b._ah > 10000 || a.cd > 0 || S.pick) { hintDone(key); b.classList.remove('hint'); b.querySelector('.ah').innerHTML = ''; U.abHint = null; } return; }
   if (U.abHint || a.cd > 0 || S.pick || U.paused || S.t < 6) return;
   if (k !== 'beam' && !S.picks.length) return;   // LAS-119: one instruction at a time: the click-the-sea lines wait for the first pick
   const I = Sim.abInfo(S, k);
@@ -13602,7 +13629,7 @@ function groups(S) {   // build order; an owned partner follows its main so the 
 }
 function tileHTML(s) {
   const e = s.evo ? EVO[s.evo] : null, th = uniq(tagsOf(s.id).concat(e && s.keep ? tagsOf(s.keep.id) : []));
-  return `<div class="bp" data-tw-portrait="b:${s.id}"></div>${e ? `<s class="bleg"></s><i class="bkeep">${bIcon(s.keep.id)}</i>` : ''}<em class="blv">${e ? '★' : RN[s.lv]}</em>${e ? '' : bPips(s.lv)}`
+  return `<div class="bp" data-tw-portrait="b:${s.id}"></div>${e ? `<s class="bleg"></s><i class="bkeep">${bIcon(s.keep.id)}</i>` : ''}<em class="blv">${e ? '★' : RN[s.lv]}</em>${e ? '' : bPips(s.lv)}<span class="bnm">${escH(e ? e[0] : (BLD[s.id] || [s.id])[0])}</span>`
     + `<span class="bth">${th.map(t => `<i style="--t:${THEME[t][1]}">${sigSVG(t)}</i>`).join('')}</span>`;
 }
 function buildPanel(S) {
