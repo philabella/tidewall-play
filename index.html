@@ -5677,7 +5677,7 @@ const SHADOW = false;   // LAS-49: the dark contact blob under swimmers: ~15% fp
 const RLOOK = {
   page: '#000', fog: '#000', fogDensity: 0.011,   // LAS-55: the dark is pure black
   hemiCol: '#8aa4bc', ground: '#080c10', hemi: 0.5, key: 1.9, keyCol: '#b8d6ff', keyPos: [-30, 24, 14],   // LAS-65: a dim cool fill; the key IS the beam (it turns with S.beam)
-  rimCol: '#4fc3c8', rim: 0, rimPos: [10, 14, 60], exposure: 1.15, shadow: 2048, shadowBox: 14,
+  rimCol: '#4fc3c8', rim: 0, rimPos: [10, 14, 60], exposure: 1.15, shadow: 3072, shadowBox: 26,   // LAS-86: the shadow box covers the wave-50 city (wall 21.8 m); more texels to keep the density
   amber: '#ffb36b', lamp: '#ffd08a', stone: '#6d6a66', stoneDark: '#45474a', roof: '#3a2f2c', rock: '#3b4446', rockDark: '#262d30',
   sea: '#0e3238', tide: '#7fb3aa', tideDeep: '#3e6863', eye: '#9ff5ea', boss: '#24413f', shot: '#ffc27a', spark: '#ffb36b', splash: '#7fe8dc',
   filter: 'none',
@@ -5689,7 +5689,7 @@ const RLOOK = {
   // LAS-26: the camera orbits the lighthouse (world origin) at camPitch deg; its distance follows the mounts' reach
   // (reach x camK, clamped camMin..camMax, eased ~1 s). Fog thins as it pulls back so the island stays clear.
   camPitch: 50, camLookY: 2.2, camK: 1.1, camMin: 36, camOpen: 88, camMax: 150,   // LAS-73: opens wider (74 -> 88) so the island, its slot rings and the dark read at once; the late camera wider still
-  camWide: 1.5, camWideWave: 30, camEase: 3, fogAt: 40,
+  camWide: 1.3, camWideWave: 30, camEase: 3, fogAt: 40,   // LAS-86: camWide 1.5 -> 1.3: the city is the hero of the late screen
   // LAS-27: the camera never pulls back so far that the citadel and its works (outer ring to the lighthouse's finial)
   // drop under fortMin of the screen height: per island step, share x distance ~ camFort (measured, checks/grow.js)
   camFort: [17.9, 21.2, 26.9, 32.6, 38.3], fortMin: 0.27,   // LAS-86: the fortress city's steps (estimated from the old ones, ~1.3 x wall radius + 10)
@@ -6112,6 +6112,7 @@ function buildScene() {
   mk(lamp2, new T3.ConeGeometry(0.42, 0.26, 4), RLOOK.roof, { p: [0, 0.34, 0.98], r: [0, Math.PI / 4, 0] });
   mk(lamp2, new T3.BoxGeometry(0.08, 0.08, 0.5), sd, { p: [0, 0.18, 0.7] });
   lamp2.visible = false;
+  R.lhM = [lh, shroud, lamp2];   // LAS-90: the lighthouse's groups (occluders: occTick)
   // a warm halo card behind the keep: the citadel stays the brightest thing on screen
   const halo = mk(scene, new T3.PlaneGeometry(14, 9), RLOOK.amber, { glow: 1, add: 1, p: [0, 4, -1.5] });
   halo.material.map = haloTex(); halo.material.opacity = 0.22; halo.material.needsUpdate = true; halo.visible = false;   // LAS-65: no warm halo behind the keep
@@ -6340,8 +6341,8 @@ function buildLand(scene, rocks) {
   PR.forEach(([y0, y1, rb, rt, c], i) => mk(rocks, rockify(new T3.CylinderGeometry(rt, rb, y1 - y0, 13, 1), 0.07, i * 5), c, { p: [0, (y0 + y1) / 2, 0], cast: true }));
   for (let i = 0; i < 30; i++) {
     let a = (i / 30) * Math.PI * 2 + jr() * 0.2; const d = 6.4 + jr() * 1.2, sc = 0.5 + jr() * 0.8;
-    // LAS-81: no boulder on a ring-1 hex (slots every 90 deg from the sea side, r TOWN.r[0]): turn it just clear of the tile
-    const s1 = Math.PI / 2, o1 = Math.atan2(Math.sin(a - s1), Math.cos(a - s1)), k1 = Math.round(o1 / s1), off = o1 - k1 * s1, need = (HEX.r + 0.25 + sc * 1.2) / d;
+    // LAS-81: no boulder on a ring-1 hex (slots every 90 deg, LAS-90: from 45 deg off the sea side, r TOWN.r[0]): turn it just clear of the tile
+    const s1 = Math.PI / 2, s0 = Math.PI * 0.75, o1 = Math.atan2(Math.sin(a - s0), Math.cos(a - s0)), k1 = Math.round(o1 / s1), off = o1 - k1 * s1, need = (HEX.r + 0.25 + sc * 1.2) / d;
     if (d - sc * 1.2 < TOWN.r[0] + HEX.r + 0.2 && Math.abs(off) < need) a += (off < 0 ? -need : need) - off;
     mk(rocks, new T3.IcosahedronGeometry(1, 0), jr() < 0.5 ? RLOOK.rock : RLOOK.rockDark,
       { p: [Math.cos(a) * d, 0.0 + jr() * 0.2, Math.sin(a) * d], s: [sc * 1.2, sc * 0.6, sc], r: [jr() * 3, jr() * 3, jr() * 3], cast: true });
@@ -6594,6 +6595,7 @@ function buildCitadel(scene, cit) {
     win(x + Math.cos(a) * 0.29, h * 0.55, z + Math.sin(a) * 0.29, a);
   }
   // the keep: buttressed drum, two rows of windows, corbels and a battlemented gun deck (the mounts stand on it)
+  const keep0 = cit.children.length;   // LAS-90: the keep's meshes fade when a hovered hex stands behind them (R.keepM)
   mk(cit, new T3.CylinderGeometry(1.52, 1.78, 0.6, 24), st, { p: [0, 0.3, 0], cast: true });
   mk(cit, new T3.CylinderGeometry(1.5, 1.62, DECK - 0.75, 24), st, { p: [0, 0.6 + (DECK - 0.75) / 2 - 0.15, 0], cast: true });
   for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + Math.PI / 6;
@@ -6604,6 +6606,7 @@ function buildCitadel(scene, cit) {
   mk(cit, new T3.CylinderGeometry(1.78, 1.66, 0.36, 32), sd, { p: [0, DECK - 0.18, 0], cast: true });
   mk(cit, new T3.CylinderGeometry(1.7, 1.7, 0.02, 32), '#57524c', { p: [0, DECK + 0.005, 0] });   // the deck floor
   merlonRing(0, 0, 1.68, DECK, 14, 0.3, 0.3, a => Math.abs(a - Math.PI / 2) < 0.2 || Math.abs(a - Math.PI / 2 - 0.6) < 0.18 || Math.abs(a - Math.PI / 2 + 0.6) < 0.18);
+  R.keepM = cit.children.slice(keep0);
   for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + 0.2; win(Math.cos(a) * 1.58, 1.4 + (i % 2) * 0.12, Math.sin(a) * 1.58, a, 1); if (i % 2) win(Math.cos(a + 0.5) * 1.55, 2.75, Math.sin(a + 0.5) * 1.55, a + 0.5); }
   // (LAS-26: the old spire at the back of the deck is gone: the lighthouse rises from the deck's centre instead)
 
@@ -7412,6 +7415,49 @@ R.hexAt = () => { const X = R.hex; if (!X) return null; const src = R.townSrc, s
   for (const [s, em] of [[e, true], [f, false]]) if (s) { const p = R.screenOf(s.x, s.y + HEX.top * TOWN.k, s.z); out.push({ x: p.x, y: p.y, empty: em }); }
   return out; };
 
+// ---------- LAS-90 occluders: the lighthouse, the keep and its gun towers fade to 35% while the hovered hex (or a building
+// rising / levelling) stands behind them on screen. The test is the camera's line of sight to the hex top and the building's
+// middle and top against each occluder as a vertical cylinder (r, top y); the fade swaps each mesh to a see-through clone of
+// its material (one clone per shared material, so nothing else on the island fades).
+const OCC = { fade: 0.35, lh: [1.0, 14.0], keep: [1.85, RLOOK.plateau + RLOOK.deck + 0.35], tower: [0.95, RLOOK.plateau + TOWER_H + 1.3], ease: 8 };
+function occCyls() {
+  const L = [[0, 0, OCC.lh[0], OCC.lh[1]], [0, 0, OCC.keep[0], OCC.keep[1]]];
+  (R.towers || []).forEach(g => { if (g && g.visible) L.push([g.position.x, g.position.z, OCC.tower[0], OCC.tower[1]]); });
+  return L;
+}
+R.occBehind = (x, y, z, cyls) => {   // is the world point (x, y, z) hidden from the camera by an occluder?
+  const c = R.cam.position, C = cyls || occCyls(), N = 40;
+  for (let s = 1; s < N; s++) { const f = s / N, px = c.x + (x - c.x) * f, py = c.y + (y - c.y) * f, pz = c.z + (z - c.z) * f;
+    if (py < 0) continue;
+    for (const q of C) if (py < q[3] && (px - q[0]) * (px - q[0]) + (pz - q[1]) * (pz - q[1]) < q[2] * q[2]) return true; }
+  return false;
+};
+function occMeshes() {
+  if (R.occList) return R.occList;
+  const L = []; for (const g of (R.lhM || []).concat(R.keepM || [])) g.traverse(o => { if (o.isMesh && !o.isInstancedMesh) L.push(o); });
+  return (R.occList = L);
+}
+function occTick(S, dt) {
+  const cyls = occCyls(), TW = R.town; let hid = !!R.occForce;
+  const behind = (x, y, z, h) => R.occBehind(x, y, z, cyls) || (h > 0 && (R.occBehind(x, y + h * 0.5, z, cyls) || R.occBehind(x, y + h, z, cyls)));
+  const recH = rec => rec && rec.sp ? (rec.sp.h || 1) * (rec.cs || 1) : 0;
+  const hv = R.hover, X = R.hex;
+  if (!hid && hv && X) { const s = X.list.find(q => q.ring === hv.ring && q.i === hv.slot), rec = TW && TW.recs.get(hv.ring * 16 + hv.slot);
+    if (s) hid = behind(s.x, s.y + HEX.top * TOWN.k, s.z, recH(rec)); }
+  if (!hid && TW) for (const rec of TW.recs.values()) if (rec.mode) { const p = rec.g.position; if (behind(p.x, p.y, p.z, recH(rec))) { hid = true; break; } }
+  const k0 = R.occK == null ? 1 : R.occK, k = R.occK = k0 + ((hid ? OCC.fade : 1) - k0) * Math.min(1, dt * OCC.ease);
+  if (k > 0.995 && !R.occOn) return;
+  const on = k <= 0.995, F = R.occMat || (R.occMat = new Map());
+  for (const m of occMeshes()) {
+    if (!m.userData.m0) m.userData.m0 = m.material;
+    const m0 = m.userData.m0; if (m0.transparent) continue;   // additive cards fade on their own
+    if (!on) { m.material = m0; continue; }
+    let c = F.get(m0); if (!c) { c = m0.clone(); c.transparent = true; c.onBeforeCompile = m0.onBeforeCompile; c.customProgramCacheKey = m0.customProgramCacheKey; F.set(m0, c); }
+    c.opacity = k; m.material = c;
+  }
+  R.occOn = on;
+}
+
 // ---------- LAS-73 the gold upgrades show on the island: every level adds something you can see. Powder stores (Heavy Shot),
 // a gun crew drilling by a shot pile (Quick Hands), shoring timbers and fresh stone at the wall (Mortar and Stone), salvage
 // from wrecks (Wreckers' Due) stand in the gaps between the first ring's hexes; the lamp's mechanism is on the lighthouse: brass
@@ -7442,12 +7488,17 @@ const UPROP = {   // lv key -> what each level adds: kind, how many at most, whe
   rot: { kind: 'weight', max: 10, at: j => { const a = -Math.PI / 2 + (j - 4.5) * 0.24, y = RLOOK.plateau + RLOOK.deck + RLOOK.lhH - 1.3 - (j % 3) * 0.35; return [Math.cos(a) * 0.86, y, Math.sin(a) * 0.86, 0]; } },
   crit: { kind: 'lantern', max: 15, at: j => { const a = -Math.PI / 2 + (j % 2 ? 1 : -1) * (0.25 + Math.floor(j / 2) * 0.4); return [Math.cos(a) * 0.86, RLOOK.plateau + RLOOK.deck + RLOOK.lhH + 0.16, Math.sin(a) * 0.86, 0]; } },
 };
+// LAS-90: the ring-1 gaps turned 45 deg with the slots (now on the axes), so the ground stores turn with them: kegs at the
+// land's left, the crew at the gate (camera side), the shoring on the sea side (where the Tide hits), the salvage at the right
+const UP_TURN = Math.PI / 4, UP_GROUND = new Set(['dmg', 'rate', 'rateShot', 'wall', 'bounty']);
+function upAt(k, j) { const p = UPROP[k].at(j); if (!UP_GROUND.has(k)) return p; const c = Math.cos(UP_TURN), s = Math.sin(UP_TURN);
+  return [p[0] * c + p[2] * s, p[1], p[2] * c - p[0] * s, p[3] + UP_TURN]; }
 function upInit() {
   if (R.ups) return R.ups;
   const m = new T3.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.15 }), geos = {}, d = new T3.Object3D(), grp = new T3.Group(); R.scene.add(grp);
   const P = {};
   for (const k in UPROP) { const U0 = UPROP[k], g = geos[U0.kind] || (geos[U0.kind] = upGeo(U0.kind)), im = new T3.InstancedMesh(g, m, U0.max);
-    for (let j = 0; j < U0.max; j++) { const p = U0.at(j); d.position.set(p[0], p[1], p[2]); d.rotation.set(0, p[3], 0); d.updateMatrix(); im.setMatrixAt(j, d.matrix); }
+    for (let j = 0; j < U0.max; j++) { const p = upAt(k, j); d.position.set(p[0], p[1], p[2]); d.rotation.set(0, p[3], 0); d.updateMatrix(); im.setMatrixAt(j, d.matrix); }
     im.count = 0; im.castShadow = true; im.receiveShadow = true; grp.add(im); P[k] = im; }
   return (R.ups = { P, grp, sig: '' });
 }
@@ -7457,7 +7508,9 @@ function upTick(S) {
   for (const k in UPROP) { const n = lv[k === 'rateShot' ? 'rate' : k] || 0; U0.P[k].count = Math.min(UPROP[k].max, k === 'rateShot' ? Math.ceil(n / 2) : n); }
 }
 function townPos(ring, i) {   // [x, y, z] of slot i of ring (1..4); i = fill order: 0 = the sea side, then alternately left and right
-  const n = TOWN.n[ring - 1], o = i === 0 ? 0 : (i % 2 ? (i + 1) / 2 : -i / 2), a = Math.PI / 2 + o * Math.PI * 2 / n;
+  // LAS-90: each ring turned by half a slot step, so no slot sits on the camera's centre line behind the lighthouse and the keep
+  // (ring 1 at +-45 deg from the sea side); slot 0 and 1 are the two sea-side slots, then outward pair by pair
+  const n = TOWN.n[ring - 1], o = (i % 2 ? -(i + 1) / 2 : i / 2) + 0.5, a = Math.PI / 2 + o * Math.PI * 2 / n;
   return [Math.cos(a) * TOWN.r[ring - 1], TOWN.y[ring - 1], Math.sin(a) * TOWN.r[ring - 1]];
 }
 function townInit() {
@@ -7534,8 +7587,8 @@ function townTick(S, t, dt) {
     // life: flames flicker, lanterns breathe, the bell sways and rings now and then
     TQ.copy(rec.q).multiply(R.cam.quaternion); const ph = rec.ph;
     rec.fires.forEach((f, j) => { const k = 0.8 + 0.2 * Math.sin(t * 11 + j * 2.7 + ph) * Math.sin(t * 5.3 + j + ph) + 0.08 * Math.sin(t * 23 + j * 5);
-      f.m.scale.set(f.s * k, f.s * (0.8 + 0.5 * k), f.s * k); f.h.quaternion.copy(TQ); f.h.scale.setScalar(2.4 * f.s * k * cs); });
-    rec.lamps.forEach((l, j) => { l.h.quaternion.copy(TQ); l.h.scale.setScalar(cs * l.s * (0.9 + 0.1 * Math.sin(t * 3.1 + j + ph))); });
+      f.m.scale.set(f.s * k, f.s * (0.8 + 0.5 * k), f.s * k); f.h.quaternion.copy(TQ); f.h.scale.setScalar(1.4 * f.s * k); });   // LAS-86: inside pv (already x cs): no second cs
+    rec.lamps.forEach((l, j) => { l.h.quaternion.copy(TQ); l.h.scale.setScalar(0.7 * l.s * (0.9 + 0.1 * Math.sin(t * 3.1 + j + ph))); });
     if (rec.bell) { const c = (t + ph) % 9, ring = c < 3 ? Math.exp(-c * 0.9) * Math.sin(c * 9) : 0; rec.bell.g.rotation.z = rec.bell.amp * ring + 0.04 * Math.sin(t * 1.3 + ph); }
   }
 }
@@ -7580,13 +7633,13 @@ function cityRing(k) {   // the land and the town of ring k (1..4), into a fresh
   // the town: rows of houses round the ring, clear of the hexes, the gate road (toward the camera) and the gun towers
   const slots = []; for (let i = 0; i < TOWN.n[k - 1]; i++) slots.push(townPos(k, i));
   const GA = -Math.PI / 2, MA = TOWER_A.concat(TOWER_A.map(q => q + 0.5)), dA = (p, q) => Math.abs(Math.atan2(Math.sin(p - q), Math.cos(p - q)));
-  const clear = HEX.r * TOWN.k + 1.0, hi = 0.5 * (4 - k);
-  for (let r = a + 1.3; r < b - 1.0; r += 2.5) {
+  const clear = HEX.r * TOWN.k + 0.35, hi = 0.5 * (4 - k);
+  for (let r = a + 1.1; k > 1 && r < b - 0.9; r += 2.1) {   // ring 1 is the keep's rock (its gaps hold the gold upgrades' stores)
     let t = jr() * 0.3;
     while (t < Math.PI * 2) {
       const w = 1.6 + jr() * 1.1, dd = 1.5 + jr() * 0.6, tw = w / r, c = t + tw / 2; t += tw + (0.25 + jr() * 0.5) / r;
       const x = Math.cos(c) * r, z = Math.sin(c) * r;
-      if (dA(c, GA) < 1.7 / r || MA.some(q => dA(c, q) < 2.6 / r) || slots.some(p => Math.hypot(p[0] - x, p[2] - z) < clear + w * 0.4) || jr() < 0.12) continue;
+      if (dA(c, GA) < 1.7 / r || MA.some(q => dA(c, q) < 2.6 / r) || slots.some(p => Math.hypot(p[0] - x, p[2] - z) < clear + w * 0.3) || jr() < 0.08) continue;
       const ry = Math.PI / 2 - c, out = [Math.cos(c), Math.sin(c)], tall = jr() < 0.1;
       if (tall) {   // a watch tower: a drum, a lit slit, a steep spire
         const h = 4.2 + jr() * 1.6 + hi;
@@ -7598,9 +7651,9 @@ function cityRing(k) {   // the land and the town of ring k (1..4), into a fresh
       }
       const h = 1.6 + jr() * 1.5 + hi * (0.6 + jr() * 0.6), wc = CITY.house[Math.floor(jr() * CITY.house.length)];
       mk(g, new T3.BoxGeometry(w, h, dd), wc, { p: [x, top + h / 2, z], r: [0, ry, 0], cast: true });
-      // a steep gable roof: a 3-sided prism along the house (ridge tangential), sometimes a second, lower wing
-      const rh = 0.9 + jr() * 0.9, roof = new T3.CylinderGeometry(dd * 0.62, dd * 0.62, w + 0.16, 3, 1); roof.rotateZ(Math.PI / 2); roof.scale(1, rh / (dd * 0.31), 1);
-      mk(g, roof, CITY.roof[Math.floor(jr() * CITY.roof.length)], { p: [x, top + h + rh * 0.48, z], r: [0, ry, 0], cast: true });
+      // a steep gable roof: a box turned 45 deg about the ridge (along the house), its lower half inside the walls
+      const rh = 0.9 + jr() * 0.9, roof = new T3.BoxGeometry(w + 0.2, 1, 1); roof.rotateX(Math.PI / 4); roof.scale(1, rh / 0.707, (dd / 2 + 0.14) / 0.707);
+      mk(g, roof, CITY.roof[Math.floor(jr() * CITY.roof.length)], { p: [x, top + h, z], r: [0, ry, 0], cast: true });
       // windows: small warm panes on the faces toward the sea and the lighthouse (the city's own light), some dark
       for (const s of [1, -1]) if (jr() < 0.5) { const n = w > 2.1 ? 2 : 1;
         for (let m = 0; m < n; m++) { const o = n > 1 ? (m - 0.5) * w * 0.45 : 0; mk(g, new T3.BoxGeometry(0.22, 0.3, 0.05), CITY.win, { glow: 1, p: [x + s * out[0] * (dd / 2 + 0.01) - out[1] * o, top + h * (0.55 + 0.15 * jr()), z + s * out[1] * (dd / 2 + 0.01) + out[0] * o], r: [0, ry, 0] }); } }
@@ -8197,10 +8250,11 @@ function frame(S, alpha, now) {
   }
 
   // the mounts turn, fire and recoil; the citadel shows its damage; smoke drifts
-  flankTick(t); mountsTick(S, t, dtR, alpha); guardsTick(S, t, dtR, alpha); townTick(S, t, dtR); hexTick(S, t, dtR); upTick(S); growth(S, dtR, t); damage(S, t, dtR); smokeTick(dtR); ringsTick(t);
+  flankTick(t); mountsTick(S, t, dtR, alpha); guardsTick(S, t, dtR, alpha); townTick(S, t, dtR); hexTick(S, t, dtR); occTick(S, dtR); upTick(S); growth(S, dtR, t); damage(S, t, dtR); smokeTick(dtR); ringsTick(t);
   const dT0 = Math.max(RLOOK.camOpen, RLOOK.camMin, Math.min(RLOOK.camMax, RLOOK.camFort[R.isleStep || 0] / RLOOK.fortMin, (reach(S) + (R.off || 0)) * RLOOK.camK));   // the reach is drawn R.off further out
   // LAS-51: the late game shows its horde: the view widens up to x1.5 (77 m -> ~115 m) with the island steps / the wave, eased
-  const lg = Math.min(1, Math.max((R.isleStep || 0) / 3, (S.wave || 0) / RLOOK.camWideWave)), dT = dT0 * (1 + (RLOOK.camWide - 1) * lg * lg * (3 - 2 * lg));
+  // LAS-86: with the island town the camera pulls back per ring that opens (ring 1 = closest, ring 4 = the widest), not per wave
+  const tr = R.townSrc && R.townSrc.rings, lg = tr ? Math.min(1, (tr - 1) / 3) : Math.min(1, Math.max((R.isleStep || 0) / 3, (S.wave || 0) / RLOOK.camWideWave)), dT = dT0 * (1 + (RLOOK.camWide - 1) * lg * lg * (3 - 2 * lg));
   R.camD = R.camD ? R.camD + (dT - R.camD) * Math.min(1, dtR * RLOOK.camEase) : dT; camBase(R.camD);
 
   // shots in flight: from their mount's muzzle to the target's chest, an arc per gun (the Mortar lobs high), progress
@@ -9506,6 +9560,23 @@ const LAS83CSS = `
 #tw-why{width:100%;display:flex;flex-direction:column;gap:6px;margin:4px 0 16px;font-size:max(18px,1.75vh);color:var(--bone2);text-align:center;font-family:Barlow,"Segoe UI",sans-serif}
 #tw-why b{color:var(--bone);font-weight:600}#tw-why .k{font-family:var(--fell);font-style:italic;color:var(--ash);margin-right:8px}
 `;
+const LAS87CSS = `
+/* LAS-87: every Forge node wears a glyph (or a building's portrait); the state is the colour: bone = forged, lantern = can forge, branch colour = ready, ash = locked */
+.fn svg{width:64%;height:64%;fill:none;stroke:currentColor;stroke-width:4.4;stroke-linecap:round;stroke-linejoin:round;pointer-events:none;overflow:visible}
+.fn svg .f{fill:currentColor;fill-opacity:.26}
+.fn.key svg{width:68%;height:68%}
+.fn.rdy{color:color-mix(in srgb,var(--c) 55%,var(--bone))}
+.fn.lock{color:#77705f}.fn.lock svg{opacity:.8}.fn.ex svg{opacity:.4}
+.fn.own{color:var(--bone);background:color-mix(in srgb,var(--c) 22%,#060606)}
+.fn.can{color:var(--lantern);box-shadow:0 0 18px rgba(217,228,234,.5),inset 0 0 10px rgba(217,228,234,.18)}
+.fn img.pt{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover;pointer-events:none}
+.fn.lock img.pt{filter:grayscale(.85) brightness(.5)}.fn.rdy img.pt{filter:saturate(.7) brightness(.85)}.fn.ex img.pt{filter:grayscale(1) brightness(.35)}
+.fn i.ck,.fn i.ks{position:absolute;display:flex;align-items:center;justify-content:center;width:36%;height:36%;min-width:11px;min-height:11px;border-radius:50%;background:#000;font-style:normal;font-size:max(9px,calc(var(--d) * .22));line-height:1;border:1px solid currentColor}
+.fn i.ck{right:-14%;bottom:-14%;color:var(--bone)}
+.fn i.ks{left:-14%;top:-14%;color:var(--c)}
+.fn.bld::after{display:none}
+.fg-view.far .fn:not(.key) i.ck{display:none}
+`;
 const HORRORCSS = `
 /* LAS-76: the whole UI shrouded in darkness (spec: art/ui-horror.md). Appended last, so it wins. No frames, no brass, no dials: things
    come out of the black, lit from one lantern at the left edge. Type: Fell (names, words) + Barlow (numbers, body). */
@@ -9882,7 +9953,7 @@ function build() {
   const digits = () => { const ff = document.getElementById('tw-fonts'), bf = ff && ff.textContent.match(/@font-face{font-family:'Barlow';font-style:normal;font-weight:400[^}]*}/);
     if (bf) { const f = el('style'); f.textContent = bf[0].replace("'Barlow'", "'FellNum'").replace(/}$/, ';unicode-range:U+30-39,U+25,U+2B,U+2212}'); document.head.appendChild(f); } };
   if (document.readyState === 'complete') digits(); else root.addEventListener('load', digits);
-  const st = el('style'); st.textContent = CSS + TOWNCSS + CARTCSS + HORRORCSS + LAS83CSS; document.body.insertAdjacentHTML('afterbegin', TWArt.DEFS); document.head.appendChild(st);
+  const st = el('style'); st.textContent = CSS + TOWNCSS + CARTCSS + HORRORCSS + LAS83CSS + LAS87CSS; document.body.insertAdjacentHTML('afterbegin', TWArt.DEFS); document.head.appendChild(st);
   const ui = el('div'); ui.id = 'twui';
   ui.innerHTML = `
   <canvas id="tw-aim"></canvas><div id="tw-vig"></div><div id="tw-hit"></div>
@@ -10801,6 +10872,89 @@ function fgBox() {
   const N = Sim.TUNE.forge.nodes, xs = N.map(n => n.x), ys = N.map(n => n.y);
   return (FG_BOX = { x0: Math.min(...xs) - 16, x1: Math.max(...xs) + 16, y0: Math.min(...ys) - 15, y1: Math.max(...ys) + 40 });
 }
+// LAS-87: a glyph for every Forge node (64x64, stroke = currentColor, .f = soft fill). By what the node does (eff key); a few by id.
+const FGI = {
+  powder: '<path class="f" d="M20 24h24l4 8v20a4 4 0 01-4 4H20a4 4 0 01-4-4V32z"/><path d="M24 24l-2-6h20l-2 6M32 24c0-6 6-6 8-14M24 38h16M24 46h16"/>',
+  fast: '<path d="M8 18l16 14L8 46M28 18l16 14-16 14"/><path class="f" d="M46 22l10 10-10 10z"/>',
+  ballista: '<path class="f" d="M6 32h40l8-6v12l-8-6"/><path d="M14 14c8 6 8 30 0 36M14 14l30 18-30 18M30 40v10M24 50h12"/>',
+  bronze: '<path class="f" d="M14 22h36v10c0 10-8 18-18 22-10-4-18-12-18-22z"/><path d="M14 22h36M32 22v32"/>',
+  chain: '<rect class="f" x="6" y="24" width="28" height="16" rx="8"/><rect x="30" y="24" width="28" height="16" rx="8"/>',
+  mortar: '<path class="f" d="M14 46h36l-4 10H18z"/><path d="M22 46l-4-18 12-6 14 6-4 18"/><circle class="f" cx="42" cy="12" r="5"/><path d="M36 18l-4 4"/>',
+  loaders: '<path class="f" d="M10 38h28v12H10z"/><path d="M38 44h16M10 38l6-12h16l6 12M22 26v-8h8v8"/><circle cx="18" cy="54" r="3"/><circle cx="32" cy="54" r="3"/>',
+  tesla: '<path d="M32 4v12"/><path class="f" d="M36 16L20 36h10l-4 22 20-28H34z"/>',
+  rifling: '<path class="f" d="M6 28h44v8H6z"/><path d="M50 26h8v12h-8M12 28l6 8M22 28l6 8M32 28l6 8M42 28l6 8"/><path d="M6 46h30M6 52h20"/>',
+  master: '<path class="f" d="M32 6l7 18 19 2-14 12 5 19-17-10-17 10 5-19L6 26l19-2z"/><path d="M32 22v14M25 29h14"/>',
+  range: '<circle cx="32" cy="32" r="22"/><circle cx="32" cy="32" r="12" stroke-dasharray="3 4"/><circle class="f" cx="32" cy="32" r="3"/><path d="M32 4v8M32 52v8M4 32h8M52 32h8"/>',
+  steel: '<path class="f" d="M32 4l8 8v30l-8 8-8-8V12z"/><path d="M32 4v46M20 44h24M26 52h12v8H26z"/>',
+  doom: '<path class="f" d="M32 8c-13 0-22 9-22 21 0 8 4 13 10 16v9h6v-5h12v5h6v-9c6-3 10-8 10-16 0-12-9-21-22-21z"/><path d="M20 30l8 4-8 3zM44 30l-8 4 8 3zM32 38l-3 7h6z"/>',
+  hammer: '<path class="f" d="M10 12h30v14H10z"/><path d="M40 19h10M25 26v32M18 58h14"/>',
+  stone: '<path class="f" d="M6 38h22v14H6zM32 38h26v14H32zM14 24h24v14H14zM42 24h16v14H42z"/>',
+  keep: '<path class="f" d="M14 58V22h36v36z"/><path d="M10 22V10h8v6h8v-6h12v6h8v-6h8v12zM26 58V42a6 6 0 0112 0v16"/>',
+  moat: '<path d="M4 20c6-8 12-8 18 0s12 8 18 0 12-8 20 0M4 34c6-8 12-8 18 0s12 8 18 0 12-8 20 0M4 48c6-8 12-8 18 0s12 8 18 0 12-8 20 0"/>',
+  slot: '<path class="f" d="M8 40h30v10H8zM14 30h18v10H14z"/><path d="M38 44h18M44 34h12M48 24v20M42 30h12"/>',
+  regen: '<path class="f" d="M32 56C12 42 6 32 6 22a12 12 0 0126-4 12 12 0 0126 4c0 10-6 20-26 34z"/><path d="M32 24v18M23 33h18"/>',
+  spikes: '<path class="f" d="M8 54l8-34 8 34zM24 54l8-40 8 40zM40 54l8-34 8 34z"/><path d="M4 54h56"/>',
+  bastion: '<path class="f" d="M8 56V26h12v-8h8v8h8v-8h8v8h12v30z"/><path d="M8 26h48M26 56V42a6 6 0 0112 0v14"/>',
+  tar: '<path class="f" d="M32 6c10 14 18 22 18 32a18 18 0 01-36 0c0-10 8-18 18-32z"/><path d="M22 40c0 6 4 10 10 10"/>',
+  hp: '<path class="f" d="M32 6l22 8v16c0 14-10 24-22 28C20 54 10 44 10 30V14z"/><path d="M32 18v22M22 29h20"/>',
+  brine: '<path d="M6 40c6-8 12-8 18 0s12 8 18 0 8-6 16-2"/><path class="f" d="M12 30l6-22 6 22zM28 30l6-22 6 22z"/>',
+  heart: '<path class="f" d="M32 58C10 42 4 32 4 22a14 14 0 0128-4 14 14 0 0128 4c0 10-6 20-28 36z"/><path d="M14 22c0-4 3-7 7-7"/>',
+  unbroken: '<path class="f" d="M32 6l22 8v16c0 14-10 24-22 28C20 54 10 44 10 30V14z"/><path d="M22 32l8 8 14-18"/>',
+  beam: '<circle class="f" cx="16" cy="32" r="8"/><path d="M26 22l34-10M26 32h34M26 42l34 10"/>',
+  lens: '<circle class="f" cx="32" cy="32" r="12"/><path d="M32 6v10M32 48v10M6 32h10M48 32h10M14 14l7 7M43 43l7 7M50 14l-7 7M21 43l-7 7"/>',
+  clock: '<circle cx="32" cy="32" r="22"/><path class="f" d="M32 16v16l10 8"/><path d="M32 4v4M32 56v4M4 32h4M56 32h4"/>',
+  keg: '<path class="f" d="M18 12h28c4 10 4 30 0 40H18c-4-10-4-30 0-40z"/><path d="M16 22h32M16 42h32M32 12v-6"/><circle cx="32" cy="4" r="2"/>',
+  bell: '<path class="f" d="M32 8c-12 0-18 10-18 24v10H8v6h48v-6h-6V32C50 18 44 8 32 8z"/><circle cx="32" cy="52" r="4"/><path d="M32 4v4"/>',
+  lamp2: '<path class="f" d="M18 8c6 8 10 14 10 22a10 10 0 01-20 0c0-6 4-10 6-14 0 4 3 5 5 4-1-5-1-8-1-12zM46 20c5 6 9 10 9 18a9 9 0 01-18 0c0-5 3-8 5-11 0 3 2 4 4 3-1-4-1-6 0-10z"/>',
+  broad: '<circle class="f" cx="10" cy="32" r="6"/><path d="M18 26L58 8v48L18 38z"/>',
+  sluice: '<path class="f" d="M10 8h10v48H10zM44 8h10v48H44z"/><path d="M20 20h24M20 32h24M20 44h24" stroke-dasharray="3 4"/><path d="M26 26l-6 6 6 6"/>',
+  prism: '<path class="f" d="M32 6l24 44H8z"/><path d="M0 34l22 4M42 30l22-10M42 36l22 2M42 42l22 10"/>',
+  storm: '<path d="M18 36a12 12 0 1112-20 10 10 0 0118 10 8 8 0 01-4 10H20"/><path class="f" d="M34 36l-8 14h8l-4 12 14-18h-8l4-8z"/>',
+  undertow: '<path d="M6 22c8-6 14-6 20 0s12 6 18 0M6 36c8-6 14-6 20 0s12 6 18 0"/><path class="f" d="M32 46h22l-6 10H38z"/><path d="M44 20v12m-6-6l6 6 6-6"/>',
+  harpoon: '<path class="f" d="M50 6l8 8-20 8-8-8z"/><path d="M30 18L6 54M36 22l-6 6M14 42c-6 2-8 8-6 14 6 2 12 0 14-6"/>',
+  barb: '<path class="f" d="M40 6l12 12-24 26L16 32z"/><path d="M34 12L10 52M22 40l-10 4 4-10M40 26l10 6-8 4"/>',
+  eye: '<path class="f" d="M4 32c8-14 18-20 28-20s20 6 28 20c-8 14-18 20-28 20S12 46 4 32z"/><circle cx="32" cy="32" r="10"/><circle class="f" cx="32" cy="32" r="4"/><path d="M32 2v6M16 8l3 5M48 8l-3 5"/>',
+  gold: '<circle class="f" cx="32" cy="32" r="22"/><circle cx="32" cy="32" r="14"/><path d="M32 24v16M27 28h8a3 3 0 010 6h-6a3 3 0 000 6h8"/>',
+  chest: '<path class="f" d="M8 28h48v26H8z"/><path d="M8 28c0-12 10-18 24-18s24 6 24 18M32 28v26M26 38h12v8H26z"/>',
+  embers: '<path class="f" d="M32 4c4 10 14 14 14 28a14 14 0 01-28 0c0-6 3-10 6-14 0 6 3 8 6 8-2-8-1-14 2-22z"/><path d="M26 54l-4 6M38 54l4 6M32 56v6"/>',
+  costcut: '<path class="f" d="M6 30L30 6h26v26L32 58z"/><circle cx="44" cy="20" r="4"/><path d="M26 44l22-22M24 28h-0"/>',
+  trophy: '<path class="f" d="M18 8h28v14c0 10-6 16-14 16s-14-6-14-16z"/><path d="M18 14h-8c0 10 4 14 10 14M46 14h8c0 10-4 14-10 14M32 38v12M20 58h24M24 50h16"/>',
+  crown: '<path class="f" d="M8 48L4 18l16 14L32 10l12 22 16-14-4 30z"/><path d="M8 54h48"/><circle cx="4" cy="16" r="2"/><circle cx="32" cy="8" r="2"/><circle cx="60" cy="16" r="2"/>',
+  tolls: '<path class="f" d="M8 22h48v10H8z"/><path d="M12 32v24M52 32v24M8 22l4-10M56 22l-4-10M20 26h8M34 26h8"/>',
+  dawn: '<path class="f" d="M10 46a22 22 0 0144 0z"/><path d="M4 52h56M32 8v8M12 18l6 6M52 18l-6 6"/>',
+  spoils: '<path class="f" d="M12 22h40l-4 32H16z"/><path d="M22 22c0-10 20-10 20 0M24 34h16M26 44h12"/>',
+  crit: '<path class="f" d="M32 4l8 20 20 2-15 13 5 19-18-11-18 11 5-19L4 26l20-2z"/>',
+  pick: '<rect class="f" x="8" y="14" width="22" height="34" rx="3" transform="rotate(-10 19 31)"/><rect x="24" y="12" width="22" height="34" rx="3"/><rect class="f" x="36" y="16" width="22" height="34" rx="3" transform="rotate(10 47 33)"/>',
+  hand: '<path class="f" d="M32 6l8 16 18 2-13 12 4 18-17-9-17 9 4-18L6 24l18-2z"/><path d="M32 18v16"/><circle cx="32" cy="42" r="2"/>',
+  reroll: '<path d="M52 24A22 22 0 1018 52"/><path class="f" d="M52 10v16H36zM12 54V38h16z"/><path d="M12 40A22 22 0 0046 12"/>',
+  owl: '<path class="f" d="M12 14l10 6h20l10-6v26c0 10-8 18-20 18S12 50 12 40z"/><circle cx="24" cy="32" r="7"/><circle cx="40" cy="32" r="7"/><circle class="f" cx="24" cy="32" r="2"/><circle class="f" cx="40" cy="32" r="2"/><path d="M30 42l2 4 2-4z"/>',
+  tides: '<path d="M6 20c8-8 14-8 20 0s12 8 20 0M6 34c8-8 14-8 20 0s12 8 20 0"/><path class="f" d="M50 40a14 14 0 100 18 12 12 0 010-18z"/>',
+  omen: '<path class="f" d="M6 32c8-12 18-18 26-18s18 6 26 18c-8 12-18 18-26 18S14 44 6 32z"/><path d="M32 22v20M22 32h20"/><circle cx="32" cy="32" r="3"/>',
+  wild: '<rect class="f" x="10" y="10" width="44" height="44" rx="9"/><circle cx="22" cy="22" r="3"/><circle cx="42" cy="22" r="3"/><circle cx="32" cy="32" r="3"/><circle cx="22" cy="42" r="3"/><circle cx="42" cy="42" r="3"/>',
+  echo: '<circle class="f" cx="32" cy="32" r="6"/><circle cx="32" cy="32" r="14"/><circle cx="32" cy="32" r="22" opacity=".7"/><circle cx="32" cy="32" r="29" opacity=".4"/>',
+  ring: '<circle cx="32" cy="32" r="22"/><circle cx="32" cy="32" r="14" stroke-dasharray="4 4"/><path class="f" d="M32 4l4 10h-8zM32 60l4-10h-8zM4 32l10-4v8zM60 32l-10-4v8z"/>',
+  casemate: '<path class="f" d="M6 52V30c0-8 8-14 26-14s26 6 26 14v22z"/><path d="M6 52h52M22 52V40h8v12M34 40h12M34 46h12"/>',
+  rampart: '<path class="f" d="M6 56V30h10v-8h8v8h16v-8h8v8h10v26z"/><path d="M6 30h52M16 56V40h12v16"/>',
+  tollgate: '<path class="f" d="M8 56V20c0-8 8-14 24-14s24 6 24 14v36z"/><path d="M20 56V34c0-8 24-8 24 0v22M32 28v28"/>',
+  wrecks: '<path class="f" d="M8 40h48l-8 14H18z"/><path d="M30 40V10l16 14H30M30 40l-8-4"/><path d="M4 58c6-4 10-4 14 0s10 4 14 0 10-4 14 0 10 4 14 0"/>',
+  signal: '<path class="f" d="M24 56V30l8-8 8 8v26z"/><path d="M20 14c8-8 16-8 24 0M12 8c12-12 28-12 40 0M32 30v-6"/>',
+  flare: '<path class="f" d="M32 6l6 20 20 6-20 6-6 20-6-20-20-6 20-6z"/><circle cx="32" cy="32" r="4"/>',
+};
+// the first eff key (and for 'unlock' the mount) -> a glyph; per-id overrides first
+const FGI_ID = { g_powder: 'powder', g_drill: 'fast', g_bronze: 'bronze', g_loaders: 'loaders', g_barrels: 'range', g_ballista: 'ballista', g_mortar: 'mortar', g_tesla: 'tesla',
+  w_stone: 'stone', w_keep: 'keep', w_bastion: 'bastion', w_tar: 'tar', w_lime: 'regen', w_ward: 'regen', w_moat: 'moat', w_brine: 'brine', w_bulwark: 'hp', w_heart: 'heart',
+  l_lens: 'lens', l_clock: 'clock', l_broad: 'broad', l_prism: 'prism', l_bell: 'bell', l_bell2: 'bell', l_twin: 'lamp2', l_eye: 'eye',
+  p_salvage: 'gold', p_charter: 'gold', p_tolls: 'tolls', p_chest: 'chest', p_hoard: 'chest', p_bellows: 'embers', p_furnace: 'embers', p_ledger: 'embers',
+  p_guild: 'costcut', p_guild2: 'costcut', p_trophy: 'trophy', p_crown: 'crown', p_dawn: 'dawn', p_spoils: 'spoils',
+  a_eye: 'omen', a_owl: 'owl', a_hand: 'hand', a_iron: 'hand', a_fourth: 'pick', a_fifth: 'pick', a_redraw: 'reroll', a_third: 'reroll', a_seer: 'reroll', a_tides: 'tides',
+  a_omen: 'omen', a_omen2: 'omen', a_wild: 'wild', a_echo: 'echo', x_casemate: 'casemate', x_rampart: 'rampart', x_tollgate: 'tollgate', x_wrecks: 'wrecks', x_augury: 'reroll',
+  x_oracle: 'omen', x_starglass: 'ring', x_lantern: 'hand', x_signal: 'signal', x_flare: 'flare' };
+const FGI_KEY = { dmgX: 'powder', rate: 'fast', splash: 'chain', kindPlus: 'master', range: 'range', hammer: 'hammer', hp: 'stone', hpX: 'hp', moat: 'moat', slot2: 'slot', slot3: 'slot',
+  regen: 'regen', spikes: 'spikes', unbroken: 'unbroken', beamX: 'beam', beamW: 'broad', keg: 'keg', abCd: 'bell', lamp2: 'lamp2', floodPush: 'sluice', kegR: 'storm', floodDmg: 'undertow',
+  harpoon: 'harpoon', harpoonX: 'barb', eye: 'eye', gold: 'gold', startGold: 'chest', embers: 'embers', costCut: 'costcut', bossEmbersX: 'trophy', starX: 'dawn', spoils: 'spoils',
+  crit: 'crit', pickN: 'pick', critMulX: 'hand', reroll: 'reroll', pickEvery: 'tides', startPick: 'omen', loudAll: 'wild', echo: 'echo', ring: 'ring' };
+const fgGlyph = n => { const g = FGI_ID[n.id] || FGI_KEY[Object.keys(n.eff)[0]]; return FGI[g] || FGI.powder; };
+
 function forgeHTML(M) {
   const F = Sim.TUNE.forge, cost = Sim.nodeCost(M), nx = Sim.nextNode(M), need = nx ? Math.max(0, nx.cost - M.embers) : 0;
   const D = Sim.newDawnInfo(M), live = !!Sim.newDawn && D.can && D.gain >= 1, x2 = v => 'x' + +(+v).toFixed(2);
@@ -10841,8 +10995,9 @@ function forgeHTML(M) {
   // nodes and their names (names show for keystones, the centre and what can be forged now; all of them once zoomed in)
   for (const n of F.nodes) {
     const i = I[n.id], st = i.owned ? 'own' : i.excluded ? 'ex' : i.ready ? 'rdy' + (i.can ? ' can' : '') : 'lock';
-    const gl = n.key ? '&#x2726;' : i.owned ? '&#x2713;' : '';
-    dom += `<button class="fn ${st}${n.key ? ' key' : ''}${forgeBuild(n.id) ? ' bld' : ''}" style="--c:${FG_COL[n.b]}" data-node="${n.id}" data-x="${n.x}" data-y="${n.y}" data-r="${FG_R(n)}">${gl}</button>`;
+    const fb = forgeBuild(n.id), pic = fb && root.TWRender && root.TWRender.portraitStill ? root.TWRender.portraitStill('b:' + fb, 96, 96) : '';   // LAS-87: a building node shows its portrait, the rest a glyph of what they do
+    const inner = (pic ? `<img class="pt" src="${pic}" alt="">` : `<svg viewBox="0 0 64 64">${fgGlyph(n)}</svg>`) + (i.owned ? '<i class="ck">&#x2713;</i>' : '') + (n.key ? '<i class="ks">&#x2726;</i>' : '');
+    dom += `<button class="fn ${st}${n.key ? ' key' : ''}${fb ? ' bld' : ''}" style="--c:${FG_COL[n.b]}" data-node="${n.id}" data-x="${n.x}" data-y="${n.y}" data-r="${FG_R(n)}">${inner}</button>`;
     const show = n.key || (i.ready && !i.owned) ? '' : ' opt';
     const sub = i.owned ? '' : i.ready ? `<span class="c num"><span class="emb"></span>${fmt(i.cost)}</span>` : n.key ? `<span class="c">Keystone &middot; ${i.gate} nodes</span>` : '';
     dom += `<div class="fl${show}${n.key ? ' key' : ''}${i.can ? ' can' : ''}${i.owned || i.excluded || (!i.ready && !n.key) ? ' dim' : ''}" data-x="${n.x}" data-y="${n.y}" data-r="${FG_R(n)}">${i.name}${sub}</div>`;
