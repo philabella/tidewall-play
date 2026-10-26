@@ -6244,7 +6244,8 @@ const RLOOK = {
   // 88 m opening x camWide per ring: wave 1 ~50 m, the wave-50 city ~80-100 m; camEase 3 -> 1.2 so a new ring's pull-back takes ~2 s
   camPitch: 40, camLookY: 2.2, camMin: 36, camMax: 150, camSide: 0.85, camFar: 1.0, camCity: 0.66, camTop: 10,
   camEase: 1.2, fogAt: 40,
-  lhH: 6.2, sand: '#2f3a39', sandWet: '#263231',
+  lhH: 6.2, lhStone: ['#3a3b3d', '#2b2c2e', '#4b4a48', '#43302b'],   // LAS-103: shaft, buttress/dark patch, course/pale patch, the faded band
+  sand: '#2f3a39', sandWet: '#263231',
   // the citadel grows with the run: wall stage by max HP (palisade, stone curtain, + a high inner wall), one wall gun
   // per gunPer Loaders levels, island steps by power (upgrade levels + extra mounts + keystones)
   wallAt: [180, 600], gunPer: 2, isleAt: [10, 25, 45], isleR: [6.6, 11.2, 15.6, 20.0, 24.4],
@@ -6268,7 +6269,7 @@ const GLSL_NOISE = 'float h21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+
   'float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h21(i),h21(i+vec2(1,0)),f.x),mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x),f.y);}';
 
 // ---------- Polygon kit materials (art/poly/kit.js mat()): one cache, flat facets, glow = MeshBasic
-const MATS = new Map(), WET = new Set(['#6d6a66', '#45474a', '#77726b', '#b8b0a2', '#8e3b2b', '#8f887c']);
+const MATS = new Map(), WET = new Set(['#6d6a66', '#45474a', '#77726b', '#b8b0a2', '#8e3b2b', '#8f887c', '#3a3b3d', '#43302b']);
 function mat(c, o = {}) {
   const k = [c, o.glow ? 1 : 0, o.rough || .8, o.metal || .05, o.add ? 1 : 0].join('|');
   let m = MATS.get(k); if (m) return m;
@@ -6632,29 +6633,65 @@ function buildScene() {
   const D = buildCitadel(scene, cit);
 
   // the lighthouse (its beam: fx.js), LAS-26: the centre of the game. It rises from the keep's deck at the world origin,
-  // the tallest line on the island: a banded tower, a gallery with a rail, a lamp room that glows
+  // the tallest line on the island. LAS-103 (audit p31: the red-and-white tower read like a toy): the dark heart of the
+  // fortress. Weathered dark stone on a stepped plinth, six buttresses, cracked and patched masonry, one faded band, an iron
+  // gallery on corbels and an iron lantern room under a dome. Its lamp is what lights it, not its paint.
   const H = RLOOK.lhH, lh = new T3.Group(); lh.position.set(0, RLOOK.plateau + RLOOK.deck, 0); scene.add(lh);
-  const sd = RLOOK.stoneDark;
-  mk(lh, new T3.CylinderGeometry(0.95, 1.05, 0.5, 20), sd, { p: [0, 0.25, 0], cast: true });
-  mk(lh, new T3.CylinderGeometry(0.56, 0.86, H, 20, 4), '#b8b0a2', { p: [0, H / 2, 0], cast: true });
-  for (const y of [1.1, 2.9, 4.7]) mk(lh, new T3.CylinderGeometry(0.88 - (y + 0.8) / H * 0.3, 0.88 - y / H * 0.3, 0.8, 20), '#8e3b2b', { p: [0, y + 0.4, 0], cast: true });
-  for (let i = 0; i < 4; i++) { const a = i * 1.9 - 0.4; mk(lh, new T3.BoxGeometry(0.14, 0.24, 0.05), RLOOK.lamp, { glow: 1, p: [Math.cos(a) * 0.82 * (1 - i * 0.08), 0.9 + i * 1.45, Math.sin(a) * 0.82 * (1 - i * 0.08)], r: [0, Math.PI / 2 - a, 0] }); }
-  mk(lh, new T3.CylinderGeometry(0.9, 0.7, 0.22, 20), sd, { p: [0, H + 0.05, 0], cast: true });
-  mk(lh, new T3.TorusGeometry(0.86, 0.025, 3, 20), sd, { p: [0, H + 0.4, 0], r: [Math.PI / 2, 0, 0] });
-  for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; mk(lh, new T3.BoxGeometry(0.03, 0.3, 0.03), sd, { p: [Math.cos(a) * 0.86, H + 0.27, Math.sin(a) * 0.86] }); }
+  const sd = RLOOK.stoneDark, LS = RLOOK.lhStone, ri = y => 0.86 - y / H * 0.3, iron = '#18191a';
+  const hj = (x, y, z) => { const s = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453; return s - Math.floor(s); };   // seam-safe jitter
+  const rough = (g, a) => { const P = g.getAttribute('position'); for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), k = 1 + (hj(+x.toFixed(3), +y.toFixed(3), +z.toFixed(3)) - 0.5) * a; P.setXYZ(i, x * k, y, z * k); } g.computeVertexNormals(); return g; };
+  mk(lh, rough(new T3.CylinderGeometry(1.0, 1.08, 0.32, 10), 0.05), LS[2], { p: [0, 0.16, 0], cast: true });   // the stepped plinth
+  mk(lh, rough(new T3.CylinderGeometry(0.9, 0.98, 0.26, 10), 0.05), LS[0], { p: [0, 0.45, 0], cast: true });
+  mk(lh, rough(new T3.CylinderGeometry(0.56, 0.86, H, 16, 9), 0.07), LS[0], { p: [0, H / 2, 0], cast: true });
+  mk(lh, rough(new T3.CylinderGeometry(ri(4.95) + 0.012, ri(4.45) + 0.012, 0.5, 16, 2), 0.05), LS[3], { p: [0, 4.7, 0], cast: true });   // the one band, faded oxblood
+  for (const y of [1.55, 3.35]) mk(lh, new T3.CylinderGeometry(ri(y) + 0.02, ri(y) + 0.035, 0.08, 16), LS[1], { p: [0, y, 0], rough: 0.95 });   // two string courses, dark (thin pale rings read as stripes)
+  // patched and cracked masonry: proud blocks (light and dark) and black cracks, none over the door
+  for (let i = 0; i < 46; i++) {
+    const a = hj(i, 1.7, 3.1) * Math.PI * 2, y = 0.75 + hj(i, 5.3, 0.9) * (H - 1.1), r = ri(y), w = 0.1 + hj(i, 2.2, 7.7) * 0.16;
+    if (y < 1.4 && Math.abs(a - 1.5 * Math.PI) < 0.4) continue;
+    mk(lh, new T3.BoxGeometry(0.05, 0.09 + hj(i, 4.1, 2.6) * 0.08, w), LS[i % 3 === 0 ? 2 : 1], { p: [Math.cos(a) * r, y, Math.sin(a) * r], r: [0, -a, 0], rough: 0.95 });
+  }
+  for (const [a, y, l, t] of [[-1.9, 3.9, 0.9, 0.5], [-1.2, 2.3, 0.7, -0.4], [-2.5, 1.5, 0.6, 0.3], [-0.7, 5.3, 0.55, -0.6], [0.6, 3.1, 0.8, 0.4], [2.4, 2.0, 0.6, -0.3]]) {
+    for (let s = 0; s < 3; s++) { const yy = y - s * l / 3, aa = a + (s % 2 ? t : -t) * 0.06; mk(lh, new T3.BoxGeometry(0.03, l / 3 + 0.04, 0.025), '#0b0b0b', { p: [Math.cos(aa) * (ri(yy) + 0.012), yy, Math.sin(aa) * (ri(yy) + 0.012)], r: [0, -aa, 0] }); }
+  }
+  // six buttresses (none over the door), each a wedge leaning into the tower, with a footing stone
+  for (let k = 0; k < 6; k++) {
+    const a = -Math.PI / 2 + Math.PI / 3 * (k + 0.5), bh = 3.0, g = new T3.BoxGeometry(0.5, bh, 0.26, 1, 3, 1), P = g.getAttribute('position');
+    for (let i = 0; i < P.count; i++) { const t = (P.getY(i) + bh / 2) / bh; if (P.getX(i) > 0) P.setX(i, 0.25 - t * 0.4); }
+    g.computeVertexNormals();
+    mk(lh, rough(g, 0.06), LS[1], { p: [Math.cos(a) * (ri(1.6) - 0.08), 0.55 + bh / 2, Math.sin(a) * (ri(1.6) - 0.08)], r: [0, -a, 0], cast: true });
+    mk(lh, new T3.BoxGeometry(0.16, 0.08, 0.3), LS[2], { p: [Math.cos(a) * (ri(0.6) + 0.1), 0.62, Math.sin(a) * (ri(0.6) + 0.1)], r: [0, -a, 0] });
+  }
+  // arrow slits lit from inside (the lamp's light, not paint), each in a deep dark reveal with a wet stain under it
+  for (let i = 0; i < 4; i++) {
+    const a = i * 1.9 - 0.4, y = 1.25 + i * 1.3, r = ri(y);
+    mk(lh, new T3.BoxGeometry(0.06, 0.34, 0.2), '#070707', { p: [Math.cos(a) * r, y, Math.sin(a) * r], r: [0, -a, 0] });
+    mk(lh, new T3.BoxGeometry(0.07, 0.24, 0.05), RLOOK.lamp, { glow: 1, p: [Math.cos(a) * (r + 0.01), y, Math.sin(a) * (r + 0.01)], r: [0, Math.PI / 2 - a, 0] });
+    mk(lh, new T3.BoxGeometry(0.02, 0.6, 0.09), '#141414', { p: [Math.cos(a) * (r + 0.02), y - 0.48, Math.sin(a) * (r + 0.02)], r: [0, -a, 0] });
+  }
+  // the door: iron-banded, under a pointed arch of dark voussoirs
+  mk(lh, new T3.BoxGeometry(0.34, 0.62, 0.06), '#0d0c0c', { p: [0, 0.86, -0.86], r: [0.18, 0, 0] });
+  for (const y of [0.7, 1.0]) mk(lh, new T3.BoxGeometry(0.36, 0.03, 0.03), iron, { p: [0, y, -0.9 + (y - 0.86) * 0.18] });
+  for (const s of [-1, 1]) mk(lh, new T3.BoxGeometry(0.08, 0.36, 0.12), LS[2], { p: [s * 0.13, 1.28, -0.83], r: [0.18, 0, s * 0.5] });
+  // the gallery: two tiers of corbels, an iron deck, a railing of posts with a top and a middle rail
+  for (let i = 0; i < 20; i++) { const a = i / 20 * Math.PI * 2; mk(lh, new T3.BoxGeometry(0.1, 0.22, 0.12), LS[1], { p: [Math.cos(a) * 0.62, H - 0.3, Math.sin(a) * 0.62], r: [0, -a, 0] }); mk(lh, new T3.BoxGeometry(0.16, 0.14, 0.12), LS[1], { p: [Math.cos(a) * 0.7, H - 0.12, Math.sin(a) * 0.7], r: [0, -a, 0] }); }
+  mk(lh, new T3.CylinderGeometry(0.98, 0.74, 0.16, 20), iron, { p: [0, H + 0.04, 0], cast: true, metal: 0.4, rough: 0.55 });
+  for (const y of [0.22, 0.42]) mk(lh, new T3.TorusGeometry(0.95, 0.022, 4, 28), iron, { p: [0, H + y, 0], r: [Math.PI / 2, 0, 0] });
+  for (let i = 0; i < 18; i++) { const a = i / 18 * Math.PI * 2; mk(lh, new T3.BoxGeometry(0.03, 0.34, 0.03), iron, { p: [Math.cos(a) * 0.95, H + 0.27, Math.sin(a) * 0.95] }); }
   const lampM = mk(lh, new T3.CylinderGeometry(0.5, 0.5, 0.8, 20), RLOOK.lamp, { glow: 1, p: [0, H + 0.55, 0] });
   lampM.material = new T3.MeshBasicMaterial({ color: new T3.Color().setRGB(6, 5.4, 4.4) });
   const shroud = new T3.Mesh(new T3.CylinderGeometry(0.58, 0.58, 0.95, 32, 1, true, 0.9, 4.5), new T3.MeshBasicMaterial({ color: '#050505', side: T3.DoubleSide }));
   shroud.position.set(0, RLOOK.plateau + RLOOK.deck + H + 0.55, 0); scene.add(shroud);
-  mk(lh, new T3.ConeGeometry(0.66, 0.75, 20), RLOOK.roof, { p: [0, H + 1.33, 0], cast: true });
-  // LAS-73 dressing: stone courses up the tower, a door, corbels under the gallery, astragals round the lamp, a rod, rust runs
-  for (let y = 0.55; y < H - 0.1; y += 0.42) { const r = 0.86 - y / H * 0.3; mk(lh, new T3.CylinderGeometry(r + 0.012, r + 0.012, 0.03, 32), '#8f887c', { p: [0, y, 0] }); }
-  mk(lh, new T3.BoxGeometry(0.34, 0.62, 0.06), '#141010', { p: [0, 0.62, -0.86], r: [0.18, 0, 0] }); mk(lh, new T3.BoxGeometry(0.44, 0.06, 0.1), sd, { p: [0, 0.95, -0.88] });
-  for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; mk(lh, new T3.BoxGeometry(0.08, 0.2, 0.14), sd, { p: [Math.cos(a) * 0.66, H - 0.12, Math.sin(a) * 0.66], r: [0, -a, 0] }); }
-  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; mk(lh, new T3.BoxGeometry(0.035, 0.82, 0.035), '#1d1c1b', { p: [Math.cos(a) * 0.51, H + 0.55, Math.sin(a) * 0.51] }); }
-  mk(lh, new T3.CylinderGeometry(0.012, 0.02, 0.7, 6), '#3a3633', { p: [0, H + 2.05, 0] });
-  for (const [a, y, l] of [[-1.9, 4.6, 1.3], [-1.3, 2.9, 1.0], [-2.3, 1.6, 0.9], [-0.9, 5.4, 0.7]]) { const r = 0.875 - y / H * 0.3; mk(lh, new T3.BoxGeometry(0.06, l, 0.01), '#5a3020', { p: [Math.cos(a) * r, y - l / 2, Math.sin(a) * r], r: [0, Math.PI / 2 - a, 0] }); }
-  mk(lh, new T3.IcosahedronGeometry(0.09, 0), RLOOK.amber, { glow: 1, p: [0, H + 1.78, 0] });
+  // the iron lantern room: a sill, twelve mullions and a middle astragal round the lamp, a cornice, a ribbed dome, a ventilator, a rod
+  mk(lh, new T3.CylinderGeometry(0.62, 0.64, 0.1, 16), iron, { p: [0, H + 0.17, 0], metal: 0.4, rough: 0.55 });
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; mk(lh, new T3.BoxGeometry(0.035, 0.82, 0.035), '#101010', { p: [Math.cos(a) * 0.52, H + 0.55, Math.sin(a) * 0.52] }); }
+  mk(lh, new T3.TorusGeometry(0.52, 0.016, 3, 24), '#101010', { p: [0, H + 0.55, 0], r: [Math.PI / 2, 0, 0] });
+  mk(lh, new T3.CylinderGeometry(0.7, 0.6, 0.1, 16), iron, { p: [0, H + 0.99, 0], cast: true, metal: 0.4, rough: 0.55 });
+  mk(lh, new T3.SphereGeometry(0.62, 16, 5, 0, Math.PI * 2, 0, Math.PI / 2), iron, { p: [0, H + 1.03, 0], s: [1, 0.8, 1], cast: true, metal: 0.4, rough: 0.55 });
+  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; mk(lh, new T3.TorusGeometry(0.6, 0.018, 3, 10, Math.PI / 2), '#0e0e0e', { p: [0, H + 1.03, 0], r: [0, -a, 0], s: [1, 0.8, 1] }); }
+  mk(lh, new T3.CylinderGeometry(0.07, 0.1, 0.16, 8), iron, { p: [0, H + 1.57, 0] });
+  mk(lh, new T3.SphereGeometry(0.11, 8, 6), iron, { p: [0, H + 1.72, 0], metal: 0.4, rough: 0.55 });
+  mk(lh, new T3.CylinderGeometry(0.012, 0.02, 0.7, 6), '#262626', { p: [0, H + 2.05, 0] });
   const LAMP = [0, RLOOK.plateau + RLOOK.deck + H + 0.6, 0];
   const lhl = new T3.PointLight('#c9d6e8', 55, 19, 1.2); lhl.position.set(LAMP[0], LAMP[1] - 1.2, LAMP[2]); scene.add(lhl);   // LAS-65: cool fill from inside the tower, the town reads as a silhouette
   // the second lamp (Forge, LAS-24): a lantern hung on the gallery, its own flare and sweep, shown once owned
@@ -10458,9 +10495,10 @@ const LAS87CSS = `
 .fn svg{width:64%;height:64%;fill:none;stroke:currentColor;stroke-width:4.4;stroke-linecap:round;stroke-linejoin:round;pointer-events:none;overflow:visible}
 .fn svg .f{fill:currentColor;fill-opacity:.26}
 .fn.key svg{width:68%;height:68%}
-.fn.rdy{color:color-mix(in srgb,var(--c) 55%,var(--bone))}
+.fn.rdy{color:#a49b88}
+.fn svg .c{fill:var(--coal);fill-opacity:1;stroke:none}   /* LAS-103: coal only where something burns */
 .fn.lock{color:#77705f}.fn.lock svg{opacity:.8}.fn.ex svg{opacity:.4}
-.fn.own{color:var(--bone);background:color-mix(in srgb,var(--c) 22%,#060606)}
+.fn.own{color:var(--bone);background:color-mix(in srgb,var(--c) 10%,#060606)}
 .fn.can{color:var(--lantern);box-shadow:0 0 18px rgba(217,228,234,.5),inset 0 0 10px rgba(217,228,234,.18)}
 .fn img.pt{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover;pointer-events:none}
 .fn.lock img.pt{filter:grayscale(.85) brightness(.5)}.fn.rdy img.pt{filter:saturate(.7) brightness(.85)}.fn.ex img.pt{filter:grayscale(1) brightness(.35)}
@@ -11834,7 +11872,6 @@ const FGI = {
   harpoon: '<path class="f" d="M50 6l8 8-20 8-8-8z"/><path d="M30 18L6 54M36 22l-6 6M14 42c-6 2-8 8-6 14 6 2 12 0 14-6"/>',
   barb: '<path class="f" d="M40 6l12 12-24 26L16 32z"/><path d="M34 12L10 52M22 40l-10 4 4-10M40 26l10 6-8 4"/>',
   eye: '<path class="f" d="M4 32c8-14 18-20 28-20s20 6 28 20c-8 14-18 20-28 20S12 46 4 32z"/><circle cx="32" cy="32" r="10"/><circle class="f" cx="32" cy="32" r="4"/><path d="M32 2v6M16 8l3 5M48 8l-3 5"/>',
-  gold: '<circle class="f" cx="32" cy="32" r="22"/><circle cx="32" cy="32" r="14"/><path d="M32 24v16M27 28h8a3 3 0 010 6h-6a3 3 0 000 6h8"/>',
   chest: '<path class="f" d="M8 28h48v26H8z"/><path d="M8 28c0-12 10-18 24-18s24 6 24 18M32 28v26M26 38h12v8H26z"/>',
   embers: '<path class="f" d="M32 4c4 10 14 14 14 28a14 14 0 01-28 0c0-6 3-10 6-14 0 6 3 8 6 8-2-8-1-14 2-22z"/><path d="M26 54l-4 6M38 54l4 6M32 56v6"/>',
   costcut: '<path class="f" d="M6 30L30 6h26v26L32 58z"/><circle cx="44" cy="20" r="4"/><path d="M26 44l22-22M24 28h-0"/>',
@@ -11859,19 +11896,40 @@ const FGI = {
   wrecks: '<path class="f" d="M8 40h48l-8 14H18z"/><path d="M30 40V10l16 14H30M30 40l-8-4"/><path d="M4 58c6-4 10-4 14 0s10 4 14 0 10-4 14 0 10 4 14 0"/>',
   signal: '<path class="f" d="M24 56V30l8-8 8 8v26z"/><path d="M20 14c8-8 16-8 24 0M12 8c12-12 28-12 40 0M32 30v-6"/>',
   flare: '<path class="f" d="M32 6l6 20 20 6-20 6-6 20-6-20-20-6 20-6z"/><circle cx="32" cy="32" r="4"/>',
+  // LAS-103: one glyph per node (no shared ones, no coin); .c = coal, only where something burns
+  salvage: '<path d="M32 4v38"/><circle cx="32" cy="8" r="4"/><path d="M22 18h20"/><path class="f" d="M10 34c0 14 10 22 22 22s22-8 22-22l-8 6M10 34l8 6"/><path d="M32 42v14"/>',
+  charter: '<path class="f" d="M16 8h30v44H16z"/><path d="M16 8c-6 0-6 8 0 8M46 52c6 0 6-8 0-8M22 18h18M22 26h18M22 34h10"/><circle class="f" cx="42" cy="48" r="7"/><path d="M38 54l-2 8M46 54l2 8"/>',
+  slot3: '<path class="f" d="M6 12h30v8H6zM6 28h30v8H6zM6 44h30v8H6z"/><path d="M36 16h20M36 32h20M36 48h20M6 8v48"/>',
+  ward: '<circle cx="32" cy="32" r="26" stroke-dasharray="2 5"/><path class="f" d="M32 12l16 30H16z"/><path d="M32 24v10M32 38v1"/>',
+  bell2: '<path class="f" d="M26 14c-10 0-15 8-15 20v8H6v6h40v-6h-5V34c0-12-5-20-15-20z"/><circle cx="26" cy="54" r="3"/><path d="M26 8v6M50 4a9 9 0 100 16 11 11 0 010-16z"/>',
+  bellows: '<path class="f" d="M6 22l30-8 6 18-6 18-30-8z"/><path d="M6 22v20M42 32h10M36 14l-4 18 4 18"/><path class="c" d="M56 22c3 4 5 7 5 10a5 5 0 01-10 0c0-3 2-6 5-10z"/>',
+  furnace: '<path class="f" d="M10 58V24l22-16 22 16v34z"/><path d="M22 58V42a10 10 0 0120 0v16M10 58h44"/><path class="c" d="M32 42c4 4 6 7 6 10a6 6 0 01-12 0c0-3 2-6 6-10z"/>',
+  ledger: '<path class="f" d="M6 14c10-2 18 0 26 6v36c-8-6-16-8-26-6z"/><path d="M58 14c-10-2-18 0-26 6v36c8-6 16-8 26-6zM38 26c4-1 9-1 14 0M38 34c4-1 9-1 14 0M38 42c4-1 9-1 14 0"/>',
+  trowel: '<path class="f" d="M6 44L30 20l14 14-24 24z"/><path d="M37 27l12-12M46 10l8 8M14 48l8 8"/>',
+  hawk: '<path d="M4 30c10-12 20-16 28-16s18 4 28 16"/><path class="f" d="M12 32c6 8 13 12 20 12s14-4 20-12c-6-6-13-10-20-10s-14 4-20 10z"/><circle cx="32" cy="32" r="5"/><path d="M8 18l18 6M56 18l-18 6M32 44v14M26 52l6 6 6-6"/>',
+  omen2: '<path class="f" d="M4 20c6-8 14-12 20-12s14 4 20 12c-6 8-14 12-20 12S10 28 4 20zM20 44c6-8 14-12 20-12s14 4 20 12c-6 8-14 12-20 12s-14-4-20-12z"/><circle cx="24" cy="20" r="4"/><circle cx="40" cy="44" r="4"/>',
+  scales: '<path d="M32 6v48M18 58h28M8 16h48M8 16l-6 18M8 16l6 18M56 16l-6 18M56 16l6 18"/><path class="f" d="M0 34a8 8 0 0016 0zM48 34a8 8 0 0016 0z"/><circle cx="32" cy="6" r="3"/>',
+  seer: '<path class="f" d="M32 4C18 4 10 18 10 32v26h44V32C54 18 46 4 32 4z"/><path d="M22 32c0-8 4-14 10-14s10 6 10 14v8H22z"/><circle cx="32" cy="30" r="3"/>',
+  fist: '<path class="f" d="M12 26h36a6 6 0 016 6v10c0 8-6 14-14 14H22c-6 0-10-4-10-10z"/><path d="M12 26v-8a4 4 0 018 0v8M20 26V14a4 4 0 018 0v12M28 26V14a4 4 0 018 0v12M36 26v-8a4 4 0 018 0v8M20 56v6h22v-6M12 38h14"/>',
+  lantern: '<path d="M32 2v6M24 8h16"/><path class="f" d="M22 14h20l4 8v24l-4 8H22l-4-8V22z"/><path d="M18 22h28M18 46h28"/><path d="M27 30h10v6l-2 4h-6l-2-4z"/><path d="M29 32v1M35 32v1"/>',
+  augury: '<path class="f" d="M6 30c0-10 8-16 18-16 8 0 14 4 18 10l18 6-18 4c-4 6-10 8-18 8C12 42 6 38 6 30z"/><circle cx="20" cy="28" r="4"/><path d="M12 54l12-8M40 46l14 10M28 60l4-12"/>',
+  hoard: '<path class="f" d="M4 58c4-14 14-22 28-22s24 8 28 22z"/><path d="M22 36V24h20v12M22 24l4-8h12l4 8M30 28h4M14 50l6-4M42 46l8 6M28 52h8"/>',
+  pick5: '<rect class="f" x="4" y="18" width="16" height="28" rx="2" transform="rotate(-20 12 32)"/><rect x="14" y="14" width="16" height="28" rx="2" transform="rotate(-10 22 28)"/><rect class="f" x="24" y="12" width="16" height="28" rx="2"/><rect x="34" y="14" width="16" height="28" rx="2" transform="rotate(10 42 28)"/><rect class="f" x="44" y="18" width="16" height="28" rx="2" transform="rotate(20 52 32)"/><path d="M20 54h24"/>',
+  thoughts: '<path d="M52 24A22 22 0 1018 52"/><path class="f" d="M52 10v16H36z"/><path d="M24 30v10M32 27v16M40 30v10"/>',
 };
 // the first eff key (and for 'unlock' the mount) -> a glyph; per-id overrides first
 const FGI_ID = { g_powder: 'powder', g_drill: 'fast', g_bronze: 'bronze', g_loaders: 'loaders', g_barrels: 'range', g_ballista: 'ballista', g_mortar: 'mortar', g_tesla: 'tesla',
-  w_stone: 'stone', w_keep: 'keep', w_bastion: 'bastion', w_tar: 'tar', w_lime: 'regen', w_ward: 'regen', w_moat: 'moat', w_brine: 'brine', w_bulwark: 'hp', w_heart: 'heart',
-  l_lens: 'lens', l_clock: 'clock', l_broad: 'broad', l_prism: 'prism', l_bell: 'bell', l_bell2: 'bell', l_twin: 'lamp2', l_eye: 'eye',
-  p_salvage: 'gold', p_charter: 'gold', p_tolls: 'tolls', p_chest: 'chest', p_hoard: 'chest', p_bellows: 'embers', p_furnace: 'embers', p_ledger: 'embers',
-  p_guild: 'costcut', p_guild2: 'costcut', p_trophy: 'trophy', p_crown: 'crown', p_dawn: 'dawn', p_spoils: 'spoils',
-  a_eye: 'omen', a_owl: 'owl', a_hand: 'hand', a_iron: 'hand', a_fourth: 'pick', a_fifth: 'pick', a_redraw: 'reroll', a_third: 'reroll', a_seer: 'reroll', a_tides: 'tides',
-  a_omen: 'omen', a_omen2: 'omen', a_wild: 'wild', a_echo: 'echo', x_casemate: 'casemate', x_rampart: 'rampart', x_tollgate: 'tollgate', x_wrecks: 'wrecks', x_augury: 'reroll',
-  x_oracle: 'omen', x_starglass: 'ring', x_lantern: 'hand', x_signal: 'signal', x_flare: 'flare' };
-const FGI_KEY = { dmgX: 'powder', rate: 'fast', splash: 'chain', kindPlus: 'master', range: 'range', hammer: 'hammer', hp: 'stone', hpX: 'hp', moat: 'moat', slot2: 'slot', slot3: 'slot',
+  w_stone: 'stone', w_keep: 'keep', w_bastion: 'bastion', w_tar: 'tar', w_lime: 'regen', w_ward: 'ward', w_moat: 'moat', w_brine: 'brine', w_bulwark: 'hp', w_heart: 'heart',
+  l_lens: 'lens', l_clock: 'clock', l_broad: 'broad', l_prism: 'prism', l_bell: 'bell', l_bell2: 'bell2', l_twin: 'lamp2', l_eye: 'eye',
+  p_salvage: 'salvage', p_charter: 'charter', p_tolls: 'tolls', p_chest: 'chest', p_hoard: 'hoard', p_bellows: 'bellows', p_furnace: 'furnace', p_ledger: 'ledger',
+  p_guild: 'costcut', p_guild2: 'trowel', p_trophy: 'trophy', p_crown: 'crown', p_dawn: 'dawn', p_spoils: 'spoils',
+  a_eye: 'hawk', a_owl: 'owl', a_hand: 'hand', a_iron: 'fist', a_fourth: 'pick', a_fifth: 'pick5', a_redraw: 'reroll', a_third: 'thoughts', a_seer: 'seer', a_tides: 'tides',
+  a_omen: 'omen', a_omen2: 'omen2', a_wild: 'wild', a_echo: 'echo', x_casemate: 'casemate', x_rampart: 'rampart', x_tollgate: 'tollgate', x_wrecks: 'wrecks', x_augury: 'augury',
+  x_oracle: 'scales', x_starglass: 'ring', x_lantern: 'lantern', x_signal: 'signal', x_flare: 'flare',
+  g_rifling: 'rifling', g_steel: 'steel', g_doom: 'doom' };
+const FGI_KEY = { dmgX: 'powder', rate: 'fast', splash: 'chain', kindPlus: 'master', range: 'range', hammer: 'hammer', hp: 'stone', hpX: 'hp', moat: 'moat', slot2: 'slot', slot3: 'slot3',
   regen: 'regen', spikes: 'spikes', unbroken: 'unbroken', beamX: 'beam', beamW: 'broad', keg: 'keg', abCd: 'bell', lamp2: 'lamp2', floodPush: 'sluice', kegR: 'storm', floodDmg: 'undertow',
-  harpoon: 'harpoon', harpoonX: 'barb', eye: 'eye', gold: 'gold', startGold: 'chest', embers: 'embers', costCut: 'costcut', bossEmbersX: 'trophy', starX: 'dawn', spoils: 'spoils',
+  harpoon: 'harpoon', harpoonX: 'barb', eye: 'eye', gold: 'salvage', startGold: 'chest', embers: 'embers', costCut: 'costcut', bossEmbersX: 'trophy', starX: 'dawn', spoils: 'spoils',
   crit: 'crit', pickN: 'pick', critMulX: 'hand', reroll: 'reroll', pickEvery: 'tides', startPick: 'omen', loudAll: 'wild', echo: 'echo', ring: 'ring' };
 const fgGlyph = n => { const g = FGI_ID[n.id] || FGI_KEY[Object.keys(n.eff)[0]]; return FGI[g] || FGI.powder; };
 
@@ -11915,8 +11973,8 @@ function forgeHTML(M) {
   // nodes and their names (names show for keystones, the centre and what can be forged now; all of them once zoomed in)
   for (const n of F.nodes) {
     const i = I[n.id], st = i.owned ? 'own' : i.excluded ? 'ex' : i.ready ? 'rdy' + (i.can ? ' can' : '') : 'lock';
-    const fb = forgeBuild(n.id), pic = fb && root.TWRender && root.TWRender.portraitStill ? root.TWRender.portraitStill('b:' + fb, 96, 96) : '';   // LAS-87: a building node shows its portrait, the rest a glyph of what they do
-    const inner = (pic ? `<img class="pt" src="${pic}" alt="">` : `<svg viewBox="0 0 64 64">${fgGlyph(n)}</svg>`) + (i.owned ? '<i class="ck">&#x2713;</i>' : '') + (n.key ? '<i class="ks">&#x2726;</i>' : '');
+    const fb = forgeBuild(n.id);   // LAS-103: every node wears its own glyph (portraits read as brown blobs at node size)
+    const inner = `<svg viewBox="0 0 64 64">${fgGlyph(n)}</svg>` + (i.owned ? '<i class="ck">&#x2713;</i>' : '') + (n.key ? '<i class="ks">&#x2726;</i>' : '');
     dom += `<button class="fn ${st}${n.key ? ' key' : ''}${fb ? ' bld' : ''}" style="--c:${FG_COL[n.b]}" data-node="${n.id}" data-x="${n.x}" data-y="${n.y}" data-r="${FG_R(n)}">${inner}</button>`;
     const show = n.key || (i.ready && !i.owned) ? '' : ' opt';
     const sub = i.owned ? '' : i.ready ? `<span class="c num"><span class="emb"></span>${fmt(i.cost)}</span>` : n.key ? `<span class="c">Keystone &middot; ${i.gate} nodes</span>` : '';
