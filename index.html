@@ -10051,6 +10051,73 @@ const LAS83CSS = `
 #tw-why{width:100%;display:flex;flex-direction:column;gap:6px;margin:4px 0 16px;font-size:max(18px,1.75vh);color:var(--bone2);text-align:center;font-family:Barlow,"Segoe UI",sans-serif}
 #tw-why b{color:var(--bone);font-weight:600}#tw-why .k{font-family:var(--fell);font-style:italic;color:var(--ash);margin-right:8px}
 `;
+const LAS82CSS = `
+/* LAS-82: the build panel (left edge), the line that says what a pick changed, hover tips, the recipe Codex, the end-screen island */
+#tw-build{--bs:max(56px,5.7vh);position:absolute;left:14px;top:max(98px,10.5vh);display:none;flex-direction:column;gap:10px;padding:10px 10px 12px;pointer-events:auto;z-index:6;width:fit-content;
+  background:linear-gradient(180deg,#14120f,#0a0908)!important;border:1px solid #2c2822}
+#tw-build.bflash{animation:bFlash 1.4s ease-out}
+@keyframes bFlash{0%{border-color:var(--lantern);box-shadow:0 0 22px rgba(228,237,242,.35)}100%{box-shadow:none}}
+#tw-build .bth0{display:flex;flex-wrap:wrap;gap:8px;max-width:calc(var(--bs)*2 + 10px)}#tw-build .bth0:empty{display:none}
+.bsg{position:relative;display:flex;align-items:center;gap:5px;padding:3px 7px 3px 4px;border:1px solid color-mix(in srgb,var(--t) 38%,#222);background:#0b0a09;opacity:var(--o,.8);cursor:default}
+.bsg:hover{opacity:1;border-color:var(--t)}
+.bsg svg{width:max(20px,2.1vh);height:max(20px,2.1vh)}.bsg b{font:600 max(15px,1.5vh) Cinzel,Georgia,serif;color:var(--t)}
+.bsg u{display:flex;gap:2px;text-decoration:none}.bsg u i{width:4px;height:max(10px,1vh);border:1px solid color-mix(in srgb,var(--t) 55%,#000);background:transparent}.bsg u i.on{background:var(--t)}
+#tw-build .bbody{display:flex;flex-flow:column wrap;align-content:flex-start;gap:8px;max-height:58vh}
+.bg{display:flex;flex-direction:column;align-items:center;gap:0;break-inside:avoid}
+.be{position:relative;width:var(--bs);height:var(--bs);cursor:default;flex:none}
+.be .bp{position:absolute;left:0;top:0;width:100%;height:var(--bs);inset:auto;background:radial-gradient(ellipse at 50% 60%,#26211b,#0c0b09 80%);border:1px solid #3a342b;overflow:hidden;pointer-events:none}
+.be .bp[data-tw-portrait]{position:absolute;inset:auto;left:0;top:0}
+.be:hover .bp{border-color:var(--lantern)}
+.be .blv{position:absolute;right:3px;top:calc(var(--bs) - 31px);font:700 max(14px,1.35vh)/1 Cinzel,Georgia,serif;font-style:normal;color:var(--bone);text-shadow:0 0 4px #000,0 1px 2px #000;pointer-events:none}
+.be .bpips{position:absolute;left:3px;right:3px;bottom:3px;display:flex;gap:3px;justify-content:center;pointer-events:none}
+.be .bpips i{flex:1;height:5px;background:rgba(10,9,7,.85);border:1px solid #5a5143}.be .bpips i.on{background:var(--lantern);border-color:var(--lantern);box-shadow:0 0 5px rgba(228,237,242,.5)}
+.be .bth{position:absolute;left:2px;top:2px;display:flex;flex-direction:column;gap:1px;pointer-events:none}
+.be .bth i{display:block;width:max(15px,1.5vh);height:max(15px,1.5vh);padding:1px;background:rgba(5,5,4,.78);border-radius:2px}.be .bth svg{display:block;width:100%;height:100%}
+.be.bpulse{animation:bPulse 1.5s ease-out}
+@keyframes bPulse{0%{scale:1.22;box-shadow:0 0 0 0 rgba(228,237,242,.9),0 0 26px rgba(228,237,242,.7)}40%{scale:1}100%{box-shadow:0 0 0 14px rgba(228,237,242,0)}}
+.be.evo .bp{border:2px solid var(--bone);box-shadow:0 0 14px rgba(230,220,198,.5),inset 0 0 12px rgba(230,220,198,.25)}
+.be.evo .blv{color:#fff;font-size:max(18px,1.8vh);top:calc(var(--bs) - 26px)}
+.be .bleg{position:absolute;left:50%;top:-5px;width:12px;height:12px;translate:-50% 0;background:var(--bone);rotate:45deg;box-shadow:0 0 8px rgba(230,220,198,.9);pointer-events:none}
+.be .bkeep{position:absolute;left:2px;bottom:2px;width:max(20px,2vh);height:max(20px,2vh);background:rgba(5,5,4,.85);border:1px solid #5a5143;padding:2px;pointer-events:none}.be .bkeep svg{width:100%;height:100%;fill:none;stroke:var(--bone2);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+.be .bkeep svg .f{fill:var(--bone2);fill-opacity:.25}
+.blk{display:block;position:relative;width:max(18px,2vh);height:max(16px,1.6vh);margin:-2px 0;cursor:default;z-index:2}
+.blk::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:0;border-left:2px dashed #6d675d;translate:-50% 0}
+.blk::after{content:"";position:absolute;left:50%;top:50%;width:9px;height:9px;translate:-50% -50%;rotate:45deg;background:#0b0a09;border:1px solid #6d675d}
+.blk.found::before{border-left-style:solid;border-left-color:var(--bone)}.blk.found::after{background:var(--bone);border-color:var(--bone);box-shadow:0 0 8px rgba(230,220,198,.7)}
+.blk:hover::after{border-color:var(--lantern)}
+.bnote{position:fixed;max-width:min(440px,34vw);padding:10px 14px;background:#0c0b0a;border:1px solid #3a342b;border-left:3px solid var(--lantern);font:500 max(17px,1.6vh)/1.3 Barlow,sans-serif;color:var(--bone2);z-index:8;pointer-events:none;animation:bnIn .5s ease-out backwards;transition:opacity 1s}
+.bnote b{color:var(--bone);font-weight:600}.bnote .bd{display:block;margin-top:3px;font:600 max(14px,1.35vh) Cinzel,Georgia,serif;letter-spacing:.04em;color:var(--lantern)}.bnote.out{opacity:0}.bnote.evo{border-left-color:#fff;box-shadow:0 0 22px rgba(230,220,198,.4)}.bnote.up{border-left-color:var(--emb)}.bnote.rep{border-left-color:var(--blood)}
+@keyframes bnIn{from{opacity:0;translate:0 10px}}
+#tw-tip{max-width:360px}#tw-tip .row.dim2,#tw-tip .row.nx{display:block}#tw-tip .row.dim2 b,#tw-tip .row.nx b{display:block;text-align:left;max-width:none}
+#tw-tip .tg2{font-weight:400;font-size:.86em}#tw-tip .row b{max-width:200px;text-align:right;font-weight:500;color:var(--bone)}#tw-tip .row.dim2{opacity:.75}#tw-tip .row.nx b{color:var(--lantern)}
+#tw-tip .ths{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}#tw-tip .ths span{display:flex;align-items:center;gap:4px;color:var(--t);font:600 13px Cinzel,Georgia,serif}#tw-tip .ths svg{width:16px;height:16px}
+#tw-tip .jtag{display:flex;gap:7px;align-items:flex-start;margin-top:6px;color:var(--bone)}#tw-tip .jtag s{flex:none;width:9px;height:9px;margin-top:5px;rotate:45deg;background:var(--bone)}
+/* Codex */
+#tw-codex .box{min-width:0;width:min(1240px,92vw);max-width:none;max-height:92vh;overflow:auto}
+#tw-codex .cxh{font:italic 400 max(20px,2vh) var(--fell);color:var(--ash);margin:14px 0 6px;text-align:left}
+#tw-codex .cxr{display:grid;grid-template-columns:1fr 1fr;gap:8px 22px}
+#tw-codex .cx2{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #2c2822;background:#0b0a09}
+#tw-codex .cx2.on{border-color:#6d675d}
+#tw-codex .cp{position:relative;flex:none;width:max(62px,6.2vh);height:max(62px,6.2vh);background:radial-gradient(ellipse at 50% 60%,#26211b,#0c0b09 80%);border:1px solid #3a342b}
+#tw-codex .cp .bp{position:absolute;inset:0}#tw-codex .cp.sil .bp{filter:brightness(0) invert(.26)}
+#tw-codex .cp em{position:absolute;right:2px;bottom:1px;font:700 14px Cinzel,serif;font-style:normal;color:var(--bone);text-shadow:0 0 4px #000}
+#tw-codex .pl,#tw-codex .eq{font:600 24px Cinzel,serif;color:var(--ash)}
+#tw-codex .rs{flex:1;min-width:0;text-align:left}#tw-codex .rs b{display:block;font:400 max(24px,2.4vh) var(--fell);color:var(--bone)}#tw-codex .cx2:not(.on) .rs b{color:var(--ash);letter-spacing:.3em}
+#tw-codex .rs small{display:block;font:500 max(15px,1.45vh)/1.3 Barlow,sans-serif;color:var(--bone2)}
+#tw-codex .cts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 22px}
+#tw-codex .ct{display:grid;grid-template-columns:34px 1fr;gap:0 10px;align-items:center;text-align:left;padding:7px 10px;border:1px solid color-mix(in srgb,var(--t) 30%,#222);background:#0b0a09}
+#tw-codex .ct svg{grid-row:span 2;width:34px;height:34px}#tw-codex .ct b{font:600 max(18px,1.8vh) Cinzel,serif;color:var(--t)}#tw-codex .ct small{font:500 max(14px,1.35vh)/1.25 Barlow,sans-serif;color:var(--bone2)}
+/* end screen */
+#tw-obuild{width:100%;margin:2px 0 14px;text-align:center}#tw-obuild:empty{display:none}
+#tw-obuild .k{display:block;font:italic 400 max(19px,1.9vh) var(--fell);color:var(--ash);margin-bottom:6px}
+#tw-obuild .ob{display:flex;gap:14px;align-items:stretch;justify-content:center}
+#tw-obuild img{flex:0 0 46%;min-width:0;height:max(190px,24vh);object-fit:cover;border:1px solid #2c2822;background:#000}
+#tw-obuild .obt{--bs:max(56px,5.4vh);flex:1;display:flex;flex-wrap:wrap;gap:8px 8px;align-content:flex-start;justify-content:flex-start}
+#tw-obuild .be.sm{pointer-events:auto}
+#tw-obtns{display:flex;flex-wrap:wrap;justify-content:center;gap:0 4px}#tw-obtns .btn{min-width:0;padding:10px 22px}
+#tw-over:not(.forge) #tw-stats .panel .v{font-size:max(34px,3.6vh)}#tw-over:not(.forge) #tw-stats .panel{min-height:0}
+#tw-obuild .obs{display:flex;gap:10px;justify-content:center;margin-top:10px}
+`;
 const LAS87CSS = `
 /* LAS-87: every Forge node wears a glyph (or a building's portrait); the state is the colour: bone = forged, lantern = can forge, branch colour = ready, ash = locked */
 .fn svg{width:64%;height:64%;fill:none;stroke:currentColor;stroke-width:4.4;stroke-linecap:round;stroke-linejoin:round;pointer-events:none;overflow:visible}
@@ -10444,7 +10511,7 @@ function build() {
   const digits = () => { const ff = document.getElementById('tw-fonts'), bf = ff && ff.textContent.match(/@font-face{font-family:'Barlow';font-style:normal;font-weight:400[^}]*}/);
     if (bf) { const f = el('style'); f.textContent = bf[0].replace("'Barlow'", "'FellNum'").replace(/}$/, ';unicode-range:U+30-39,U+25,U+2B,U+2212}'); document.head.appendChild(f); } };
   if (document.readyState === 'complete') digits(); else root.addEventListener('load', digits);
-  const st = el('style'); st.textContent = CSS + TOWNCSS + CARTCSS + HORRORCSS + LAS83CSS + LAS87CSS; document.body.insertAdjacentHTML('afterbegin', TWArt.DEFS); document.head.appendChild(st);
+  const st = el('style'); st.textContent = CSS + TOWNCSS + CARTCSS + HORRORCSS + LAS83CSS + LAS87CSS + LAS82CSS; document.body.insertAdjacentHTML('afterbegin', TWArt.DEFS); document.head.appendChild(st);
   const ui = el('div'); ui.id = 'twui';
   ui.innerHTML = `
   <canvas id="tw-aim"></canvas><div id="tw-vig"></div><div id="tw-hit"></div>
@@ -10460,6 +10527,8 @@ function build() {
     <div id="tw-goal"></div>
     <div id="tw-teach" class="panel"></div>
     <div id="tw-first"></div>
+    <div id="tw-build" class="panel"><div class="bth0"></div><div class="bbody"></div></div>
+    <div id="tw-bnotes"></div>
   </div>
   <div id="tw-tip" class="panel"></div>
   <div id="tw-title" class="scr on">
@@ -10484,6 +10553,7 @@ function build() {
   <div id="tw-pause" class="scr dim">
     <h2 class="disp">Paused</h2>
     <button class="btn" id="tw-resume">Resume <span class="kb">Space</span></button>
+    <button class="btn sec" id="tw-pcodex">Codex</button>
     <button class="btn sec" id="tw-pset">Settings</button>
     <button class="btn sec" id="tw-quit">Give up the wall</button>
   </div>
@@ -10492,11 +10562,13 @@ function build() {
       <h2 class="disp" id="tw-oh">The light went out</h2><div class="sub" id="tw-os"></div>
       <div id="tw-cause"></div>
       <div id="tw-why"></div>
+      <div id="tw-obuild"></div>
       <div id="tw-stats"></div>
       <div id="tw-rec"></div>
-      <button class="btn" id="tw-again">Again <span class="kb">Enter</span></button>
+      <div id="tw-obtns"><button class="btn" id="tw-again">Again <span class="kb">Enter</span></button>
       <button class="btn sec" id="tw-ofg">The Forge</button>
-      <button class="btn sec" id="tw-totitle">Title</button>
+      <button class="btn sec" id="tw-ocodex">Codex</button>
+      <button class="btn sec" id="tw-totitle">Title</button></div>
     </div>
     <div class="fgbox"></div>
   </div>
@@ -10561,6 +10633,7 @@ function build() {
   };
   $('tw-toforge').onclick = () => show('forge');
   $('tw-toset').onclick = $('tw-pset').onclick = () => openSet(true);
+  $('tw-pcodex').onclick = $('tw-ocodex').onclick = () => openCodex(true); bindBuild();
   $('tw-tocodex').onclick = () => openCodex(true); $('tw-cxback').onclick = () => openCodex(false);
   $('tw-fgo').onclick = () => U.cb.onStart && U.cb.onStart();
   $('tw-fback').onclick = () => show('title');
@@ -10727,7 +10800,7 @@ function playEnd() {
 }
 function choose(i) {
   if (!U.S || !U.S.pick || U.paused || U.taking) return;
-  const S = U.S, pk = S.pick, d = pk.town && pk.town[i], R = root.TWRender && root.TWRender.R;
+  const S = U.S, pk = S.pick, d0 = pk.town && pk.town[i], d = d0 && d0.kind !== 'card' ? d0 : null, R = root.TWRender && root.TWRender.R;
   U.taking = true; U.playing = true; snd('take');
   const tok = U.playTok = (U.playTok || 0) + 1, live = () => U.playTok === tok && U.S === S;
   const disc = Object.assign({}, combos, pk.disc), ek = d && d.kind === 'evo' && !disc[d.id] ? d.id : null;
@@ -10960,6 +11033,8 @@ function frame(S, now) {
   if (S.pick && !pk.classList.contains('on')) openPick(S);
   if (!S.pick && pk.classList.contains('on')) { pk.classList.remove('on'); U.tipFor = null; }
 
+  buildPanel(S); bnotePlace(); hexHover(S);
+  { const nb = $('tw-bnotes'), hide = U.paused || U.set; if (nb._h !== hide) { nb._h = hide; nb.style.display = hide ? 'none' : ''; } }
   tip(S);
   goal(S);
   teach(S, now);
@@ -11239,7 +11314,8 @@ function tip(S) {
   const t = $('tw-tip'), f = U.tipFor;
   if (!f || (U.mode === 'run' && (S.pick || U.paused || U.playing)) || U.set) { t.style.display = 'none'; return; }
   let h;
-  if (f.node) {
+  if (f.bld || f.th || f.lk || f.hex) { h = bTipHTML(S, f); if (!h) { t.style.display = 'none'; return; } }
+  else if (f.node) {
     const M = meta(), I = M && Sim.nodeInfo(M, f.node);
     if (!I) { t.style.display = 'none'; return; }
     const fb = forgeBuild(f.node), st = !I.owned && I.ready && !I.can ? `Need ${fmt(I.cost - M.embers)} more Embers` : I.status;   // the sim's line, Embers in the number format
@@ -11264,6 +11340,7 @@ function tip(S) {
   if (t._h !== h) { t._h = h; t.innerHTML = h; }
   t.style.display = 'block';
   const r = f.el.getBoundingClientRect(), w = t.offsetWidth, ht = t.offsetHeight;
+  if (f.side) { const right = r.right + 12 + w < root.innerWidth - 8; t.style.left = (right ? r.right + 12 : r.left - w - 12) + 'px'; t.style.top = Math.max(8, Math.min(root.innerHeight - ht - 8, r.top)) + 'px'; return; }
   if (f.node || f.dawn) {   // Forge cards: beside the card, so the column stays readable
     const right = r.right + 10 + w < root.innerWidth - 8;
     t.style.left = (right ? r.right + 10 : r.left - w - 10) + 'px'; t.style.top = Math.max(8, r.top) + 'px'; return;
@@ -11317,13 +11394,21 @@ function overWhy(S) {
   for (const n in seen) built.push(n + (seen[n] > 1 ? ' x' + seen[n] : ''));
   const gold = Math.floor(S.gold);
   $('tw-why').innerHTML = (th ? '<div><span class="k">Biggest threats to the wall</span>' + th + '</div>' : '')
-    + '<div><span class="k">You built</span>' + (built.length ? built.slice(0, 9).join(' &middot; ') + (built.length > 9 ? ' &middot; +' + (built.length - 9) : '') : 'nothing yet: the plaques below the sea were never used') + '</div>'
+    + (!built.length && S.town && S.town.slots.length ? '' : '<div><span class="k">You built</span>' + (built.length ? built.slice(0, 9).join(' &middot; ') + (built.length > 9 ? ' &middot; +' + (built.length - 9) : '') : 'nothing yet: the plaques below the sea were never used') + '</div>')
     + (gold >= 10 ? '<div><span class="k">Unspent gold</span>' + fmt(gold) + '</div>' : '');
+}
+// the island as the last frame drew it (toOver runs in the frame that rendered it, so the GL buffer is still there)
+function islandShot() {
+  try { const cv = document.getElementById('tw3d'); if (!cv || !cv.width) return ''; const R = root.TWRender && root.TWRender.R, c = R && R.screenOf ? R.screenOf(0, 4, 0) : { x: innerWidth / 2, y: innerHeight / 2 }, k = cv.width / innerWidth;
+    const cw = Math.min(cv.width, cv.width * 0.46), ch = Math.min(cv.height, cw * 0.625), sx = Math.max(0, Math.min(cv.width - cw, c.x * k - cw / 2)), sy = Math.max(0, Math.min(cv.height - ch, c.y * k - ch * 0.5));
+    const w = 880, h = Math.round(w * ch / cw), o = document.createElement('canvas'); o.width = w; o.height = h;
+    o.getContext('2d').drawImage(cv, sx, sy, cw, ch, 0, 0, w, h); return o.toDataURL('image/jpeg', 0.86); } catch (e) { return ''; }
 }
 function toOver(S) {
   if (U.mode === 'over') return;
   const R = Sim.result(S), M = meta();
-  show('over'); $('tw-over').classList.remove('forge'); $('tw-ofg').textContent = 'The Forge'; overWhy(S);
+  const shot = islandShot();
+  show('over'); $('tw-over').classList.remove('forge'); $('tw-ofg').textContent = 'The Forge'; overWhy(S); overBuild(S, shot);
   $('tw-os').textContent = `on wave ${S.wave}, after ${mmss(S.t)}`;
   const cells = [
     ['Waves held', S.wave, 'hl'], ['Creatures drowned', S.kills],
@@ -11615,8 +11700,7 @@ function syncTitle() {
 }
 function openCodex(on) {
   U.set = on; $('tw-codex').classList.toggle('on', on); U.tipFor = null; if (!on) return;
-  $('tw-cxl').innerHTML = Object.keys(EVO).map(k => { const e = EVO[k], f = combos[k];
-    return `<div class="cx${f ? ' on' : ''}"><s class="sg"></s><b>${f ? escH(e[0]) : '???'}</b><small>${f ? escH(BLD[e[1]][0]) + ' III + ' + escH(BLD[e[2]][0]) + '. ' + escH(e[3]) : 'Undiscovered.'}</small></div>`; }).join('');
+  $('tw-cxl').innerHTML = codexHTML();
 }
 function openSet(on) { U.set = on; $('tw-set').classList.toggle('on', on); if (on) syncSet(); U.tipFor = null; }
 function syncSet() {
@@ -11678,6 +11762,210 @@ function buildAbs(S) {
     b.addEventListener('mouseleave', () => { U.tipFor = null; });
     b._C = C; abs.appendChild(b); U.abEls[k] = b;
   });
+}
+
+// ---------- LAS-82 the build: a Vampire Survivors-style inventory of what stands on the island, what each pick changed, hover on everything.
+// Panel (#tw-build): theme sigils with notches on top, then a tile per building (live 3D portrait, level pips, theme chips; an owned partner is
+// joined by a link), an evolved building wears the legendary frame with its absorbed partner. S.town.slots is the source; nothing here writes the sim.
+const THEME = {   // [name, colour, 32x32 sigil strokes]; the tags per building are design/island-town.md (LAS-75)
+  light: ['Light', '#e4edf2', '<path d="M3 16c5-8 21-8 26 0c-5 8-21 8-26 0z"/><circle cx="16" cy="16" r="4"/>'],
+  dark: ['Dark', '#9a8fb0', '<path d="M3 14c5 7 21 7 26 0M8 20l-2 4M16 22v5M24 20l2 4"/>'],
+  storm: ['Storm', '#aebfcb', '<path d="M19 3l-9 14h7l-4 12 11-17h-7z"/>'],
+  tide: ['Tide', '#93a5a8', '<path d="M3 10c4-4 6 4 10 0s6 4 10 0 4 2 6 0M3 17c4-4 6 4 10 0s6 4 10 0 4 2 6 0M3 24c4-4 6 4 10 0s6 4 10 0 4 2 6 0"/>'],
+  fire: ['Fire', '#d9753d', '<path d="M16 3c3 6 8 9 8 16a8 8 0 01-16 0c0-4 2-5 3-8 2 2 3 3 3 5 2-3 2-8 2-13z"/>'],
+  bone: ['Bone', '#d3c9b0', '<path d="M5 13c0-6 22-6 22 0v3H5zM7 16v6M11 16v5M16 16v6M21 16v5M25 16v6M9 22h14"/>'],
+};
+const TAGS = { brazier: 'lf', lamp2: 'l', rocket: 'ls', beacon: 'lf', battery: 'f', ballista: 'b', mortar: 'f', tesla: 's', winch: 'tb', mines: 'tf', watch: 'l', breakwater: 't', bell: 'sb', pitch: 'f',
+  wrecker: 'dt', boat: 't', cave: 'd', horn: 'dt', well: 'db', spire: 'sl', choir: 'bd' };
+const TK = { l: 'light', d: 'dark', s: 'storm', t: 'tide', f: 'fire', b: 'bone' };
+const THEMES = Object.keys(THEME), TIERS = [2, 4, 6];
+const tagsOf = id => (TAGS[id] || '').split('').filter(Boolean).map(c => TK[c]);
+const uniq = a => a.filter((t, i) => a.indexOf(t) === i);
+const sigSVG = t => `<svg viewBox="0 0 32 32" fill="none" stroke="${THEME[t][1]}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${THEME[t][2]}</svg>`;
+// rank of a theme = sum of the levels of the standing buildings that carry it (an evolved building keeps both parts' levels, +1 on the main)
+function themeRanks(S) {
+  const r = {}, by = {}; for (const t of THEMES) { r[t] = 0; by[t] = []; }
+  for (const s of S.town.slots) {
+    const parts = [[s.id, s.lv + (s.evo ? 1 : 0)]]; if (s.evo && s.keep) parts.push([s.keep.id, s.keep.lv]);
+    for (const [id, v] of parts) for (const t of tagsOf(id)) { r[t] += v; by[t].push([id, v]); }
+  }
+  return { r, by };
+}
+const bName = id => (BLD[id] ? BLD[id][0] : id);
+const bPips = lv => `<span class="bpips">${[1, 2, 3].map(k => `<i class="${k <= lv ? 'on' : ''}"></i>`).join('')}</span>`;
+function groups(S) {   // build order; an owned partner follows its main so the link can join neighbours
+  const sl = S.town.slots.slice().sort((a, b) => a.n - b.n), used = new Set(), g = [];
+  for (const s of sl) {
+    if (used.has(s)) continue; used.add(s); let grp = [s];
+    const ek = !s.evo && evoOf(s.id);
+    if (ek && !S.town.evolved[ek]) {
+      const oid = EVO[ek][1] === s.id ? EVO[ek][2] : EVO[ek][1], o = sl.find(q => q.id === oid && !used.has(q) && !q.evo);
+      if (o) { used.add(o); grp = EVO[ek][1] === s.id ? [s, o] : [o, s]; grp.ek = ek; }
+    }
+    g.push(grp);
+  }
+  return g;
+}
+function tileHTML(s) {
+  const e = s.evo ? EVO[s.evo] : null, th = uniq(tagsOf(s.id).concat(e && s.keep ? tagsOf(s.keep.id) : []));
+  return `<div class="bp" data-tw-portrait="b:${s.id}"></div>${e ? `<s class="bleg"></s><i class="bkeep">${bIcon(s.keep.id)}</i>` : ''}<em class="blv">${e ? '★' : RN[s.lv]}</em>${e ? '' : bPips(s.lv)}`
+    + `<span class="bth">${th.map(t => `<i style="--t:${THEME[t][1]}">${sigSVG(t)}</i>`).join('')}</span>`;
+}
+function buildPanel(S) {
+  const P = $('tw-build'); if (!P) return;
+  if (S.town) trackBuild(S);
+  const show = U.mode === 'run' && S.town && S.town.slots.length > 0 && !S.over && !U.set;
+  if (P.style.display !== (show ? 'flex' : 'none')) P.style.display = show ? 'flex' : 'none';
+  if (!show) return;
+  const g = groups(S), sig = g.map(q => q.map(s => s.id + s.lv + (s.evo || '')).join('+') + (q.ek || '')).join('|');
+  if (P._sig === sig) return;
+  P._sig = sig;
+  const old = U.bEl || (U.bEl = {}), keep = {}, th = themeRanks(S), body = P.querySelector('.bbody');
+  P.querySelector('.bth0').innerHTML = THEMES.filter(t => th.r[t] > 0).map(t => {
+    const r = th.r[t], n = TIERS.filter(x => r >= x).length;
+    return `<div class="bsg" data-th="${t}" style="--t:${THEME[t][1]};--o:${[.34, .5, .66, .8][n]}">${sigSVG(t)}<b>${r}</b><u>${TIERS.map(x => `<i class="${r >= x ? 'on' : ''}"></i>`).join('')}</u></div>`; }).join('');
+  body.textContent = '';
+  for (const grp of g) {
+    const w = el('div', 'bg' + (grp.ek ? ' lk' : ''));
+    grp.forEach((s, j) => {
+      let t = old[s.id]; if (!t) { t = old[s.id] = el('div', 'be'); t.dataset.bid = s.id; }
+      const h = tileHTML(s); if (t._h !== h) {   // the portrait canvas stays when only the pips change
+        t._h = h; const cv = t.querySelector('.bp canvas'); t.innerHTML = h; if (cv && !t.querySelector('.bleg')) { const bp = t.querySelector('.bp'); bp.appendChild(cv); bp.__twp = 1; } }
+      t.classList.toggle('evo', !!s.evo); keep[s.id] = 1; w.appendChild(t);
+      if (j === 0 && grp.ek) { const l = el('s', 'blk'); l.dataset.ek = grp.ek; l.classList.toggle('found', !!combos[grp.ek]); w.appendChild(l); }
+    });
+    body.appendChild(w);
+  }
+  for (const k in old) if (!keep[k]) delete old[k];
+}
+// what changed: diff the standing buildings between frames; a line fades in by the building ("Bell Tower built. ..."), the tile pulses
+// before -> after numbers of a level-up, from the sim's own tables (TUNE.town.buildings[id].run / .eff), so the line says what really moved
+const LVL = { every: ['every', ' s'], pEvery: ['flare every', ' s'], pushEvery: ['wave every', ' s'], n: ['count', ''], r: ['reach', ' m'], reach: ['reach', ' m'], dur: ['lasts', ' s'], stun: ['stun', ' s'], mul: ['gold', '×'], trip: ['trip', ' s'], push: ['push', ' m'],
+  cue: ['warning', ' m'], pAdd: ['flare ring', ' m'], mount: ['gun damage', '%', 100], dmg: ['dmg', '×'], boss: ['boss', ' s'], ring: ['lit ring', ' m'], hp: ['max HP', ''], splash: ['splash', '%', 100], flood: ['Flood Gate cooldown', '%', -100],
+  floodArc: ['Flood arc', '%', 100], guard: ['swivel guns', ''], guardDmg: ['guard damage', '%', 100], critMul: ['crit', '%', 100] };
+function lvlAt(id, lv) {
+  const T = Sim.TUNE.town.buildings[id], o = {}; if (!T) return o;
+  for (let l = 0; l < lv; l++) { Object.assign(o, (T.run || [])[l] || {}); const e = (T.eff || [])[l] || {}; for (const k in e) if (typeof e[k] === 'number') { o['e' + k] = (o['e' + k] || 0) + e[k]; } }
+  return o;
+}
+function lvlDelta(id, a, b) {
+  const A = lvlAt(id, a), B = lvlAt(id, b), r = [];
+  for (const k in B) { const key = k[0] === 'e' && LVL[k.slice(1)] && !(k in LVL) ? k.slice(1) : k, L = LVL[key]; if (!L || typeof B[k] !== 'number' || A[k] === B[k]) continue;
+    const m = L[2] || 1, v = x => (Math.round(Math.abs(x * m) * 10) / 10) + L[1];
+    r.push(A[k] == null ? L[0] + ' ' + v(B[k]) : L[0] + ' ' + v(A[k]) + ' → ' + v(B[k])); }
+  return r.slice(0, 3).join(' · ');
+}
+function trackBuild(S) {
+  const cur = {}; for (const s of S.town.slots) cur[s.id] = { lv: s.lv, evo: s.evo || '' };
+  if (U.bPrevS !== S) { U.bPrevS = S; U.bPrev = cur; return; }
+  const prev = U.bPrev; U.bPrev = cur;
+  for (const id in cur) {
+    const a = prev[id], b = cur[id];
+    if (!a) bnote(id, `<b>${escH(bName(id))} built.</b> ${escH(BLD[id][2])}`, 'new');
+    else if (b.evo && !a.evo) bnote(id, `<b>${escH(EVO[b.evo][0])} awakens.</b> ${escH(EVO[b.evo][3])}`, 'evo');
+    else if (b.lv > a.lv) { const d = lvlDelta(id, a.lv, b.lv); bnote(id, `<b>${escH(bName(id))} ${RN[a.lv]} → ${RN[b.lv]}:</b> ${escH(BLD[id][1 + b.lv])}${d ? `<span class="bd">${escH(d)}</span>` : ''}`, 'up'); }
+  }
+  for (const id in prev) if (!cur[id] && !S.town.absorbed[id]) bnote(null, `<b>${escH(bName(id))} torn down.</b> It goes back into the pool.`, 'rep');
+}
+function bnote(id, html, cls) {
+  const box = $('tw-bnotes'); if (!box) return;
+  const n = el('div', 'bnote ' + cls, html); n._id = id; box.appendChild(n);
+  while (box.children.length > 3) box.firstChild.remove();
+  setTimeout(() => n.classList.add('out'), 7200); setTimeout(() => n.remove(), 8200);
+  const pulse = () => { const t = id && U.bEl && U.bEl[id]; if (t) restart(t, 'bpulse'); };
+  pulse(); setTimeout(pulse, 80);
+  const P = $('tw-build'); if (P) restart(P, 'bflash');
+  bnotePlace();
+}
+function bnotePlace() {   // each line sits by the building it talks about (world -> screen), else mid-screen
+  const box = $('tw-bnotes'); if (!box || !box.children.length) return;
+  const R = root.TWRender && root.TWRender.R, W = root.innerWidth, H = root.innerHeight; let k = 0;
+  for (const n of box.children) {
+    let x = W * 0.5, y = H * 0.3 + k * 90;
+    if (n._id && R && R.townPreview && R.screenOf) { const p = R.townPreview(n._id); if (p) { const s = R.screenOf(p[0], p[1] + 3, p[2]); x = s.x; y = s.y - 14; } }
+    const w = n.offsetWidth, h = n.offsetHeight;
+    n.style.left = Math.max(10, Math.min(W - w - 10, x - w / 2)) + 'px'; n.style.top = Math.max(70, Math.min(H - h - 170, y - h - 10 - k * 6)) + 'px'; k++;
+  }
+}
+// hover texts
+function bldTip(S, id) {
+  const s = S.town.slots.find(q => q.id === id), b = BLD[id]; if (!b || !s) return null;
+  const e = s.evo ? EVO[s.evo] : null, r = ROLE[b[1]], lv = s.lv;
+  let h = e ? `<h4>${escH(e[0])} <span class="tg2" style="color:var(--bone)">Evolved</span></h4><div>${escH(e[3])}</div><div class="row">Made of<b>${escH(b[0])} III + ${escH(bName(s.keep.id))} ${RN[s.keep.lv]}</b></div>`
+    : `<h4>${escH(b[0])} <span class="tg2" style="color:${r[1]}">${RN[lv]} · ${r[0]}</span></h4><div>${escH(b[1 + lv])}</div>`;
+  if (!e) {
+    for (let k = lv - 1; k >= 1; k--) h += `<div class="row dim2">Level ${RN[k]}<b>${escH(b[1 + k])}</b></div>`;
+    h += lv < 3 ? `<div class="row nx">Next, level ${RN[lv + 1]}<b>${escH(b[2 + lv])}</b></div>` : '<div class="row">Fully built<b></b></div>';
+    const ek = evoOf(id);
+    if (ek && !S.town.evolved[ek]) {
+      const main = EVO[ek][1] === id, oid = main ? EVO[ek][2] : EVO[ek][1];
+      if (S.town.slots.some(q => q.id === oid && !q.evo)) h += combos[ek]
+        ? `<div class="jtag"><s></s><span><b>${escH(EVO[ek][0])}</b>: ${escH(bName(EVO[ek][1]))} III + ${escH(bName(EVO[ek][2]))}. ${main ? (lv >= 3 ? 'Ready: it comes with a pick.' : 'Raise it to III.') : 'Raise ' + escH(bName(EVO[ek][1])) + ' to III.'}</span></div>`
+        : '<div class="jtag"><s></s><span>This answers another piece you hold. Something is waiting to wake.</span></div>';
+    }
+  }
+  const th = uniq(tagsOf(id).concat(e && s.keep ? tagsOf(s.keep.id) : []));
+  if (th.length) h += `<div class="ths">${th.map(t => `<span style="--t:${THEME[t][1]}">${sigSVG(t)}${THEME[t][0]}</span>`).join('')}</div>`;
+  return h;
+}
+function themeTip(S, t) {
+  const { r, by } = themeRanks(S), n = TIERS.filter(x => r[t] >= x).length, nx = TIERS.find(x => r[t] < x);
+  let h = `<h4>${THEME[t][0]} <span class="tg2" style="color:${THEME[t][1]}">rank ${r[t]}</span></h4><div>Every ${THEME[t][0]} building you hold adds its level.</div>`;
+  h += by[t].map(([id, v]) => `<div class="row dim2">${escH(bName(id))}<b>+${v}</b></div>`).join('');
+  h += `<div class="row">${nx ? `Next notch<b class="num">${nx - r[t]} more level${nx - r[t] > 1 ? 's' : ''} (rank ${nx})</b>` : `Notches<b class="num">${n} of 3</b>`}</div>`;
+  const T = Sim.TUNE.themes && Sim.TUNE.themes[t], tx = T && nx && T['b' + nx] && T['b' + nx].text;   // the bonus line shows once the sim has theme bonuses
+  if (tx) h += `<div class="hint">${escH(tx)}</div>`;
+  return h;
+}
+function linkTip(S, ek) {
+  const e = EVO[ek];
+  return combos[ek] ? `<h4>${escH(e[0])} <span class="tg2" style="color:var(--bone)">Recipe</span></h4><div>${escH(bName(e[1]))} III + ${escH(bName(e[2]))} (any level)</div><div class="row dim2">Result<b>${escH(e[3])}</b></div>`
+    : '<h4>??? <span class="tg2">Hidden pairing</span></h4><div>These two answer each other. Raise one to III and an evolution card can come.</div>';
+}
+function hexTip(S, hv) {
+  if (hv.empty) return `<h4>Empty ground <span class="tg2">${hv.home} slot</span></h4><div>${hv.home === 'inner' ? 'Light and hold buildings rise on the inner ground.' : 'Guns, greed and the strange rise on the outer ground.'} The next building you pick goes to the first free slot of its kind.</div>`;
+  return bldTip(S, hv.id);
+}
+function bTipHTML(S, f) {
+  if (f.bld) return bldTip(S, f.bld);
+  if (f.th) return themeTip(S, f.th);
+  if (f.lk) return linkTip(S, f.lk);
+  if (f.hex) return hexTip(S, f.hex);
+  return null;
+}
+function bindBuild() {
+  const P = $('tw-build');
+  P.addEventListener('mousemove', e => {
+    const t = e.target.closest('.be'), g = e.target.closest('.bsg'), l = e.target.closest('.blk');
+    U.tipFor = t ? { bld: t.dataset.bid, el: t, side: 1 } : g ? { th: g.dataset.th, el: g, side: 1 } : l ? { lk: l.dataset.ek, el: l, side: 1 } : null;
+  });
+  P.addEventListener('mouseleave', () => { U.tipFor = null; });
+}
+function hexHover(S) {   // a hovered hex tells what stands there (LAS-74)
+  const hv = root.TWRender && root.TWRender.hoverSlot, f = U.tipFor;
+  if (f && !f.hexT) return;
+  if (hv && U.mode === 'run' && !S.pick && !U.paused && !U.playing) {
+    if (!f || f.hex.id !== hv.id || f.hex.ring !== hv.ring || f.hex.slot !== hv.slot) U.tipFor = { hex: hv, hexT: 1, side: 1, el: { getBoundingClientRect: () => ({ left: hv.x - 1, right: hv.x + 1, top: hv.y - 1, bottom: hv.y + 1, width: 2, height: 2 }) } };
+  } else if (f && f.hexT) U.tipFor = null;
+}
+// the Codex: recipes (A III + B -> Legend; undiscovered ones as silhouettes) and the six themes
+function codexHTML() {
+  const rec = Object.keys(EVO).map(k => { const e = EVO[k], f = combos[k], A = e[1], B = e[2];
+    const pt = (id, ex) => `<div class="cp${f ? '' : ' sil'}"><div class="bp" data-tw-portrait="b:${id}"></div>${ex || ''}</div>`;
+    return `<div class="cx2${f ? ' on' : ''}">${pt(A, f ? '<em>III</em>' : '')}<span class="pl">+</span>${pt(B, f ? '<em>any</em>' : '')}<span class="eq">→</span>
+      <div class="rs"><b>${f ? escH(e[0]) : '???'}</b><small>${f ? escH(bName(A)) + ' III + ' + escH(bName(B)) + '. ' + escH(e[3]) : 'Undiscovered. Hold both and raise one to III.'}</small></div></div>`; }).join('');
+  const th = THEMES.map(t => `<div class="ct" style="--t:${THEME[t][1]}">${sigSVG(t)}<b>${THEME[t][0]}</b><small>${Object.keys(TAGS).filter(id => tagsOf(id).indexOf(t) >= 0).map(bName).join(', ')}</small></div>`).join('');
+  return `<div class="cxh">Recipes</div><div class="cxr">${rec}</div><div class="cxh">Themes · the sum of the levels of the buildings that carry it</div><div class="cts">${th}</div>`;
+}
+// the end screen: the final build (an island shot, the tiles, the theme ranks)
+function overBuild(S, shot) {
+  const o = $('tw-obuild'); if (!o) return;
+  const th = themeRanks(S), g = groups(S).flat();
+  const tiles = g.map(s => `<div class="be sm${s.evo ? ' evo' : ''}" data-bid="${s.id}">${tileHTML(s)}</div>`).join('');
+  const ths = THEMES.filter(t => th.r[t] > 0).map(t => `<div class="bsg" data-th="${t}" style="--t:${THEME[t][1]};--o:.8">${sigSVG(t)}<b>${th.r[t]}</b></div>`).join('');
+  o.innerHTML = `<span class="k">Your island</span><div class="ob">${shot ? `<img src="${shot}" alt="">` : ''}<div class="obt">${tiles || '<small>Nothing was raised.</small>'}</div></div>${ths ? `<div class="obs">${ths}</div>` : ''}`;
+  o.onmousemove = e => { const t = e.target.closest('.be'), s = e.target.closest('.bsg'); U.tipFor = t ? { bld: t.dataset.bid, el: t, over: 1 } : s ? { th: s.dataset.th, el: s, over: 1 } : null; };
+  o.onmouseleave = () => { U.tipFor = null; };
 }
 function init(cb) { U.cb = cb || {}; if (!U.root) build(); syncTitle(); }
 
