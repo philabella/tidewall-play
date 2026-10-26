@@ -7236,14 +7236,17 @@ function makeMount(kind) {
   g.flash = new T3.Mesh(new T3.PlaneGeometry(1, 1), R.flashMat); g.flash.renderOrder = 7; g.flash.visible = false;
   R.scene.add(root0); R.scene.add(g.flash); return g;
 }
+function batteryRec(S, n) { const sl = S.town && S.town.slots && S.town.slots.find(s => s.n === n); return sl && R.town ? R.town.recs.get(sl.ring * 16 + sl.i) || null : null; }
 function mountsTick(S, t, dt, alpha) {
   const M = S.mounts || [];
   for (let i = 0; i < Math.max(M.length, R.slots.length); i++) {
     const m = M[i]; let g = R.slots[i];
-    if (R.towers[i]) R.towers[i].visible = !!m;
+    if (R.towers[i]) R.towers[i].visible = !!m && !m.b;
     if (!m) { if (g) { R.scene.remove(g.root); R.scene.remove(g.flash); R.slots[i] = null; } continue; }
     if (!g || g.kind !== m.kind) { if (g) { R.scene.remove(g.root); R.scene.remove(g.flash); } g = R.slots[i] = makeMount(m.kind); g.m = null; }
-    if (g.m !== m) { g.m = m; const p = mountPos(i); tower(i); g.root.position.set(p[0], p[1], p[2]); g.aim = g.cur = Math.atan2(p[0], p[2]); }
+    if (g.m !== m) { g.m = m; const p = mountPos(i); if (!m.b) tower(i); g.root.position.set(p[0], p[1], p[2]); g.aim = g.cur = Math.atan2(p[0], p[2]); }
+    // LAS-86 part 3: a Gun Battery's cannon (m.b = its slot's n) is the building itself: no tower, no second gun; shots leave its barrel
+    g.bat = m.b ? batteryRec(S, m.b) : null; g.root.visible = !g.bat;
   }
   // shots fired this frame: kick the gun and turn it toward the target
   if (S.fx) for (const ev of S.fx) {
@@ -7272,7 +7275,9 @@ function mountsTick(S, t, dt, alpha) {
     if (g.fire) { const f = (g.ft < 0.25 ? 1.7 - g.ft * 2.8 : 1) * (0.9 + 0.15 * Math.sin(t * 19) * Math.sin(t * 7.7)); g.fire.scale.set(f, f * (0.9 + 0.2 * Math.sin(t * 13)), f); g.halo.scale.setScalar(0.9 * f); g.halo.quaternion.copy(R.cam.quaternion); }
     // the muzzle (world): shots leave from here; a flash and a puff of powder smoke for the guns that burn powder
     const c = Math.cos(g.cur) * MSCALE, n = Math.sin(g.cur) * MSCALE, mz = g.muz, P = g.root.position;
-    const wx = P.x + mz[0] * c + mz[2] * n, wy = P.y + mz[1] * MSCALE, wz = P.z - mz[0] * n + mz[2] * c;
+    let wx = P.x + mz[0] * c + mz[2] * n, wy = P.y + mz[1] * MSCALE, wz = P.z - mz[0] * n + mz[2] * c;
+    if (g.bat) { const B = g.bat, gp = B.g.position, ry = B.g.rotation.y, s = B.cs || TOWN.k;   // the battery's barrel mouth: out along its facing, at the gun's height
+      wx = gp.x + Math.sin(ry) * 1.25 * s; wy = gp.y + (B.sp.h - 0.56) * s; wz = gp.z + Math.cos(ry) * 1.25 * s; if (g.fired) B.shotT = t; }
     R.muzzle.set(g.m.x + ',' + g.m.y, [wx, wy, wz]);
     const powder = g.kind === 'cannon' || g.kind === 'mortar' || !MART[g.kind];
     g.flash.visible = powder && g.ft < 0.07;
@@ -7696,7 +7701,7 @@ TOWN_DRESS.battery = TOWN_DRESS.gun; TOWN_DRESS.boat = TOWN_DRESS.boathouse;
 function townLook(id, lv, q = 2, plinth) {   // the cached geometry for (id, lv) at detail q (LAS-73: on the island the slot's hex is the plinth; portraits ask for one)
   const k = id + lv + '|' + q + (plinth ? 'p' : ''); let C = TOWNC[k]; if (C) return C;
   const S = model(true), G = model(true), H = townPen(S, G, q);
-  const sp = (TOWN_BUILD[id] || TOWN_BUILD.brazier)(lv, H); if (TOWN_DRESS[id]) TOWN_DRESS[id](lv, H, sp);
+  const bl = Math.min(3, lv), sp = (TOWN_BUILD[id] || TOWN_BUILD.brazier)(bl, H); if (TOWN_DRESS[id]) TOWN_DRESS[id](bl, H, sp);   // lv 4 = the evolved landmark: the III building on a grand keep
   // LAS-86: the level reads as a silhouette for every building: I stands on its hex, II on a stone tower, III on a fortified keep
   const B = model(true), BG = model(true), HB = townPen(B, BG, q); let nb = 0;
   if (plinth) { hexStone(B, q, BG); HB.gn++; nb++; }
@@ -7721,6 +7726,17 @@ function townPodium(lv, H) {
     for (const s of [1, -1]) H.gbox(0.15, 0.26, 0.05, TC.lamp, [0, 0.85, s * 1.06]).gbox(0.15, 0.26, 0.05, TC.lamp, [s * 1.06, 0.85, 0], [0, Math.PI / 2, 0]);
     H.box(0.34, 0.7, 0.02, '#4a1414', [0.42, 1.0, 1.1]);
     return 1.5;
+  }
+  if (lv === 4) {   // the landmark (an evolution): a great keep twice as tall, two tiers of battlements, four tall spired towers, a crown of lit windows
+    H.cyl(1.0, 1.15, 2.5, 8, TC.stone, [0, 1.25, 0]).courses(1.15, 1.0, 0.05, 2.45, 6, TC.stoneD, [0, 0, 0]).cyl(1.16, 1.04, 0.18, 8, TC.stoneD, [0, 2.5, 0]);
+    H.cyl(1.2, 1.2, 0.12, 8, TC.stoneD, [0, 1.25, 0]);
+    H.ring(12, 1.08, (x, z, ry) => H.box(0.22, 0.28, 0.16, TC.stone, [x, 2.73, z], [0, ry, 0]));
+    H.ring(12, 1.2, (x, z, ry) => H.box(0.2, 0.22, 0.14, TC.stone, [x, 1.42, z], [0, ry, 0]));
+    H.ring(4, 1.14, (x, z) => { H.cyl(0.3, 0.34, 3.3, 8, TC.stoneL, [x, 1.65, z]).cyl(0.36, 0.3, 0.12, 8, TC.stoneD, [x, 3.3, z]).cone(0.38, 1.3, 8, TC.black, [x, 4.0, z]);
+      H.gbox(0.08, 0.2, 0.08, TC.lamp, [x * 1.27, 2.9, z * 1.27]).gbox(0.08, 0.2, 0.08, TC.lamp, [x * 1.27, 1.9, z * 1.27]); });
+    H.ring(8, 1.03, (x, z, ry) => H.gbox(0.13, 0.26, 0.05, TC.lamp, [x, 2.15, z], [0, ry, 0]));
+    for (const s of [1, -1]) H.box(0.4, 1.0, 0.02, '#4a1414', [s * 0.45, 1.7, 1.17]).box(0.4, 1.0, 0.02, '#4a1414', [s * 0.45, 1.7, -1.17]);
+    return 2.5;
   }
   return 0;
 }
@@ -7905,17 +7921,20 @@ function townInit() {
   const grp = new T3.Group(); R.scene.add(grp);
   return (R.town = { tm, gm, fm, hm, root: grp, recs: new Map(), flame: new T3.ConeGeometry(0.2, 0.55, 5), plane: new T3.PlaneGeometry(1, 1), dev: null });
 }
+// LAS-86 part 3: the sim's ids map onto the models (LAS-61 aliased only the dev hook: a live Gun Battery drew as Braziers); an
+// evolved slot (sl.evo) shows level 4 = its landmark
+const townId = id => TOWN_ALIAS[id] || id, slotLv = sl => sl.evo ? 4 : sl.lv;
 function townRec(TW, key, sl, fresh, t) {
   const g = new T3.Group(), pv = new T3.Group(), pos = TW.dev && TW.dev.line ? [400 + (sl.i - 1) * 4.6, 0.9, 0] : townPos(sl.ring, sl.i);
   if (!(TW.dev && TW.dev.line)) pos[1] += HEX.top * TOWN.k;   // LAS-86: on the (scaled) hex's top
   g.position.set(pos[0], pos[1], pos[2]); g.rotation.y = TW.dev && TW.dev.line ? 0 : Math.atan2(pos[0], pos[2]); g.add(pv); TW.root.add(g);
-  const rec = { key, g, pv, id: sl.id, lv: sl.lv, fires: [], lamps: [], bell: null, mode: null, a0: 0, hot: null, q: g.quaternion.clone().invert(), ph: hj(sl.ring * 17 + sl.i) * 6.28 };
+  const rec = { key, g, pv, id: sl.id, lv: slotLv(sl), fires: [], lamps: [], bell: null, mode: null, a0: 0, hot: null, q: g.quaternion.clone().invert(), ph: hj(sl.ring * 17 + sl.i) * 6.28 };
   townBuild(TW, rec); if (fresh) townAnim(TW, rec, 'rise', t);
   return rec;
 }
 function townBuild(TW, rec) {   // (re)fills rec.pv with the look of (id, lv)
   for (const c of rec.pv.children.slice()) rec.pv.remove(c);
-  const C = townLook(rec.id, rec.lv), sp = C.sp; rec.sp = sp; rec.fires = []; rec.lamps = []; rec.bell = null;
+  const C = townLook(townId(rec.id), rec.lv), sp = C.sp; rec.sp = sp; rec.fires = []; rec.lamps = []; rec.bell = null;
   const sm = new T3.Mesh(C.solid, TW.tm); sm.castShadow = sm.receiveShadow = true; rec.pv.add(sm); rec.solid = sm;
   if (C.glow) rec.pv.add(new T3.Mesh(C.glow, TW.gm));
   for (const f of sp.fires) { const m = new T3.Mesh(TW.flame, TW.fm), h = new T3.Mesh(TW.plane, TW.hm); m.position.set(f[0], f[1], f[2]); h.position.set(f[0], f[1] + 0.05, f[2]); h.renderOrder = 5; rec.pv.add(m, h); rec.fires.push({ m, h, s: f[3] }); }
@@ -7943,16 +7962,29 @@ function townTick(S, t, dt) {
   const slots = src ? src.slots : [], seen = new Set();
   for (const sl of slots) {
     const key = sl.ring * 16 + sl.i; seen.add(key);
-    let rec = TW.recs.get(key);
-    if (rec && rec.id !== sl.id) { TW.root.remove(rec.g); TW.recs.delete(key); rec = null; }
+    let rec = TW.recs.get(key); const L = slotLv(sl);
+    if (rec && (rec.id !== sl.id || rec.mode === 'fall')) { TW.root.remove(rec.g); TW.recs.delete(key); rec = null; }
     if (!rec) { rec = townRec(TW, key, sl, sl.fresh || (sl.t != null && S.t >= sl.t && S.t - sl.t < 1), t); TW.recs.set(key, rec); sl.fresh = false; }
-    else if (rec.lv !== sl.lv && !(rec.mode === 'lvl' && rec.want === sl.lv)) { rec.want = sl.lv; if (sl.lv > rec.lv) townAnim(TW, rec, 'lvl', t); else { rec.lv = sl.lv; townBuild(TW, rec); } }
+    else if (rec.lv !== L && !(rec.mode === 'lvl' && rec.want === L)) { rec.want = L; if (L > rec.lv) townAnim(TW, rec, 'lvl', t); else { rec.lv = L; townBuild(TW, rec); } }
   }
-  for (const [key, rec] of TW.recs) if (!seen.has(key)) { TW.root.remove(rec.g); TW.recs.delete(key); }
+  // LAS-86 part 3: a building that leaves (absorbed by an evolution, torn down by Replace) sinks back into the rock in a cloud of dust
+  for (const [key, rec] of TW.recs) if (!seen.has(key) && rec.mode !== 'fall') {
+    if (TW.dev && TW.dev.line) { TW.root.remove(rec.g); TW.recs.delete(key); continue; }
+    if (rec.hot) { rec.solid.material = TW.tm; rec.hot.dispose(); rec.hot = null; rec.g.remove(rec.glowPlane); rec.glowPlane.material.dispose(); rec.glowPlane = null; }
+    rec.mode = 'fall'; rec.a0 = t; townDust(rec, 12, true); if (root.TWFx && root.TWFx.sound) root.TWFx.sound('wallboss');
+  }
   if (src) cityTick(TW, src, t, dt);
   const cs = TW.dev && TW.dev.line ? 1 : TOWN.k;   // LAS-86: the city's scale (the portrait line stays 1)
-  for (const rec of TW.recs.values()) {
+  const pulse = S.pulseUntil > S.t ? 1 : 0;   // Braziers III: the fires flare while the brazier ring pulses out
+  for (const rec of [...TW.recs.values()]) {
     let sy = 1, sxz = 1, lift = 0, heat = 0, gl = 0; rec.cs = cs;
+    if (rec.mode === 'fall') {
+      const k = (t - rec.a0) / 1.2;
+      if (k >= 1) { TW.root.remove(rec.g); TW.recs.delete(rec.key); continue; }
+      const e = k * k; rec.pv.position.y = -(rec.sp.h + 0.6) * cs * e; rec.pv.rotation.z = 0.12 * Math.sin(k * 9) * (1 - k); rec.pv.scale.set(cs, cs * (1 - 0.15 * e), cs);
+      if (k > 0.25 && !rec.dust2) { rec.dust2 = 1; townDust(rec, 10, true); }
+      continue;
+    }
     if (rec.mode === 'rise') {
       const k = (t - rec.a0) / TOWN.rise;
       if (k >= 1) { rec.mode = null; townDust(rec, 9, true); } else {
@@ -7963,20 +7995,25 @@ function townTick(S, t, dt) {
     } else if (rec.mode === 'lvl') {
       const k = (t - rec.a0) / TOWN.lvl;
       if (k >= 1) rec.mode = null; else {
-        if (k >= 0.3 && !rec.swapped) { rec.swapped = true; rec.lv = rec.want; townBuild(TW, rec); townDust(rec, 6, false); }
-        const pk = k < 0.3 ? Math.sin(k / 0.3 * Math.PI / 2) : 1 - (k - 0.3) / 0.7; sxz = 1 + 0.1 * pk; sy = 1 + 0.14 * pk; heat = 0.9 * pk; gl = pk * 0.8;
+        if (k >= 0.3 && !rec.swapped) { rec.swapped = true; rec.lv = rec.want; townBuild(TW, rec); townDust(rec, rec.lv === 4 ? 16 : 6, rec.lv === 4);
+          // an evolution: two buildings fold into one landmark: a heavier blow, a longer toll
+          if (rec.lv === 4 && root.TWFx && !(TW.dev && TW.dev.line)) { if (root.TWFx.kick) root.TWFx.kick(0.35); if (root.TWFx.sound) root.TWFx.sound('mile'); } }
+        const big = rec.want === 4 ? 1.8 : 1, pk = k < 0.3 ? Math.sin(k / 0.3 * Math.PI / 2) : 1 - (k - 0.3) / 0.7; sxz = 1 + 0.1 * pk * big; sy = 1 + 0.14 * pk * big; heat = 0.9 * pk; gl = pk * 0.8 * big;
       }
     }
     if (!rec.mode) { if (rec.hot) { rec.solid.material = TW.tm; rec.hot.dispose(); rec.hot = null; rec.g.remove(rec.glowPlane); rec.glowPlane.material.dispose(); rec.glowPlane = null; } }
     else { rec.hot.emissiveIntensity = heat * 0.75; rec.solid.material = rec.hot; rec.glowPlane.material.opacity = gl; rec.glowPlane.scale.setScalar(6.5 * cs * (0.5 + gl)); }
-    rec.pv.position.y = lift; rec.pv.scale.set(sxz * cs, sy * cs, sxz * cs);
-    // life: flames flicker, lanterns breathe, the bell sways and rings now and then
-    TQ.copy(rec.q).multiply(R.cam.quaternion); const ph = rec.ph;
-    rec.fires.forEach((f, j) => { const k = 0.8 + 0.2 * Math.sin(t * 11 + j * 2.7 + ph) * Math.sin(t * 5.3 + j + ph) + 0.08 * Math.sin(t * 23 + j * 5);
+    // a Gun Battery's shot (mountsTick sets rec.shotT): the building kicks back and settles
+    const sk = rec.shotT != null ? Math.max(0, 1 - (t - rec.shotT) / 0.3) : 0;
+    rec.pv.position.y = lift; rec.pv.position.z = -0.22 * cs * sk * sk; rec.pv.scale.set(sxz * cs, sy * cs, sxz * cs);
+    // life: flames flicker (and flare with the brazier pulse), lanterns breathe, the bell swings when it tolls (S.ev 'bell')
+    TQ.copy(rec.q).multiply(R.cam.quaternion); const ph = rec.ph, fl = pulse && townId(rec.id) === 'brazier' ? 1.8 : 1;
+    rec.fires.forEach((f, j) => { const k = fl * (0.8 + 0.2 * Math.sin(t * 11 + j * 2.7 + ph) * Math.sin(t * 5.3 + j + ph) + 0.08 * Math.sin(t * 23 + j * 5));
       f.m.scale.set(f.s * k, f.s * (0.8 + 0.5 * k), f.s * k); f.h.quaternion.copy(TQ); f.h.scale.setScalar(1.4 * f.s * k); });   // LAS-86: inside pv (already x cs): no second cs
     rec.lamps.forEach((l, j) => { l.h.quaternion.copy(TQ); l.h.scale.setScalar(0.7 * l.s * (0.9 + 0.1 * Math.sin(t * 3.1 + j + ph))); });
-    if (rec.bell) { const c = (t + ph) % 9, ring = c < 3 ? Math.exp(-c * 0.9) * Math.sin(c * 9) : 0; rec.bell.g.rotation.z = rec.bell.amp * ring + 0.04 * Math.sin(t * 1.3 + ph); }
+    if (rec.bell) { const c = S.town ? (rec.bellT != null ? (t - rec.bellT) * 1.4 : 9) : (t + ph) % 9, ring = c < 3 ? Math.exp(-c * 0.9) * Math.sin(c * 9) : 0; rec.bell.g.rotation.z = rec.bell.amp * ring + 0.04 * Math.sin(t * 1.3 + ph); }
   }
+  townFx(S, TW, t, dt);
 }
 // auto-fill (no placing): inner buildings take the innermost free slot, outer ones the outermost (dev only until the sim core)
 function townAdd(TW, id, lv, fresh) {
@@ -8069,6 +8106,73 @@ function cityTick(TW, src, t, dt) {
   // chimney smoke from the open rings
   if (!line && (C.smoke -= dt) <= 0) { C.smoke = 0.18; const r = C.rings[Math.floor(Math.random() * n)], p = r.chim[Math.floor(Math.random() * r.chim.length)];
     if (p) puff(p[0], p[1], p[2], 0.12, 3.5 + Math.random() * 2, 0.7, 2.2); }
+}
+// ---------- LAS-86 part 3: the buildings at work, like Vampire Survivors weapons: each shows its effect in the battle, in its own colour
+// and shape, read from the sim's events (S.ev): the Bell Tower's toll runs a pale shock ring out across the brazier ring, the Fog Horn
+// rolls a ring of mist out, the Breakwater throws foam off the wall, the Braziers' pulse flashes an ember ring, a Rocket Rack's rocket
+// arcs out and bursts into a flare where it lands, the Watch Posts ping what they spot; the Boathouse's boats row out and back (S.boats).
+// The Gun Battery fires from its own barrel (mountsTick). Rings are one pooled mesh each; nothing here touches the sim.
+const TFX = { bell: '#d9d2c0', horn: '#7d8683', foam: '#bff3ea', ember: '#ff7a30', watch: '#e8e2d0', rocket: '#ffd9a8' };
+const viewR = r => r * radK(r);   // a sim radius (m from the centre) at view scale
+function tfxInit(TW) {
+  if (R.tfx) return R.tfx;
+  const grp = new T3.Group(); R.scene.add(grp);
+  const S0 = model(true), G0 = model(true), H = townPen(S0, G0, 2);   // a rowing boat: dark hull, mast, a furled sail, a lantern at the bow
+  H.box(0.75, 0.38, 2.5, TC.woodD, [0, 0.19, 0]).box(0.5, 0.3, 0.5, TC.woodD, [0, 0.2, 1.35], [0, Math.PI / 4, 0]).box(0.6, 0.06, 2.2, TC.wood, [0, 0.4, 0]);
+  H.limb([0, 0.35, -0.1], [0, 2.4, -0.1], 0.045, 0.03, TC.wood).box(0.05, 1.3, 0.85, '#2a2422', [0, 1.45, -0.3]).gbox(0.16, 0.2, 0.16, TC.lamp, [0, 0.72, 1.15]);
+  return (R.tfx = { grp, rings: [], rockets: [], flares: [], boats: new Map(), geo: ringGeo(0.9), boat: { solid: S0.geo(), glow: G0.geo() }, TW });
+}
+function tfxRing(X, t, o) {   // o: { c, r0, r1, y, dur, op, add, delay, x, z }
+  let m = X.rings.find(q => !q.on);
+  if (!m) { m = { mesh: new T3.Mesh(X.geo, new T3.MeshBasicMaterial({ transparent: true, depthWrite: false, fog: false, side: T3.DoubleSide })) }; m.mesh.renderOrder = 4; m.mesh.frustumCulled = false; X.grp.add(m.mesh); X.rings.push(m); }
+  Object.assign(m, { x: 0, z: 0, delay: 0 }, o, { on: true }); m.t0 = t + m.delay;
+  const M = m.mesh.material; M.color.set(o.c); M.blending = o.add ? T3.AdditiveBlending : 1;   // 1 = NormalBlending (the trimmed three has no constant) M.needsUpdate = true; m.mesh.visible = false;
+}
+function tfxHalo(X, c) { const h = new T3.Mesh(R.town.plane, new T3.MeshBasicMaterial({ color: c, map: haloTex(), transparent: true, depthWrite: false, blending: T3.AdditiveBlending, fog: false })); h.renderOrder = 6; X.grp.add(h); return h; }
+function slotRecAt(S, x, y) { const sl = S.town && S.town.slots.find(s => Math.abs(s.x - x) < 1e-6 && Math.abs(s.y - y) < 1e-6); return sl && R.town ? R.town.recs.get(sl.ring * 16 + sl.i) : null; }
+function townFx(S, TW, t, dt) {
+  if (!S.town || (TW.dev && TW.dev.line)) return;
+  const X = tfxInit(TW), F = root.TWFx;
+  if (S.ev) for (const ev of S.ev) {
+    if (ev.k === 'bell') { const rec = slotRecAt(S, ev.x, ev.y); if (rec) rec.bellT = t; const r1 = viewR(ev.r);
+      tfxRing(X, t, { c: TFX.bell, r0: 3, r1, y: 1.0, dur: 0.8, op: 0.55, add: 1 }); tfxRing(X, t, { c: TFX.bell, r0: 3, r1: r1 * 0.92, y: 0.9, dur: 0.9, op: 0.28, add: 1, delay: 0.16 });
+      if (F && F.sound) F.sound('bell'); }
+    else if (ev.k === 'horn') { const r1 = viewR(ev.r);
+      tfxRing(X, t, { c: TFX.horn, r0: 4, r1, y: 0.7, dur: 1.8, op: 0.34 }); tfxRing(X, t, { c: TFX.horn, r0: 4, r1: r1 * 0.85, y: 0.6, dur: 2.0, op: 0.2, delay: 0.35 });
+      for (let j = 0; j < 18; j++) { const a = j / 18 * 6.283, d = r1 * (0.45 + 0.1 * Math.random()); puff(Math.cos(a) * d, 0.5, Math.sin(a) * d, 0.55, 2.6, 0.15, 3.2); } }
+    else if (ev.k === 'breakwater') { const O = R.isleStep ? R.outer[R.isleStep - 1] : null, ro = O ? O.Ro + 0.3 : 3.6;
+      tfxRing(X, t, { c: TFX.foam, r0: ro, r1: ro + 2.5 + (ev.push || 4) * 1.2, y: 0.3, dur: 0.9, op: 0.55, add: 1 });
+      for (let j = 0; j < 28; j++) { const a = Math.random() * 6.283; puff(Math.cos(a) * ro, 0.4 + Math.random(), Math.sin(a) * ro, 0.85, 0.9 + Math.random() * 0.5, 1.3, 2.2); } }
+    else if (ev.k === 'brazier') { const r = viewR(ev.r); tfxRing(X, t, { c: TFX.ember, r0: Math.max(2, r - 4), r1: r + 1.5, y: 0.4, dur: 1.1, op: 0.4, add: 1 }); }
+    else if (ev.k === 'watch') { const [vx, vz] = toView(Math.cos(ev.a) * ev.d, Math.sin(ev.a) * ev.d); tfxRing(X, t, { c: TFX.watch, r0: 0.5, r1: ev.boss ? 6 : 3.5, y: 0.5, dur: 0.7, op: 0.6, add: 1, x: vx, z: vz }); }
+    else if (ev.k === 'rocket') { const rec = slotRecAt(S, ev.sx, ev.sy), [vx, vz] = toView(ev.x, ev.y);
+      const from = rec ? [rec.g.position.x, rec.g.position.y + rec.sp.h * (rec.cs || TOWN.k), rec.g.position.z] : [0, RLOOK.plateau + 3, 0];
+      const head = new T3.Mesh(ico(0.24, 1), mat('#ffd59a', { glow: 1 })), halo = tfxHalo(X, TFX.rocket); X.grp.add(head);
+      X.rockets.push({ t0: t, dur: Math.max(0.5, ev.climb || 1), from, to: [vx, 0.4, vz], peak: 9 + 0.2 * Math.hypot(vx - from[0], vz - from[2]), head, halo, r: ev.r || 6, fdur: ev.dur || 3, smoke: 0 }); }
+    else if (ev.k === 'boat' && !ev.ok) { const [vx, vz] = toView(Math.cos(ev.a) * ev.r, Math.sin(ev.a) * ev.r);   // a boat lost in the dark: a splash, a ring of foam
+      tfxRing(X, t, { c: TFX.foam, r0: 0.5, r1: 4, y: 0.2, dur: 0.8, op: 0.5, add: 1, x: vx, z: vz }); for (let j = 0; j < 10; j++) puff(vx + (Math.random() - 0.5) * 2, 0.4, vz + (Math.random() - 0.5) * 2, 0.8, 1, 1.2, 1.6); }
+  }
+  // rings: ease out to r1, fade
+  for (const m of X.rings) { if (!m.on) continue; const q = (t - m.t0) / m.dur;
+    if (q < 0) { m.mesh.visible = false; continue; } if (q >= 1) { m.on = false; m.mesh.visible = false; continue; }
+    const e = 1 - (1 - q) * (1 - q); m.mesh.visible = true; m.mesh.position.set(m.x, m.y, m.z); m.mesh.scale.setScalar(m.r0 + (m.r1 - m.r0) * e); m.mesh.material.opacity = m.op * Math.pow(1 - q, 1.5); }
+  // rockets: a high arc from the rack, a smoke trail; where one lands, a flare hangs and fades (the sim lights that patch for fdur s)
+  for (let i = X.rockets.length - 1; i >= 0; i--) { const k = X.rockets[i], q = (t - k.t0) / k.dur;
+    if (q >= 1) { X.grp.remove(k.head); k.halo.position.set(k.to[0], 2.2, k.to[2]); X.flares.push({ h: k.halo, t0: t, dur: k.fdur, r: k.r });
+      tfxRing(X, t, { c: TFX.rocket, r0: 0.5, r1: k.r, y: 0.25, dur: 0.6, op: 0.4, add: 1, x: k.to[0], z: k.to[2] }); X.rockets.splice(i, 1); continue; }
+    const x = k.from[0] + (k.to[0] - k.from[0]) * q, z = k.from[2] + (k.to[2] - k.from[2]) * q, y = k.from[1] + (k.to[1] - k.from[1]) * q + k.peak * 4 * q * (1 - q);
+    k.head.position.set(x, y, z); k.halo.position.set(x, y, z); k.halo.quaternion.copy(R.cam.quaternion); k.halo.scale.setScalar(2.2); k.halo.material.opacity = 0.7;
+    if ((k.smoke -= dt) <= 0) { k.smoke = 0.03; puff(x, y, z, 0.55, 1.2, 0.15, 0.9); } }
+  for (let i = X.flares.length - 1; i >= 0; i--) { const f = X.flares[i], q = (t - f.t0) / f.dur;
+    if (q >= 1) { X.grp.remove(f.h); f.h.material.dispose(); X.flares.splice(i, 1); continue; }
+    f.h.quaternion.copy(R.cam.quaternion); f.h.scale.setScalar(f.r * 1.6 * (0.9 + 0.1 * Math.sin(t * 17 + i))); f.h.material.opacity = 0.42 * (q < 0.1 ? q * 10 : 1 - (q - 0.1) / 0.9); }
+  // boats: row straight out along their angle and back, bobbing on the swell, the bow lantern lit
+  const live = new Set();
+  for (const b of S.boats || []) { if (S.t < b.t0) continue; live.add(b.id); let B = X.boats.get(b.id);
+    if (!B) { B = new T3.Group(); const s = new T3.Mesh(X.boat.solid, TW.tm), gl = new T3.Mesh(X.boat.glow, TW.gm); s.castShadow = true; B.add(s, gl); B.scale.setScalar(1.3); X.grp.add(B); B.userData.pr = b.r; X.boats.set(b.id, B); }
+    const [vx, vz] = toView(Math.cos(b.a) * b.r, Math.sin(b.a) * b.r), out = b.r >= B.userData.pr - 1e-6; B.userData.pr = b.r;
+    B.position.set(vx, 0.12 + 0.1 * Math.sin(t * 1.9 + b.id), vz); B.rotation.set(0.05 * Math.sin(t * 1.3 + b.id), Math.atan2(vx, vz) + (out ? 0 : Math.PI), 0.07 * Math.sin(t * 1.7 + b.id * 2)); }
+  for (const [id, B] of X.boats) if (!live.has(id)) { X.grp.remove(B); X.boats.delete(id); }
 }
 // #town=gun2,brazier1,... (id + level) or #town=all2; &rings=N (default: the fewest that hold them). TWRender.R.townApi: add / up / reset.
 function townDevInit() {
