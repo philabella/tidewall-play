@@ -6238,6 +6238,7 @@ const RLOOK = {
   rimCol: '#4fc3c8', rim: 0, rimPos: [10, 14, 60], exposure: 1.15, shadow: 3072, shadowBox: 26,   // LAS-86: the shadow box covers the wave-50 city (wall 21.8 m); more texels to keep the density
   amber: '#ffb36b', lamp: '#ffd08a', stone: '#6d6a66', stoneDark: '#45474a', roof: '#3a2f2c', rock: '#3b4446', rockDark: '#262d30',
   sea: '#0e3238', tide: '#7fb3aa', tideDeep: '#3e6863', eye: '#9ff5ea', boss: '#24413f', shot: '#ffc27a', spark: '#ffb36b', splash: '#7fe8dc',
+  horror: false, eyeH: '#cfc79a',   // LAS-109: the horror creature set (off until Philippe approves the turntable; #horror turns it on); eyeshine, not a cyan dot
   filter: 'none',
   vignette: 'none',   // LAS-65: vignette + grain are in the final pass
   maxEnemies: 6000, maxShots: 1024, maxSparks: 512, plateau: 1.2, shore: 7.5, gunY: 4.6, deck: 4.1, walk: 1.7,
@@ -6324,9 +6325,18 @@ function model(smooth) {   // smooth (LAS-73): keep the primitives' own normals 
     if (!hadN) g.computeVertexNormals(); c.set(col);
     const n = g.getAttribute('position').count, a = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; }
-    g.setAttribute('color', new T3.BufferAttribute(a, 3)); parts.push(g); return g;
+    if (M.rg) { const P = g.getAttribute('position');   // LAS-109: mottled dead skin: blotches by position, blood pooled dark and purple low on the body
+      for (let i = 0; i < n; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), h = Math.sin(x * 41.3 + y * 27.1 + z * 33.7) * 0.5 + Math.sin(x * 13.1 - z * 17.9 + y * 9.3) * 0.5, k = 0.88 + 0.12 * h, lv = Math.max(0, Math.min(1, (0.28 - y) / 0.28)) * 0.45;
+        a[i * 3] = a[i * 3] * k * (1 - lv) + 0.2 * lv; a[i * 3 + 1] = a[i * 3 + 1] * k * (1 - lv) + 0.12 * lv; a[i * 3 + 2] = a[i * 3 + 2] * k * (1 - lv) + 0.18 * lv; } }
+    g.setAttribute('color', new T3.BufferAttribute(a, 3));
+    if (M.rg) { const r = M.rg, A = new Float32Array(n * 4), B = new Float32Array(n * 4);   // LAS-109: each vertex's bone (own joint + parent joint)
+      for (let i = 0; i < n; i++) for (let k = 0; k < 4; k++) { A[i * 4 + k] = r[k]; B[i * 4 + k] = r[4 + k]; }
+      g.setAttribute('rig', new T3.BufferAttribute(A, 4)); g.setAttribute('rig2', new T3.BufferAttribute(B, 4)); }
+    parts.push(g); return g;
   };
   const M = {
+    // LAS-109: bone(a, pa, b, pb): the parts added next turn about joint pa (bone a), then with their parent about pb (bone b); -1 = none
+    bone(a = -1, pa = [0, 0, 0], b = -1, pb = [0, 0, 0]) { M.rg = [pa[0], pa[1], pa[2], a, pb[0], pb[1], pb[2], b]; return M; },
     add(g, col, p = [0, 0, 0], r = [0, 0, 0], s) {
       if (s) { if (typeof s === 'number') g.scale(s, s, s); else g.scale(s[0], s[1], s[2]); }
       g.rotateX(r[0]); g.rotateY(r[1]); g.rotateZ(r[2]); g.translate(p[0], p[1], p[2]); put(g, col); return M;
@@ -6721,6 +6731,326 @@ function gaitMat(m, kind, rim) {
   });
 }
 
+// ---------- LAS-109 (Philippe: "nothing about them is scary"): the horror wave creatures, rules in art/creatures-horror.md.
+// Almost human, wrong proportions, pale wet skin, black mouths, and motion: stepped stop-start gaits, twitches, and a
+// reaction when the light hits (aRx = per instance [lit 0..1, seconds since the light came on]). Each vertex carries its
+// bone (rig = own joint + id, rig2 = parent joint + id); the vertex shader poses up to 12 bones per kind, still one
+// instanced draw for the body and one for the eyes. Off until Philippe approves the turntable: #horror (or RLOOK.horror).
+const HC = { skin: '#c2bba0', pale: '#d6cfb6', grey: '#9a9888', bruise: '#6c656c', wet: '#3a3836', mouth: '#060404', bone: '#d6ccb0', nail: '#8f8576', cloth: '#1c1b1e', rag: '#2b2926', hair: '#0d0d0e', rope: '#463e31' };
+const rmodel = () => model(true).bone();
+// flesh(): a limb through pts that reads as muscle and bone, not a tube: each segment swells past its joint and thins
+// into the next, a little flattened, with a smooth knuckle at every inner joint
+function flesh(M, pts, rs, col, n = 5, sw = 1.14) {
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1], r0 = rs[i], r1 = rs[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    const sec = [[0, r0 * 0.9], [L * 0.22, r0 * sw], [L * 0.55, (r0 + r1) * 0.5], [L * 0.85, r1 * 0.9], [L, r1 * 0.86]].map(([y, r]) => [y, r, r * 0.84, r * 0.84]);
+    const g = sloft(sec, n, 2); g.applyQuaternion(new T3.Quaternion().setFromUnitVectors(UPV, new T3.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]).normalize())); g.translate(a[0], a[1], a[2]); M.add(g, col);
+    if (i > 0) M.add(new T3.IcosahedronGeometry(r0 * 0.88, r0 > 0.06 ? 1 : 0), col, a);
+  }
+  return M;
+}
+const strand = (M, p, d, L, w, col) => spike(M, p, d, L, w, col, 3);   // a wet strand of hair (thin, tapering, seen from every side)
+function rag(M, a, b, drop, col, seed = 1) {   // torn cloth hanging from the edge a-b: a jagged membrane, longer and shorter tongues
+  const P = [], tri = [], N = 4;
+  for (let i = 0; i <= N; i++) { const k = i / N, x = a[0] + (b[0] - a[0]) * k, y = a[1] + (b[1] - a[1]) * k, z = a[2] + (b[2] - a[2]) * k, L = drop * (0.45 + 0.55 * Math.abs(Math.sin(seed * 3.1 + i * 2.3)));
+    P.push([x, y, z], [x + 0.01 * Math.sin(i + seed), y - L, z + 0.02 * Math.cos(i * 1.7 + seed)]); }
+  for (let i = 0; i < N; i++) { const q = i * 2; tri.push([q, q + 2, q + 1], [q + 2, q + 3, q + 1]); }
+  return web(M, P, tri, col);
+}
+// a part placed in a local frame turned so +z points along nrm (faces pressed into a surface)
+function onSurf(p, nrm, roll = 0) { const q = new T3.Quaternion().setFromUnitVectors(new T3.Vector3(0, 0, 1), new T3.Vector3(...nrm).normalize()).multiply(new T3.Quaternion().setFromAxisAngle(new T3.Vector3(0, 0, 1), roll));
+  return (M, g, col, lp, ls) => { if (ls) g.scale(...ls); g.translate(...lp); g.applyQuaternion(q); g.translate(...p); return M.add(g, col); }; }
+const HEYE = {};   // eye geometry per kind, built with the body (same bones)
+const eyePair = (E, x, y, z, r) => { for (const s of [-1, 1]) E.add(new T3.OctahedronGeometry(r, 0), '#fff', [x * s, y, z]); };
+const HART = {
+  // the Drowned: a bloated sailor bent backwards into a crab walk, belly to the sky, the head hanging upside down between
+  // the shoulders. Lit: the head twists upright to stare at the lamp and the body freezes.
+  drowned() {
+    const M = rmodel(), E = rmodel(), th = Math.PI / 2 - 0.22, cT = Math.cos(th), sT = Math.sin(th);
+    const T = [[0, 0.14, 0.07, 0.09], [0.14, 0.19, 0.09, 0.17], [0.3, 0.23, 0.1, 0.27], [0.46, 0.23, 0.1, 0.23], [0.6, 0.21, 0.09, 0.14], [0.72, 0.2, 0.08, 0.1], [0.8, 0.08, 0.05, 0.05]];
+    const at = u => [0.72 + u * cT, -0.4 + u * sT];   // a loft height u -> its world (y, z) on the torso's axis
+    M.add(sloft(T, 9, 2.4), HC.skin, [0, 0.72, -0.4], [th, 0, 0]);
+    M.add(new T3.IcosahedronGeometry(0.17, 2), HC.pale, [0, 0.9, -0.12], [0.2, 0, 0], [1.25, 0.62, 1.3]);   // the drowned belly, swollen
+    for (let i = 0; i < 5; i++) M.add(new T3.BoxGeometry(0.008, 0.004, 0.16), HC.bruise, [-0.12 + i * 0.06, 1.0 - Math.abs(i - 2) * 0.02, -0.12], [0, 0.3 * (i - 2), 0]);   // stretch marks
+    for (let i = 0; i < 6; i++) { const u = 0.47 + i * 0.05, [cy, cz] = at(u), q = secAt(T, u);   // ribs over the chest
+      M.add(new T3.TorusGeometry(q.hw * 0.96, 0.008, 3, 8, Math.PI), HC.bone, [0, cy, cz], [0.22, 0, 0], [1, q.b * 0.98 / (q.hw * 0.98), 1]); }
+    M.add(new T3.TorusGeometry(0.19, 0.016, 3, 10), HC.rope, [0, ...at(0.12)], [0.22, 0, 0], [1, 0.75, 1]);   // a rope belt
+    M.sym(s => { rag(M, [0.2 * s, 0.74, -0.32], [0.22 * s, 0.82, -0.02], 0.2, HC.rag, 1 + s); rag(M, [0.21 * s, 0.84, 0.02], [0.19 * s, 0.9, 0.22], 0.14, HC.cloth, 3 + s); });   // the shirt, hanging off in torn tongues
+    // the neck bends forward and down; the head hangs upside down under it (bone 1, turning about its own centre)
+    chain(M, [[0, 0.9, 0.32], [0, 0.88, 0.44]], [0.075, 0.066], HC.skin, 7);
+    const HP = [0, 0.6, 0.56]; M.bone(1, HP); E.bone(1, HP);
+    chain(M, [[0, 0.88, 0.44], [0, 0.8, 0.53], [0, 0.72, 0.56]], [0.066, 0.06, 0.06], HC.skin, 7);
+    M.add(new T3.IcosahedronGeometry(0.125, 2), HC.pale, HP, [0, 0, 0], [0.85, 1.4, 0.95]);
+    M.add(ico(0.06, 0), HC.mouth, [0, 0.69, 0.655], [0, 0, 0], [0.75, 1.9, 0.45]);   // the mouth, stretched far too long (upside down: above the eyes)
+    for (let i = 0; i < 4; i++) spike(M, [(i - 1.5) * 0.022, 0.6 + 0.205, 0.64], [0, -1, 0.1], 0.04, 0.008, HC.bone, 3);
+    for (let i = 0; i < 3; i++) spike(M, [(i - 1) * 0.022, 0.585, 0.65], [0, 1, 0.1], 0.035, 0.008, HC.bone, 3);
+    M.sym(s => M.add(ico(0.03, 0), HC.mouth, [0.045 * s, 0.55, 0.655], [0, 0, 0], [1.1, 0.8, 0.5]));   // sunken sockets
+    M.add(cone(0.02, 0.05, 4), HC.skin, [0, 0.61, 0.68], [Math.PI / 2 + 0.6, 0, 0]);   // the nose, pointing down
+    eyePair(E, 0.045, 0.55, 0.665, 0.012);
+    M.bone(10, [0, 0.47, 0.56], 1, HP);   // the hair turns back against the head (bone 10): when the head twists upright it falls over the face
+    for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2, L = 0.2 + (i * 5 % 4) * 0.05;   // wet hair hanging from the crown in strands
+      strand(M, [Math.cos(a) * 0.075, 0.5, 0.56 + Math.sin(a) * 0.07], [Math.cos(a) * 0.15, -1, Math.sin(a) * 0.15], L, 0.012, HC.hair); }
+    // the arms reach back over the head to the ground, elbows bent the wrong way (bone 2/3 upper, 4/5 forearm + hand)
+    M.sym(s => {
+      const sh = [0.2 * s, 0.93, 0.3], el = [0.35 * s, 0.5, 0.4], wr = [0.33 * s, 0.07, 0.66], up = s > 0 ? 2 : 3, lo = s > 0 ? 4 : 5;
+      M.bone(up, sh); M.add(new T3.IcosahedronGeometry(0.05, 1), HC.skin, sh); flesh(M, [sh, el], [0.055, 0.038], HC.skin);
+      M.bone(lo, el, up, sh); M.add(new T3.IcosahedronGeometry(0.03, 1), HC.grey, el, [0, 0, 0], [1, 1, 1.4]); flesh(M, [el, wr], [0.04, 0.026], HC.skin);
+      M.add(ico(0.04, -1), HC.skin, [wr[0], 0.04, wr[2]], [0, 0, 0], [1.2, 0.5, 1.4]);
+      for (let f = 0; f < 4; f++) { const fx = wr[0] + (f - 1.5) * 0.028, a = [fx, 0.035, wr[2] - 0.02], b = [fx + (f - 1.5) * 0.03, 0.03, wr[2] - 0.12], c = [fx + (f - 1.5) * 0.05, 0.012, wr[2] - 0.22];
+        chain(M, [a, b, c], [0.013, 0.011, 0.008], HC.skin, 4); spike(M, c, [(f - 1.5) * 0.1, -0.2, -1], 0.025, 0.007, HC.nail, 3); }
+      chain(M, [[wr[0], 0.04, wr[2]], [wr[0] + 0.06 * s, 0.025, wr[2] + 0.07]], [0.013, 0.009], HC.skin, 5);   // the thumb, forward
+    });
+    // the legs: knees high and back, bare feet with long toes (bone 6/7 thigh, 8/9 shin)
+    M.sym(s => {
+      const hp = [0.14 * s, 0.7, -0.42], kn = [0.27 * s, 0.42, -0.64], an = [0.25 * s, 0.07, -0.5], th0 = s > 0 ? 6 : 7, sh0 = s > 0 ? 8 : 9;
+      M.bone(th0, hp); flesh(M, [hp, kn], [0.085, 0.055], HC.rag, 8);   // a torn trouser leg, soaked black
+      M.bone(sh0, kn, th0, hp); M.add(new T3.IcosahedronGeometry(0.04, 1), HC.grey, kn); flesh(M, [kn, an], [0.052, 0.032], HC.skin);
+      M.add(ico(0.045, -1), HC.skin, [an[0], 0.035, an[2] - 0.06], [0, 0, 0], [0.8, 0.45, 1.8]);
+      for (let f = 0; f < 4; f++) spike(M, [an[0] + (f - 1.5) * 0.022, 0.02, an[2] - 0.13], [(f - 1.5) * 0.15, -0.1, -1], 0.06, 0.01, HC.skin, 3);
+    });
+    HEYE.drowned = E.geo(); return M.geo();
+  },
+  // the Spawn / Shadeling: a drowned man's spine and ribcage picked clean, running on its ribs like a centipede, the jaw
+  // still hanging at the front. Ribs = legs (bones 1-5 left, 6-10 right), the jaw (bone 11) chatters. Lit: the ribs clench
+  // under it, it trembles and chatters, then runs.
+  swarmer() {
+    const M = rmodel(), E = rmodel(), Y = z => 0.3 + 0.05 * Math.cos(z * 3.2);   // the spine's arch
+    for (let i = 0; i < 13; i++) { const z = -0.36 + i * 0.056, y = Y(z);
+      M.add(new T3.IcosahedronGeometry(0.03, 1), HC.bone, [0, y, z], [0, 0, 0], [1.4, 0.9, 0.85]);
+      spike(M, [0, y + 0.02, z], [0, 1, -0.5], 0.05 - Math.abs(i - 6) * 0.003, 0.012, HC.bone, 3); }
+    flesh(M, [[0, Y(-0.36), -0.36], [0, Y(0), 0], [0, Y(0.34), 0.34]], [0.022, 0.024, 0.02], HC.grey, 6, 1);   // the cord under the vertebrae
+    M.sym(s => M.add(new T3.IcosahedronGeometry(0.06, 1), HC.bone, [0.06 * s, Y(-0.38) - 0.03, -0.4], [0.3, 0.4 * s, 0.5 * s], [1.2, 0.85, 0.35]));   // the pelvis wings
+    chain(M, [[0, Y(-0.4), -0.42], [0, 0.26, -0.5], [0, 0.2, -0.56]], [0.016, 0.01, 0.005], HC.bone, 4, true);   // the tail bone
+    for (let i = 0; i < 3; i++) rag(M, [-0.05, Y(-0.1 + i * 0.14) - 0.02, -0.1 + i * 0.14], [0.05, Y(-0.04 + i * 0.14) - 0.02, -0.04 + i * 0.14], 0.12, i % 2 ? HC.wet : HC.bruise, i + 2);   // wet flesh still hanging off it
+    for (let r = 0; r < 5; r++) { const z = 0.2 - r * 0.115, L = 1 - Math.abs(r - 1.5) * 0.08;   // the ribs, arched out and down to the ground like legs
+      M.sym(s => { const v = [0.025 * s, Y(z), z]; M.bone(s > 0 ? 1 + r : 6 + r, v);
+        chain(M, [v, [0.13 * s * L, Y(z) + 0.1, z + 0.01], [0.25 * s * L, Y(z) + 0.07, z + 0.03], [0.33 * s * L, 0.17, z + 0.05], [0.35 * s * L, 0.0, z + 0.06]], [0.019, 0.017, 0.014, 0.011, 0.006], HC.bone, 5, true); }); }
+    // the jaw: a U of bone with its teeth, hanging under where the skull was (bone 11)
+    const jp = [0, Y(0.34) - 0.02, 0.34]; M.bone(11, jp);
+    const U = [[-0.06, 0.24, 0.36], [-0.045, 0.2, 0.43], [0, 0.19, 0.46], [0.045, 0.2, 0.43], [0.06, 0.24, 0.36]];
+    chain(M, U, [0.016, 0.018, 0.018, 0.018, 0.016], HC.bone, 5, true);
+    M.sym(s => M.limb(jp, [0.06 * s, 0.24, 0.36], 0.012, 0.014, HC.bone, 4));
+    for (let i = 0; i < 7; i++) { const k = i / 6, a = Math.PI * (0.15 + 0.7 * k); spike(M, [Math.cos(a) * -0.052, 0.205 + Math.abs(k - 0.5) * 0.04, 0.37 + Math.sin(a) * 0.075], [0, 1, 0.1], 0.03, 0.007, HC.bone, 3); }
+    eyePair(E, 0.0, 0.3, 0.3, 0.0);   // (no eyes)
+    HEYE.swarmer = E.geo(); return M.geo();
+  },
+  // the Hulk: three drowned men fused into one hunched mass, no head (a stump), leaning on two huge arms; a third body's
+  // leg sticks out of its side, limp human arms hang from it, faces crowd its back staring up. Lit: it rears and covers.
+  brute() {
+    const M = rmodel(), E = rmodel(), HIP = [0, 0.75, -0.45], th = 1.0, cT = Math.cos(th), sT = Math.sin(th);
+    M.bone(1, HIP); E.bone(1, HIP);
+    const T = [[0, 0.32, 0.28, 0.28], [0.3, 0.46, 0.36, 0.42], [0.6, 0.56, 0.42, 0.5], [0.9, 0.6, 0.44, 0.52], [1.15, 0.52, 0.38, 0.42], [1.32, 0.28, 0.24, 0.28]];
+    const ax = u => [HIP[1] + u * cT, HIP[2] + u * sT], top = u => { const [y, z] = ax(u), q = secAt(T, u); return [y + q.b * sT, z - q.b * cT]; };
+    M.add(sloft(T, 11, 2.6), HC.grey, HIP, [th, 0, 0]);
+    M.add(sloft([[0, 0.14, 0.12, 0.14], [0.3, 0.24, 0.2, 0.24], [0.6, 0.26, 0.2, 0.24], [0.85, 0.15, 0.12, 0.13]], 8, 2.2), HC.skin, [0.4, 0.95, -0.35], [th + 0.2, 0.25, -0.5]);   // a second body's back, fused in at the side
+    for (let i = 0; i < 11; i++) { const u = 0.08 + i * 0.115, [y, z] = top(u); M.add(new T3.IcosahedronGeometry(0.045, 1), HC.bone, [0.04 * Math.sin(i * 1.3), y + 0.01, z], [0, 0, 0], [1.3, 0.7, 1]); }   // the spine, every vertebra showing
+    // growths: lumps of swollen flesh half sunk in the hide, bruised patches, the mass never one smooth egg
+    for (let i = 0; i < 9; i++) { const u = 0.15 + (i * 0.37 % 1) * 1.05, a = (i % 2 ? 1 : -1) * (0.95 + (i * 0.61 % 1) * 0.6), [y, z] = ax(u), q = secAt(T, u), r = 0.09 + (i * 0.29 % 1) * 0.13;
+      const x = Math.sin(a) * q.hw * 0.92, up = Math.cos(a) * q.b * 0.92; M.add(new T3.IcosahedronGeometry(r, 1), i % 3 ? HC.grey : HC.bruise, [x, y + up * sT, z - up * cT], [i, i * 2, 0], [1, 0.7, 1.15]); }
+    M.sym(s => M.add(new T3.IcosahedronGeometry(0.3, 2), HC.grey, [0.42 * s, 1.5, 0.35], [0, 0, 0.4 * s], [1.1, 0.8, 1.2]));   // the shoulders' hump of muscle
+    // a third body's leg out of the flank, bent at the knee, the foot in the air
+    flesh(M, [[-0.42, 0.95, -0.55], [-0.78, 1.3, -0.72], [-0.82, 1.18, -1.1]], [0.1, 0.075, 0.05], HC.skin);
+    M.add(new T3.IcosahedronGeometry(0.06, 1), HC.skin, [-0.82, 1.16, -1.16], [0, 0, 0], [0.8, 0.6, 1.7]);
+    // the neck stump: torn skin round a white bone
+    const [ny, nz] = ax(1.3); M.add(new T3.TorusGeometry(0.15, 0.05, 5, 12), HC.bruise, [0, ny + 0.1, nz], [th, 0, 0]);
+    M.add(new T3.IcosahedronGeometry(0.12, 1), HC.mouth, [0, ny + 0.1, nz], [th, 0, 0], [1, 1, 0.4]);
+    M.limb([0, ny + 0.06, nz], [0.02, ny + 0.2, nz + 0.12], 0.045, 0.035, HC.bone, 6);
+    // faces pressed out of the back, staring up at the sky (and the camera): pale, black sockets, mouths open
+    const nb = [0, sT, -cT];
+    [[0.3, -0.2, 1.3, 0.3], [0.62, 0.18, 1.2, -0.4], [0.9, -0.12, 1.4, 0.15], [0.5, 0.45, 1.0, 0.9]].forEach(([u, x, sc, ro], i) => {
+      const [y, z] = top(u), q = secAt(T, u), off = x * q.hw / 0.56, nn = Math.hypot(off * 1.2, nb[1], nb[2]), P = onSurf([off + off * 1.2 / nn * 0.08, y - Math.abs(off) * 0.25 + nb[1] / nn * 0.08, z + nb[2] / nn * 0.08], [off * 1.2, nb[1], nb[2]], ro);
+      P(M, new T3.IcosahedronGeometry(0.12, 2), HC.pale, [0, 0, -0.03], [0.82 * sc, 1.12 * sc, 0.45 * sc]);
+      for (const s of [-1, 1]) P(M, new T3.IcosahedronGeometry(0.026, 1), HC.mouth, [0.04 * s * sc, 0.03 * sc, 0.02 * sc], [1, 0.8, 0.6]);
+      P(M, new T3.IcosahedronGeometry(0.03, 1), HC.mouth, [0, -0.06 * sc, 0.02 * sc], [0.8, 1.5 + 0.3 * i, 0.6]);
+      P(M, cone(0.012, 0.03, 4), HC.skin, [0, -0.005 * sc, 0.045 * sc], [1, 1, 1]);
+      for (const s of [-1, 1]) P(E, new T3.OctahedronGeometry(0.011, 0), '#fff', [0.04 * s * sc, 0.03 * sc, 0.035 * sc]);
+    });
+    // the great arms (bone 2/3, with the body): a fist on three thick fingers, knuckles on the ground
+    M.sym(s => {
+      const sh = [0.6 * s, 1.42, 0.5], el = [0.95 * s, 0.86, 0.8], wr = [0.86 * s, 0.32, 1.02];
+      M.bone(s > 0 ? 2 : 3, sh, 1, HIP); M.add(new T3.IcosahedronGeometry(0.24, 2), HC.grey, sh, [0, 0, 0], [1, 0.85, 1]);
+      flesh(M, [sh, el, wr], [0.21, 0.16, 0.23], HC.grey, 7, 1.22);
+      M.add(new T3.IcosahedronGeometry(0.2, 2), HC.skin, [0.86 * s, 0.2, 1.06], [0, 0, 0], [1.1, 0.75, 1.0]);
+      for (let f = -1; f <= 1; f++) { const a = [0.86 * s + f * 0.1, 0.16, 1.18], b = [0.86 * s + f * 0.11, 0.04, 1.2]; flesh(M, [a, b], [0.07, 0.058], HC.skin, 6, 1); spike(M, b, [f * 0.2, -0.5, 1], 0.08, 0.03, HC.nail, 4); }
+    });
+    // stunted legs
+    M.sym(s => { const hp = [0.3 * s, 0.75, -0.5]; M.bone(s > 0 ? 4 : 5, hp); flesh(M, [hp, [0.42 * s, 0.4, -0.3], [0.38 * s, 0.04, -0.48]], [0.17, 0.12, 0.09], HC.grey, 8);
+      M.add(new T3.IcosahedronGeometry(0.1, 1), HC.skin, [0.38 * s, 0.04, -0.4], [0, 0, 0], [1, 0.5, 1.6]); });
+    // three limp human arms from the flanks and belly, hands dragging (bones 6-8, with the body)
+    [[[0.52, 1.12, 0.05], [0.12, -0.5, 0.05]], [[-0.55, 1.0, -0.1], [-0.12, -0.45, 0.1]], [[0.22, 0.82, 0.1], [0.04, -0.4, 0.2]]].forEach(([r, d], i) => {
+      const el = [r[0] + d[0], r[1] + d[1], r[2] + d[2]], hd = [r[0] + d[0] * 1.7, Math.max(0.1, r[1] + d[1] * 2.0), r[2] + d[2] * 1.5];
+      M.bone(6 + i, r, 1, HIP); flesh(M, [r, el, hd], [0.055, 0.04, 0.03], HC.skin, 6);
+      for (let f = 0; f < 4; f++) chain(M, [hd, [hd[0] + (f - 1.5) * 0.03, hd[1] - 0.08, hd[2] + 0.03], [hd[0] + (f - 1.5) * 0.04, hd[1] - 0.15, hd[2] + 0.06]], [0.012, 0.01, 0.007], HC.skin, 4);
+    });
+    HEYE.brute = E.geo(); return M.geo();
+  },
+  // the Nightgaunt: a gaunt black body with no face at all, horns curling in, arms that are bat wings, legs hanging like a
+  // hanged man's. Hangs upright in the air (the wings are in the body mesh: bones 2/3 inner, 4/5 outer). Lit: the wings
+  // wrap round it and it drops.
+  flyer() {
+    const M = rmodel(), E = rmodel(), sk = '#34343a', mem = '#2a292d';
+    const T = [[0.4, 0.07, 0.05, 0.05], [0.55, 0.1, 0.06, 0.07], [0.72, 0.13, 0.08, 0.09], [0.88, 0.15, 0.08, 0.09], [0.98, 0.14, 0.07, 0.08], [1.08, 0.07, 0.05, 0.05]];
+    M.add(sloft(T, 9, 2.4), sk);
+    for (let i = 0; i < 4; i++) { const y = 0.7 + i * 0.07, q = secAt(T, y); M.add(new T3.TorusGeometry(q.hw, 0.009, 3, 10, Math.PI * 0.8), '#4a4950', [0, y, q.z + q.f + 0.006 - q.hw * 0.7], [Math.PI / 2, -0.1 * Math.PI, 0], [1, 0.7, 1]); }
+    const HP = [0, 1.1, 0.02]; M.bone(1, HP); E.bone(1, HP);
+    M.limb([0, 1.06, 0.01], [0, 1.16, 0.03], 0.04, 0.035, sk, 6);
+    M.add(ico(0.1, 1), sk, [0, 1.25, 0.05], [-0.25, 0, 0], [0.82, 1.35, 1.0]);   // the head: smooth, no eyes, no mouth
+    M.sym(s => chain(M, [[0.05 * s, 1.32, -0.02], [0.1 * s, 1.38, -0.12], [0.08 * s, 1.36, -0.24], [0.03 * s, 1.3, -0.28]], [0.026, 0.02, 0.012, 0.004], '#5d5a55', 5));   // horns swept back, curling in toward each other
+    eyePair(E, 0.0, 1.25, 0.02, 0.0);   // (faceless)
+    M.sym(s => {
+      const sh = [0.13 * s, 0.98, 0], el = [0.42 * s, 1.14, -0.04], wr = [0.78 * s, 1.02, -0.06], ib = s > 0 ? 2 : 3, ob = s > 0 ? 4 : 5;
+      const tips = [[1.28, 0.86, -0.1], [1.2, 0.52, -0.12], [1.0, 0.27, -0.12], [0.68, 0.18, -0.1]].map(p => [p[0] * s, p[1], p[2]]);
+      M.bone(ib, sh); chain(M, [sh, el, wr], [0.035, 0.03, 0.024], sk, 6, true);
+      const hip = [0.1 * s, 0.5, -0.02], sag = [0.36 * s, 0.42, -0.08];
+      web(M, [sh, el, wr, sag, hip], [[0, 1, 4], [1, 3, 4], [1, 2, 3]], mem);
+      M.bone(ob, wr, ib, sh);
+      for (const t of tips) M.limb(wr, t, 0.018, 0.006, sk, 4);
+      spike(M, wr, [0.2 * s, 0.6, 0.4], 0.12, 0.014, HC.bone, 3);
+      const P = [wr, ...tips], tri = [];
+      for (let i = 1; i < tips.length; i++) { const a = P[i], b = P[i + 1], m = [(a[0] + b[0]) / 2 * 0.86 + wr[0] * 0.14, (a[1] + b[1]) / 2 * 0.86 + wr[1] * 0.14 - 0.02, (a[2] + b[2]) / 2];
+        const k = P.push(m) - 1; tri.push([0, i, k], [0, k, i + 1]); }
+      P.push(sag); tri.push([0, tips.length, P.length - 1]);
+      web(M, P, tri, mem);
+      // the legs hang straight, toes pointed down (bone 6/7)
+      const lh = [0.065 * s, 0.44, 0]; M.bone(s > 0 ? 6 : 7, lh);
+      chain(M, [lh, [0.08 * s, 0.1, 0.05], [0.075 * s, -0.22, -0.02], [0.07 * s, -0.33, 0.01]], [0.042, 0.03, 0.02, 0.012], sk, 6, true);
+      for (let f = -1; f <= 1; f++) spike(M, [0.07 * s, -0.33, 0.01], [f * 0.2, -1, 0.15], 0.07, 0.008, HC.bone, 3);
+    });
+    const tb = [0, 0.42, -0.05]; M.bone(8, tb);
+    chain(M, [tb, [0, 0.12, -0.18], [0, -0.12, -0.3], [0, -0.34, -0.38], [0, -0.5, -0.42]], [0.035, 0.025, 0.017, 0.011, 0.007], sk, 5);
+    spike(M, [0, -0.5, -0.42], [0, -1, -0.2], 0.12, 0.03, HC.bone, 3); M.sym(s => spike(M, [0, -0.48, -0.42], [0.7 * s, 0.4, -0.2], 0.07, 0.012, HC.bone, 3));
+    HEYE.flyer = E.geo(); return M.geo();
+  },
+  // the Sounder: a drowned body swimming face down, four arms rowing, the legs grown into one long trailing tail, the ribs
+  // open along the back like gills; a long neck lifts the head out of the water to look at the light before it dives.
+  diver() {
+    const M = rmodel(), E = rmodel();
+    M.add(sloft([[0, 0.05, 0.05, 0.05], [0.12, 0.14, 0.09, 0.09], [0.3, 0.19, 0.11, 0.12], [0.48, 0.18, 0.1, 0.11], [0.62, 0.15, 0.08, 0.09], [0.68, 0.06, 0.05, 0.05]], 9, 2.3), HC.skin, [0, 0.3, -0.38], [Math.PI / 2, 0, 0]);
+    for (let i = 0; i < 14; i++) { const z = -0.36 + i * 0.05; M.add(ico(0.022, -1), HC.bone, [0, 0.3 + 0.1 + Math.sin(i * 0.4) * 0.008, z], [0, 0, 0], [1, 0.8, 1.4]); }   // too many vertebrae
+    M.sym(s => M.add(new T3.BoxGeometry(0.12, 0.02, 0.15), HC.pale, [0.1 * s, 0.4, 0.17], [0.2, 0.3 * s, 0.25 * s]));   // shoulder blades
+    // the open back: rib bones arching out of a dark split, left (bone 8) and right (bone 7) flex like gills
+    M.add(new T3.BoxGeometry(0.06, 0.02, 0.4), HC.mouth, [0, 0.405, -0.05]);
+    M.sym(s => { M.bone(s > 0 ? 7 : 8, [0.03 * s, 0.4, 0]); for (let i = 0; i < 5; i++) { const z = -0.2 + i * 0.08; chain(M, [[0.03 * s, 0.41, z], [0.12 * s, 0.47, z + 0.01], [0.2 * s, 0.43, z + 0.02]], [0.012, 0.01, 0.006], HC.bone, 4); } });
+    M.bone();
+    // the legs trail behind, too long, the feet pointed like a drowned swimmer's, long toes (bone 6 sways them)
+    const tb = [0, 0.3, -0.36]; M.bone(6, tb);
+    M.sym(s => { flesh(M, [[0.08 * s, 0.3, -0.36], [0.13 * s, 0.29, -0.72], [0.12 * s, 0.28, -1.06]], [0.07, 0.048, 0.03], s > 0 ? HC.skin : HC.grey, 7);
+      M.add(new T3.IcosahedronGeometry(0.04, 1), HC.skin, [0.12 * s, 0.28, -1.12], [0, 0, 0], [0.7, 0.45, 1.9]); for (let f = 0; f < 4; f++) spike(M, [0.12 * s + (f - 1.5) * 0.015, 0.28, -1.18], [(f - 1.5) * 0.12, -0.05, -1], 0.07, 0.007, HC.nail, 3); });
+    // four arms rowing (bones 2-5), long fingers
+    [[0.16, 0.24, 0.47, 0.42, 0.62, 0.3, 2], [0.16, 0.0, 0.43, -0.04, 0.56, -0.2, 4]].forEach(([sx, sz, ex, ez, hx, hz, b]) => M.sym(s => {
+      const sh = [sx * s, 0.32, sz], el = [ex * s, 0.33, ez], hd = [hx * s, 0.24, hz];
+      M.bone(s > 0 ? b : b + 1, sh); flesh(M, [sh, el, hd], [0.048, 0.034, 0.025], HC.skin, 6);
+      for (let f = 0; f < 4; f++) chain(M, [hd, [hd[0] + 0.06 * s, 0.2, hd[2] + (f - 1.5) * 0.035], [hd[0] + 0.13 * s, 0.17, hd[2] + (f - 1.5) * 0.06]], [0.011, 0.009, 0.006], HC.skin, 4);
+    }));
+    // the long neck and the head (bone 1), face down in the water; black hair spread on the surface
+    const nb = [0, 0.32, 0.3]; M.bone(1, nb); E.bone(1, nb);
+    flesh(M, [nb, [0, 0.34, 0.42], [0, 0.33, 0.54]], [0.05, 0.04, 0.045], HC.skin, 7, 1);
+    M.add(ico(0.1, 1), HC.pale, [0, 0.31, 0.62], [0.3, 0, 0], [0.85, 0.95, 1.3]);
+    M.add(ico(0.035, 0), HC.mouth, [0, 0.235, 0.67], [0, 0, 0], [1, 0.6, 1.6]);
+    eyePair(E, 0.035, 0.255, 0.7, 0.011);
+    for (let i = 0; i < 16; i++) { const a = -1.3 + i * 0.17, L = 0.3 + (i * 7 % 5) * 0.07;   // black hair floating out on the water in strands
+      strand(M, [Math.sin(a) * 0.07, 0.33, 0.6 + Math.cos(a) * 0.04], [Math.sin(a) * 0.6, 0.02, -Math.cos(a)], L, 0.012, HC.hair); }
+    HEYE.diver = E.geo(); return M.geo();
+  },
+  // the Gloam: too tall, too thin, a wet shroud floating over the water, no legs; bone-white arms hang to the waterline with
+  // a dead lantern on a chain; the eyeless face lies on its side. Lit: the face snaps upright at you, the arms spread.
+  dimmer() {
+    const M = rmodel(), E = rmodel(), cl = HC.cloth, ra = '#26252a';
+    const SD = [[0.15, 0.04, 0.04, 0.04], [0.3, 0.1, 0.09, 0.09], [0.6, 0.14, 0.12, 0.12], [1.0, 0.16, 0.13, 0.13], [1.35, 0.17, 0.12, 0.13, 0.02], [1.55, 0.2, 0.11, 0.12, 0.04], [1.7, 0.13, 0.1, 0.1, 0.08], [1.86, 0.1, 0.1, 0.1, 0.12], [1.98, 0.03, 0.03, 0.03, 0.12]];
+    M.add(sloft(SD, 10, 2.0), cl);
+    for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2 + 0.5, sn = Math.sin(a), cs = Math.cos(a);   // folds hanging straight down
+      M.add(sloft([0.25, 0.6, 1.0, 1.35].map((y, j) => { const q = secAt(SD, y), w = [0.01, 0.025, 0.028, 0.012][j]; return [y, w, w, w, q.z + cs * (cs > 0 ? q.f : q.b) * 0.97, sn * q.hw * 0.97]; }), 5, 2), ra); }
+    M.sym(s => spike(M, [0.15 * s, 1.55, 0.03], [s, 0.25, 0], 0.09, 0.05, cl, 4));   // bony shoulders under the cloth
+    for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2, L = 0.45 - (i * 7 % 5) * 0.06;   // a ragged hem
+      M.add(new T3.BoxGeometry(0.06, L, 0.012), i % 2 ? cl : ra, [Math.sin(a) * 0.1, 0.32 - L / 2, Math.cos(a) * 0.1], [0.06 * Math.cos(a), a, 0.06 * Math.sin(a * 3)]); }
+    // the hood and face (bone 1): a pale long face, black sockets, the mouth sewn shut
+    const HP = [0, 1.6, 0.08]; M.bone(1, HP); E.bone(1, HP);
+    M.add(new T3.TorusGeometry(0.11, 0.035, 5, 12), ra, [0, 1.7, 0.17], [0.2, 0, 0], [0.9, 1.35, 1]);
+    M.add(ico(0.12, 1), cl, [0, 1.74, 0.08], [0, 0, 0], [1, 1.3, 1]);
+    M.add(ico(0.085, 1), HC.pale, [0, 1.68, 0.17], [0.15, 0, 0], [0.72, 1.3, 0.55]);
+    M.sym(s => M.add(ico(0.022, 0), HC.mouth, [0.03 * s, 1.715, 0.205], [0, 0, 0], [1, 1.3, 0.6]));
+    M.add(new T3.BoxGeometry(0.05, 0.006, 0.01), HC.mouth, [0, 1.615, 0.212]);
+    for (let i = 0; i < 4; i++) M.add(new T3.BoxGeometry(0.004, 0.024, 0.006), HC.bone, [(i - 1.5) * 0.013, 1.615, 0.216]);
+    eyePair(E, 0.03, 1.715, 0.21, 0.006);
+    // the arms (bone 2/3): sleeves to the elbow, then bare bone-white forearms and fingers too long, down to the water
+    M.sym(s => {
+      const sh = [0.17 * s, 1.52, 0.03], el = [0.21 * s, 1.08, 0.08], wr = [0.24 * s, 0.32, 0.12];
+      M.bone(s > 0 ? 2 : 3, sh); M.limb(sh, el, 0.055, 0.06, cl, 6); M.add(new T3.CylinderGeometry(0.07, 0.04, 0.18, 6), ra, [0.21 * s, 1.0, 0.08]);
+      flesh(M, [el, [0.225 * s, 0.7, 0.1], wr], [0.024, 0.017, 0.015], HC.pale, 6, 1.25); M.add(new T3.IcosahedronGeometry(0.026, 1), HC.pale, wr, [0, 0, 0], [1, 1.3, 1]);   // two forearm bones' worth of joints
+      for (let f = 0; f < 4; f++) chain(M, [wr, [wr[0] + (f - 1.5) * 0.02, 0.12, wr[2] + 0.02], [wr[0] + (f - 1.5) * 0.03, -0.06, wr[2] + 0.01], [wr[0] + (f - 1.5) * 0.032, -0.2, wr[2]]], [0.009, 0.008, 0.006, 0.004], HC.pale, 4, true);
+      if (s > 0) { M.limb([wr[0], -0.06, wr[2] + 0.01], [wr[0], -0.22, wr[2] + 0.01], 0.004, 0.004, '#3b3a3d', 3);   // the dead lantern on its chain
+        M.add(ico(0.06, 1), '#4c5055', [wr[0], -0.3, wr[2] + 0.01]); M.add(new T3.CylinderGeometry(0.05, 0.07, 0.03, 8), '#2c2d30', [wr[0], -0.24, wr[2] + 0.01]); M.add(new T3.CylinderGeometry(0.07, 0.05, 0.03, 8), '#2c2d30', [wr[0], -0.36, wr[2] + 0.01]); }
+    });
+    HEYE.dimmer = E.geo(); return M.geo();
+  },
+};
+// the poses: per kind a GLSL body that fills hA[bone] (euler x, y, z), hRot / hPiv (the whole body about a point) and hOff.
+// In scope: L (lit), tl (s since lit), F (the flinch, ~0.15 s), H (the held reaction), ph (stride phase), sp (the same phase
+// stepped: snaps, then holds), tw (a random twitch, -1..1, 10% of 0.2 s slots), mv (gait strength: freezes while lit), rn (0..1 per creature)
+const HRIG = '#ifdef USE_INSTANCING\nattribute vec2 aRx;\n#define HRX aRx\n#else\n#define HRX vec2(0.0, 30.0)\n#endif\nattribute vec4 rig; attribute vec4 rig2;\n' +
+  'mat3 hrE(vec3 a){vec3 c=cos(a),s=sin(a);return mat3(c.z,s.z,0.0,-s.z,c.z,0.0,0.0,0.0,1.0)*mat3(c.y,0.0,-s.y,0.0,1.0,0.0,s.y,0.0,c.y)*mat3(1.0,0.0,0.0,0.0,c.x,s.x,0.0,-s.x,c.x);}\n' +
+  'float hrH(float x){return fract(sin(x*12.9898)*43758.5453);}\nvec3 hA[12]; vec3 hOff; vec3 hRot; vec3 hPiv; mat3 hMA; mat3 hMB; mat3 hMG;\n';
+const HPOSE = (stride, body) => `void hPose(){ float L=HRX.x, tl=HRX.y, rn=hrH(gId()); float F=L*smoothstep(0.0,0.03,tl)*exp(-tl*8.0); float H=L*smoothstep(0.04,0.22,tl);
+  float ph=gPh(${stride})+rn*6.2832; float q=ph/1.5708; float sp=(floor(q)+smoothstep(0.0,0.32,fract(q)))*1.5708;
+  float sl=floor(uT*5.0+rn*17.0); float tw=step(0.9,hrH(sl+rn*3.1))*(hrH(sl*1.7+rn)*2.0-1.0); float mv=1.0-0.8*H*(1.0-smoothstep(1.4,3.2,tl));
+  hA[0]=vec3(0.0); hOff=vec3(0.0); hRot=vec3(0.0); hPiv=vec3(0.0);
+  ${body}
+  hMA=rig.w>-0.5?hrE(hA[int(rig.w+0.5)]):mat3(1.0); hMB=rig2.w>-0.5?hrE(hA[int(rig2.w+0.5)]):mat3(1.0); hMG=hrE(hRot); }
+vec3 hP(vec3 p){ if(rig.w>-0.5) p=hMA*(p-rig.xyz)+rig.xyz; if(rig2.w>-0.5) p=hMB*(p-rig2.xyz)+rig2.xyz; return hMG*(p-hPiv)+hPiv+hOff; }
+vec3 hN(vec3 n){ if(rig.w>-0.5) n=hMA*n; if(rig2.w>-0.5) n=hMB*n; return hMG*n; }`;
+const HGAIT = {
+  // diagonal pairs, each limb snaps forward then holds; the hanging head sways and jerks; lit: it twists upright (2.95 rad
+  // about its own centre, a shiver as it lands), tilts up at the lamp, the body recoils
+  drowned: HPOSE('4.0', `float a1=sp+3.1416; float s0=sin(sp)*0.3*mv, l0=max(0.0,cos(sp))*0.5*mv, s1=sin(a1)*0.3*mv, l1=max(0.0,cos(a1))*0.5*mv;
+    hA[2]=vec3(-s0-l0*0.3,0.0,0.0); hA[4]=vec3(l0*0.9,0.0,0.0); hA[3]=vec3(-s1-l1*0.3,0.0,0.0); hA[5]=vec3(l1*0.9,0.0,0.0);
+    hA[6]=vec3(s1-l1*0.3,0.0,0.0); hA[8]=vec3(l1*0.7,0.0,0.0); hA[7]=vec3(s0-l0*0.3,0.0,0.0); hA[9]=vec3(l0*0.7,0.0,0.0);
+    float hs=sin(uT*1.1+rn*6.0)*0.2*(1.0-H)+tw*0.6;
+    hA[1]=vec3(-0.4*H+F*0.5, 0.15*sin(uT*0.7+rn*5.0)*(1.0-H), hs+H*(2.95+0.2*sin(tl*40.0)*exp(-tl*3.0))); hA[10]=vec3(-1.2*H,0.0,-hA[1].z*0.92);
+    hPiv=vec3(0.0,0.7,0.0); hRot=vec3(abs(sin(sp))*0.03-F*0.2, 0.0, sin(sp)*0.07*mv); hOff=vec3(0.0, abs(sin(sp*2.0))*0.025*mv, -F*0.12);`),
+  // the rib-legs ripple front to back in snaps, the spine skitters, the jaw hangs and clacks; lit: the ribs clench under
+  // it (it drops onto its belly), it trembles and the jaw chatters, then it runs
+  swarmer: HPOSE('9.0', `for(int i=1;i<=5;i++){ float o=float(i)*1.2; float l=max(0.0,cos(sp+o))*0.35*mv, w=sin(sp+o)*0.3*mv, l2=max(0.0,cos(sp+o+3.1416))*0.35*mv, w2=sin(sp+o+3.1416)*0.3*mv;
+      float c=H*(0.5+0.08*sin(uT*50.0+float(i)));
+      hA[i]=vec3(0.0, -w, l-c+tw*0.15); hA[i+5]=vec3(0.0, w2, -l2+c-tw*0.15); }
+    hA[11]=vec3(0.15+0.15*abs(sin(uT*(3.0+27.0*H)+rn*9.0))*(0.3+H)+tw*0.2, 0.0, 0.0);
+    hPiv=vec3(0.0,0.3,0.0); hRot=vec3(-F*0.4, sin(sp*0.5)*0.14*mv, sin(sp)*0.06*mv);
+    hOff=vec3(sin(uT*73.0+rn*9.0)*0.012*H, abs(sin(sp))*0.025*mv+F*0.14-0.08*H, 0.0);`),
+  // a limping knuckle-walk, the limp arms swing and twitch; lit: it rears back, the great arms come up over the faces
+  brute: HPOSE('2.6', `float lp=sp+0.6*sin(sp); float s0=sin(lp)*0.3*mv, s1=sin(lp+3.1416)*0.24*mv;
+    hA[1]=vec3(-0.5*H-F*0.2+0.04*sin(sp*2.0), 0.0, 0.0);
+    hA[2]=vec3(s0-1.75*H, 0.0, -0.65*H); hA[3]=vec3(s1-1.75*H, 0.0, 0.65*H); hA[4]=vec3(-s1*0.6,0.0,0.0); hA[5]=vec3(-s0*0.6,0.0,0.0);
+    for(int i=6;i<=8;i++){ float o=float(i)*2.1; hA[i]=vec3(sin(uT*1.3+o+rn*4.0)*0.12+sin(sp+o)*0.15*mv+tw*0.6*step(float(i),6.5)-0.5*H*abs(sin(uT*14.0+o)), 0.0, sin(uT*0.9+o)*0.1); }
+    hRot=vec3(0.0,0.0,sin(lp)*0.08*mv); hOff=vec3(0.0, abs(sin(lp))*0.06*mv, -F*0.2);`),
+  // heavy stepped wingbeats, legs dangling, the tail whips; lit: the wings wrap round the body and it drops
+  flyer: HPOSE('1.0', `float fq=(uT*2.6+rn*6.2832)/1.5708; float fs=(floor(fq)+smoothstep(0.0,0.45,fract(fq)))*1.5708; float fl=sin(fs)*0.55*(1.0-H);
+    hA[2]=vec3(0.0,-1.35*H, fl+0.1); hA[3]=vec3(0.0,1.35*H,-fl-0.1); hA[4]=vec3(0.0,-1.1*H, sin(fs-0.8)*0.35*(1.0-H)); hA[5]=vec3(0.0,1.1*H,-sin(fs-0.8)*0.35*(1.0-H));
+    hA[6]=vec3(sin(uT*1.1+rn*3.0)*0.12-0.9*H,0.0,0.05); hA[7]=vec3(sin(uT*1.1+rn*3.0+0.9)*0.12-0.7*H,0.0,-0.05);
+    hA[8]=vec3(sin(uT*3.0+rn)*0.3, sin(uT*2.1)*0.4, 0.0); hA[1]=vec3(0.45*(1.0-H)-0.35*H+tw*0.5, tw*0.8, 0.5*(1.0-H)*(rn>0.5?1.0:-1.0));   // the head lolls like a hanged man's; lit: it jerks up at the light
+    hPiv=vec3(0.0,0.9,0.0); hRot=vec3(0.25-0.3*H+F*0.4, 0.0, sin(uT*0.8+rn)*0.08); hOff=vec3(0.0, -fl*0.12-0.45*H, 0.0);`),
+  // four arms row in a stepped stroke, the tail sways, the back's ribs flex; lit: the neck lifts the head out to look
+  diver: HPOSE('5.0', `float w=sin(ph*0.8); float r1=sp+1.5708;
+    hA[1]=vec3(-1.05*H+sin(uT*0.9+rn*4.0)*0.08+tw*0.3, sin(uT*0.6+rn)*0.3*(1.0-H)+tw*0.5, 0.0);
+    hA[2]=vec3(-max(0.0,cos(sp))*0.25*mv, sin(sp)*0.55*mv, 0.0); hA[3]=vec3(-max(0.0,cos(sp))*0.25*mv, -sin(sp)*0.55*mv, 0.0);
+    hA[4]=vec3(-max(0.0,cos(r1))*0.25*mv, sin(r1)*0.5*mv, 0.0); hA[5]=vec3(-max(0.0,cos(r1))*0.25*mv, -sin(r1)*0.5*mv, 0.0);
+    hA[6]=vec3(0.0, sin(ph*0.8-1.0)*0.35, 0.0); float g=0.15+0.25*sin(uT*2.2+rn*5.0); hA[7]=vec3(0.0,0.0,-g); hA[8]=vec3(0.0,0.0,g);
+    hPiv=vec3(0.0,0.3,0.0); hRot=vec3(0.0, w*0.08, w*0.04); hOff=vec3(0.0, F*0.1, 0.0);`),
+  // it drifts, the face lies on its shoulder and jerks; lit: the face snaps upright at you, the arms spread wide
+  dimmer: HPOSE('1.0', `float fp=uT*1.4+rn*6.2832; float tilt=(1.25+0.1*sin(uT*0.5+rn*3.0))*(1.0-H)+tw*0.5;
+    hA[1]=vec3(-0.2*H+F*0.3, sin(uT*0.4+rn)*0.2*(1.0-H), tilt*(rn>0.5?1.0:-1.0));
+    hA[2]=vec3(sin(fp)*0.06-F*0.4-0.3*H, 0.0, 0.08+0.75*H); hA[3]=vec3(sin(fp+1.3)*0.06-F*0.4-0.3*H, 0.0, -0.08-0.75*H);
+    hRot=vec3(0.08*sin(fp*0.5)-F*0.2, 0.0, 0.03*sin(fp*0.7)); hOff=vec3(0.0, -F*0.1, 0.0);`),
+};
+// per-vertex extras after the pose (cloth, water)
+const HEXTRA = { dimmer: '{ float hem=clamp((0.5-position.y)/0.5,0.0,1.0); transformed.x+=sin(uT*2.0+position.y*6.0+gId())*0.05*hem; transformed.z+=cos(uT*1.6+position.x*5.0)*0.04*hem; }' };
+function horrorMat(m, kind, std) {
+  return patch(m, 'hg-' + kind + (std ? '-s' : '-b'), sh => {
+    vHead(sh, GAIT_HEAD + '\n' + HRIG + HGAIT[kind]);
+    if (std) vAfter(sh, 'beginnormal_vertex', 'hPose(); objectNormal = hN(objectNormal);');
+    vAfter(sh, 'begin_vertex', (std ? '' : 'hPose(); ') + 'transformed = hP(transformed);' + (HEXTRA[kind] || ''));
+  });
+}
+const horrorOn = () => RLOOK.horror || /[?&#]horror\b/.test(root.location ? root.location.search + root.location.hash : '');
+
 const R = { on: false, view: null };
 
 function initGL() {
@@ -6875,22 +7205,26 @@ function buildScene() {
   const col = new T3.Color(), T = {};
   const cap = k => k === 'drowned' || k === 'swarmer' ? RLOOK.maxEnemies : k === 'brute' || k === 'flyer' || k === 'diver' || k === 'dimmer' ? 2000 : 16;
   const inst = (g, m, n) => { const x = new T3.InstancedMesh(g, m, n); x.instanceMatrix.setUsage(T3.DynamicDrawUsage); x.count = 0; x.frustumCulled = false; scene.add(x); return x; };
+  const HZ = horrorOn(); R.horror = HZ;
   for (const k of KLIST) {
-    const bodyMat = gaitMat(new T3.MeshStandardMaterial({ vertexColors: true, flatShading: KIND[k] >= BOSSK, roughness: KIND[k] >= BOSSK ? 0.6 : 0.4, metalness: 0.1 }), k, false);   // LAS-104: the wave creatures are smooth wet flesh: the sheen shows only where a light falls (no rim, no glow)
-    const eyeMat = gaitMat(new T3.MeshBasicMaterial({ color: RLOOK.eye }), k, false);
-    LQ = RLOOK.creatureQ; const g = ART[k](); LQ = 1; const n = cap(k), body = inst(g, bodyMat, n);
+    const hz = HZ && !!HART[k];   // LAS-109: the horror set (bones + light reaction) replaces the six wave creatures
+    const bodyMat = (hz ? horrorMat : gaitMat)(new T3.MeshStandardMaterial({ vertexColors: true, flatShading: KIND[k] >= BOSSK, roughness: KIND[k] >= BOSSK ? 0.6 : 0.4, metalness: 0.1 }), k, hz);   // LAS-104: the wave creatures are smooth wet flesh: the sheen shows only where a light falls (no rim, no glow)
+    const eyeMat = (hz ? horrorMat : gaitMat)(new T3.MeshBasicMaterial({ color: hz ? RLOOK.eyeH : RLOOK.eye }), k, false);
+    LQ = RLOOK.creatureQ; const g = (hz ? HART : ART)[k](); LQ = 1; const n = cap(k), body = inst(g, bodyMat, n);
     body.receiveShadow = true; body.castShadow = KIND[k] >= BOSSK;   // only bosses cast real shadows
     for (let i = 0; i < n; i++) body.setColorAt(i, col.setRGB(1, 1, 1));
     body.instanceColor.setUsage(T3.DynamicDrawUsage);
-    const eyes = inst(eyesGeo(k), eyeMat, n);   // LAS-105: eyes x the creature's light (instance colour): they never glow on their own
+    const eyes = inst(hz ? HEYE[k] : eyesGeo(k), eyeMat, n);   // LAS-105: eyes x the creature's light (instance colour): they never glow on their own
     for (let i = 0; i < n; i++) eyes.setColorAt(i, col.setRGB(1, 1, 1));
     eyes.instanceColor.setUsage(T3.DynamicDrawUsage);
     T[k] = { body, eyes, tris: tris(g) };
+    if (hz) { const rx = new T3.InstancedBufferAttribute(new Float32Array(n * 2), 2); rx.setUsage(T3.DynamicDrawUsage);   // LAS-109: [lit, s since lit] per creature
+      for (let i = 0; i < n; i++) rx.array[i * 2 + 1] = 30; g.setAttribute('aRx', rx); eyes.geometry.setAttribute('aRx', rx); T[k].rx = rx; }
   }
   const flapMat = new T3.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.7, side: T3.DoubleSide });
   LQ = RLOOK.creatureQ; const wg = [ART.wing(1), ART.wing(-1)]; LQ = 1;
   T.flyer.wings = wg.map(g => inst(g, flapMat, 2000));
-  T.flyer.tris += tris(wg[0]) * 2;
+  if (HZ) T.flyer.wings.forEach(w => { w.visible = false; }); else T.flyer.tris += tris(wg[0]) * 2;   // LAS-109: the horror Nightgaunt's wings are in its body
   // LAS-57: no warm pool, no wake ring: a lit creature is lit only by the beam itself
   const pg = new T3.PlaneGeometry(2, 2); pg.rotateX(-Math.PI / 2);
   T.shadowP = inst(pg, new T3.MeshBasicMaterial({ color: '#000', map: haloTex(), transparent: true, opacity: 0.55, depthWrite: false, fog: false }), RLOOK.maxEnemies + 64); T.shadowP.renderOrder = 1;
@@ -9096,9 +9430,10 @@ function inBeam(S, e) {
 }
 function devTick(S, t) {
   for (const e of R.dev) {
-    e.hp = e.maxHp = 1; const lit = inBeam(S, e);
-    if (lit) e.litT = S.t + 3.5;
-    if (e.kind === 'diver') e.under = lit || e.hold ? S.t + 1 : 0;
+    e.hp = e.maxHp = 1; if (e.walk) e.x = e.x0 - (t * e.walk) % e.span;   // LAS-109 turntable: walk toward the citadel, loop
+    const lit = e.lit !== undefined ? e.lit : inBeam(S, e);
+    if (lit) e.litT = S.t + 3.5; else if (e.lit === false) e.litT = -1;
+    if (e.kind === 'diver' && !e.nosink) e.under = lit || e.hold ? S.t + 1 : 0;
   }
   return R.dev;
 }
@@ -9202,6 +9537,7 @@ function frame(S, alpha, now) {
     // LAS-105: inside the ring only the light that really falls there shows it: a brazier's pool or the lit shore (the sea's own vBs / shore band)
     const la = litAmt(S, e), rr2 = baseR > 0 && !(e.under > S.t) ? Math.hypot(e.x, e.y) : 1e9, p = dispPos(e, alpha), bk = rr2 <= baseR && la < 1 ? 0.6 * ringLit(p.x, p.z) : 0, lb2 = Math.max(la, bk), hid = lb2 < 0.004;
     R.litMap.set(e.id, la); R.visMap.set(e.id, lb2);
+    if (hid && R.hx) { const h = R.hx.get(e.id); if (h) { h.on = false; h.l = 0; } }   // LAS-109: back in the dark, so the next light makes it flinch again
     if (hid && ki !== 5) continue;   // (the Dimmer's dark halo stays: it eats the beam)
     const j = cnt[ki]++;
     let sinkQ = 0;
@@ -9233,6 +9569,13 @@ function frame(S, alpha, now) {
     const lr = 0.62 * lb2, lg = 0.66 * lb2, lb = 0.7 * lb2;   // LAS-57: neutral, no warm tint or boost: just the beam's strength   // LAS-55: the unlit ones are not drawn at all
     const C = m.body.instanceColor.array; C[j * 3] = v * (0.8 + 0.2 * k) * lr; C[j * 3 + 1] = v * lg; C[j * 3 + 2] = v * lb;
     const EC = m.eyes.instanceColor.array; EC[j * 3] = EC[j * 3 + 1] = EC[j * 3 + 2] = lb2;
+    if (m.rx) {   // LAS-109: the light reaction's clock: when this creature's light came on, and how lit it is (eased)
+      const HX = R.hx || (R.hx = new Map()); let h = HX.get(e.id); if (!h) HX.set(e.id, h = { t0: -99, l: 0, on: false });
+      const on = lb2 > 0.5; if (on && !h.on) h.t0 = t; h.on = on; h.l += ((on ? 1 : 0) - h.l) * Math.min(1, dtR * 10);
+      m.rx.array[j * 2] = h.l; m.rx.array[j * 2 + 1] = Math.min(30, t - h.t0);
+      if (R.hxForce) { m.rx.array[j * 2] = R.hxForce[0]; m.rx.array[j * 2 + 1] = R.hxForce[1]; }   // dev (turntable sheet): show a pose, e.g. the dark one, while lit
+
+    }
     if (SHADOW && !e.fly && !hid && nw < SHP.length / 16) {
       const wy = p.y + 0.08, wr = (e.boss ? 3.4 : 0.55 + (e.rad || 0.5) * 1.4) * (1 - 0.8 * sinkQ) * (ki >= BOSSK ? 1 : RLOOK.creatureK * 0.85);
       putM(SHP, nw++, 0, wr * 1.1, p.x, wy, p.z);
@@ -9242,7 +9585,9 @@ function frame(S, alpha, now) {
   for (let ki = 0; ki < KLIST.length; ki++) {
     const m = T[KLIST[ki]]; m.body.count = m.eyes.count = cnt[ki];
     m.body.instanceMatrix.needsUpdate = m.eyes.instanceMatrix.needsUpdate = m.body.instanceColor.needsUpdate = m.eyes.instanceColor.needsUpdate = true;
+    if (m.rx) m.rx.needsUpdate = true;
   }
+  if (R.hx && R.hx.size > 20000) R.hx.clear();
   specialEnd(X, cnt);
   F.wings[0].count = F.wings[1].count = F.shadow.count = cnt[3];
   F.wings[0].instanceMatrix.needsUpdate = F.wings[1].instanceMatrix.needsUpdate = F.shadow.instanceMatrix.needsUpdate = true;
@@ -10550,14 +10895,14 @@ body.twdev #fps{display:block!important}
 
 const LAS95CSS = `
 /* LAS-95: first-run lines sit under the wave line, off the city; Codex/Settings backdrop near black */
-#tw-first{left:50%!important;top:max(150px,15vh)!important}
+#tw-first,#tw-spend{left:50%!important;top:max(150px,15vh)!important}
 #tw-teach{left:50%!important;top:max(250px,26vh)!important;transform:translateX(-50%)!important}
 #tw-teach::after{display:none}
 #tw-teach.lit{animation:twFade95 2.6s ease-in forwards}
 @keyframes twFade95{0%,40%{opacity:1}100%{opacity:0}}
 #tw-codex.dim,#tw-set.dim{background:rgba(0,0,0,.97)}
 /* LAS-96: the banner owns the centre-top lane while it shows; the goal and the hint queue behind it */
-#twui.bnon #tw-first,#twui.bnon #tw-teach{visibility:hidden!important}
+#twui.bnon #tw-first,#twui.bnon #tw-teach,#twui.bnon #tw-spend{visibility:hidden!important}
 `;
 const LAS83CSS = `
 /* LAS-83 new-player clarity: a readable citadel bar, hit pulse + low-HP vignette, ability hints, named plaques, first goal, end summary */
@@ -10590,9 +10935,10 @@ const LAS83CSS = `
 .up:not(.can):not(.max) .nm{color:var(--ash)!important}
 #tw-goal{font-size:max(17px,1.6vh)!important}
 #tw-teach{font-size:max(18px,1.75vh)!important}#tw-teach small{font-size:max(14px,1.3vh)!important}
-#tw-first{position:absolute;display:none;transform:translateX(-50%);text-align:center;padding:14px 26px;background:#0b0a09;border:1px solid rgba(217,228,234,.35);
+#tw-first,#tw-spend{position:absolute;display:none;transform:translateX(-50%);text-align:center;padding:14px 26px;background:#0b0a09;border:1px solid rgba(217,228,234,.35);
   font-family:var(--fell);font-style:italic;font-size:max(22px,2.2vh);color:var(--bone);line-height:1.35;max-width:min(760px,50vw);pointer-events:none;z-index:4}
-#tw-first b{color:var(--lantern);font-weight:400}#tw-first small{display:block;margin-top:4px;font-size:.72em;color:var(--ash)}
+#tw-first b,#tw-spend b{color:var(--lantern);font-weight:400}
+#tw-spend{padding:10px 24px;animation:twFade95b .5s ease-out}@keyframes twFade95b{from{opacity:0}to{opacity:1}}#tw-first small{display:block;margin-top:4px;font-size:.72em;color:var(--ash)}
 #tw-over:not(.forge) .fgbox{display:none}
 #tw-over:not(.forge)>#tw-ol{flex:0 0 min(900px,64vw)}
 #tw-cause{font-family:var(--fell);font-style:italic;font-size:max(26px,2.6vh);color:var(--bone);text-align:center;margin:0 0 14px;line-height:1.25}
@@ -10688,6 +11034,17 @@ body.twplay #twbanner{visibility:hidden!important}
 #tw-hpbar u{background:rgba(150,112,92,.5)!important}
 #tw-hpbar b{background:linear-gradient(90deg,transparent 12%,rgba(0,0,0,.82) 30%,rgba(0,0,0,.82) 70%,transparent 88%)}
 .ab .ah{bottom:auto!important;top:auto!important;left:var(--ahx,0)!important;right:auto!important;translate:-50% 0!important;bottom:var(--ahb,100%)!important}
+`;
+const LAS112CSS = `
+/* LAS-112: one art style. Numbers = FellNum (Fell letters, Barlow digits), labels = Fell (italic where it was). Tooltip body (#tw-tip p/small) stays Barlow for readability. */
+#tw-top .big,#tw-stats .v,#tw-hpbar b,.up .cost,.up .lv,.ab .cdn,#tw-rec b,#tw-rec button.panel,.bsg b,.be .blv{font-family:var(--fell)!important}
+#tw-hpbar b,#tw-top .big,#tw-stats .v,#tw-rec b{font-weight:400}
+.up .nm,#tw-why,.bnote,.bnote .bd{font-family:var(--fell)!important;font-weight:400}
+#tw-why b,.bnote b{font-weight:400}
+.bnote .bd{font-style:italic;letter-spacing:.02em}
+#tw-why .k{font-style:italic}
+.up .key{font-weight:700!important}
+#tw-rec,#tw-rec>*{font-family:var(--fell)!important}
 `;
 const LAS87CSS = `
 /* LAS-87: every Forge node wears a glyph (or a building's portrait); the state is the colour: bone = forged, lantern = can forge, branch colour = ready, ash = locked */
@@ -11079,11 +11436,11 @@ const AB = {
 };
 
 function build() {
-  // Fell's old-style 1 reads as I: digits come from Barlow (same data, unicode-range). uifont.js loads after main.js, so wait for the page load
-  const digits = () => { const ff = document.getElementById('tw-fonts'), bf = ff && ff.textContent.match(/@font-face{font-family:'Barlow';font-style:normal;font-weight:400[^}]*}/);
-    if (bf) { const f = el('style'); f.textContent = bf[0].replace("'Barlow'", "'FellNum'").replace(/}$/, ';unicode-range:U+30-39,U+25,U+2B,U+2212}'); document.head.appendChild(f); } };
+  // Fell's old-style 1 reads as I: digits come from Cinzel (lining, engraved; LAS-112, was Barlow) (same data, unicode-range). uifont.js loads after main.js, so wait for the page load
+  const digits = () => { const ff = document.getElementById('tw-fonts'), bf = ff && ff.textContent.match(/@font-face{font-family:'Cinzel';font-style:normal;font-weight:400[^}]*}/);
+    if (bf) { const f = el('style'); f.textContent = bf[0].replace("'Cinzel'", "'FellNum'").replace(/}$/, ';unicode-range:U+30-39,U+25,U+2B,U+2212}'); document.head.appendChild(f); } };
   if (document.readyState === 'complete') digits(); else root.addEventListener('load', digits);
-  const st = el('style'); st.textContent = CSS + TOWNCSS + CARTCSS + HORRORCSS + LAS83CSS + LAS87CSS + LAS82CSS + LAS95CSS + LAS99CSS; document.body.insertAdjacentHTML('afterbegin', TWArt.DEFS); document.head.appendChild(st);
+  const st = el('style'); st.textContent = CSS + TOWNCSS + CARTCSS + HORRORCSS + LAS83CSS + LAS87CSS + LAS82CSS + LAS95CSS + LAS99CSS + LAS112CSS; document.body.insertAdjacentHTML('afterbegin', TWArt.DEFS); document.head.appendChild(st);
   const ui = el('div'); ui.id = 'twui';
   ui.innerHTML = `
   <canvas id="tw-aim"></canvas><div id="tw-vig"></div><div id="tw-hit"></div>
@@ -11099,6 +11456,7 @@ function build() {
     <div id="tw-goal"></div>
     <div id="tw-teach" class="panel"></div>
     <div id="tw-first"></div>
+    <div id="tw-spend"><b>Spend gold:</b> 1-7</div>
     <div id="tw-build" class="panel"><div class="bth0"></div><div class="bbody"></div></div>
     <div id="tw-bnotes"></div>
   </div>
@@ -11612,6 +11970,7 @@ function frame(S, now) {
   tip(S);
   goal(S);
   teach(S, now);
+  spendHint(S);
   firstGoal(S);
   if (U.devPick && S.pick) { S.pickEvery = U.devPick; U.devPick = 0; }
   // the fall: a short beat for the banner, then the end screen (fall -> new run stays under 3 s with one click)
@@ -11955,8 +12314,22 @@ function abHint(S, k, b, a, now) {
   b.querySelector('.ah').innerHTML = txt; placeHint(b); b.classList.add('hint'); b._ah = now; U.abHint = k;
 }
 // the first 25 s of a first run: one goal line under the citadel, where the eye is
+// LAS-111: fresh save only. The first time gold covers the cheapest plaque, one line points at the dock (keys 1-7);
+// the first buy ends it (hint 'spend'). It takes the place of the goal line meanwhile, so the two never stack.
+function spendHint(S) {
+  const h = $('tw-spend');
+  let on = false;
+  if (U.teach && !hints.spend && !S.over && !S.pick && !U.paused) {
+    let min = Infinity, bought = false;
+    for (const k of Sim.UPS) { if (S.lv[k] > 0) bought = true; const t = Sim.upText(S, k); if (!t.maxed && t.cost < min) min = t.cost; }
+    if (bought) hintDone('spend');
+    else if (U._spend || S.gold >= min) { U._spend = true; on = true; }
+  }
+  U.spendOn = on;
+  const d = on ? 'block' : 'none'; if (h.style.display !== d) h.style.display = d;
+}
 function firstGoal(S) {
-  const g = $('tw-first'), on = !!U.teach && S.t < 25 && !S.pick && !S.over && !U.paused && !S.picks.length;
+  const g = $('tw-first'), on = !!U.teach && !U.spendOn && S.t < 25 && !S.pick && !S.over && !U.paused && !S.picks.length;
   if (!on) { if (g.style.display !== 'none') g.style.display = 'none'; return; }
   const p = screenAt(0, 0); if (!p) return;
   if (!g._on) { g._on = 1; g.innerHTML = '<b>Hold the wall.</b> The Drowned climb out of the dark.<small>Every kill pays gold. Spend it on the plaques below: keys 1 to 7.</small>'; }
@@ -12350,7 +12723,7 @@ function show(mode) {
 function setRun(S) {
   const M = S.meta ? meta() : null;   // stress scenes run without the meta: no goals to chase, no hints
   U.best0 = M ? M.bestWave : 0; U.goalNew = false;
-  U.teach = M && M.runs === 0 && !(hints.beam && hints.lamp) ? { on: null } : null;
+  U._spend = false; U.teach = M && M.runs === 0 && !(hints.beam && hints.lamp) ? { on: null } : null;
   U.S = S; U.overAt = 0; U.gd = U.hpG = U.hpLast = U.wPrev = U.emPrev = null; U.taking = false; playEnd(); disarm(); $('tw-pick').classList.remove('on'); $('tw-teach').style.display = 'none'; buildAbs(S); }
 // ability buttons: the ones this run owns (S.ab), in TWSim.ABS order. Ring r=40.
 function buildAbs(S) {
