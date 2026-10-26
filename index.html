@@ -11038,7 +11038,7 @@ const HORRORCSS = `
 #tw-goal{top:max(88px,8.3vh);font-family:var(--fell);font-style:italic;font-weight:400;letter-spacing:.02em;color:var(--ash);font-size:max(15px,1.45vh)}
 #tw-goal b{color:var(--bone);font-weight:400}#tw-goal .rec{color:var(--bone)}#tw-goal .dot{color:#3a3731}
 /* bottom: no plates. Each building a dim thumbnail with its level marks and cost. Affordable catches the lantern, the rest stays dark */
-#tw-dock{bottom:max(16px,1.6vh);gap:max(40px,4vh);align-items:flex-end;background:none}
+#tw-dock{bottom:max(16px,1.6vh);gap:max(64px,6vh);align-items:flex-end;background:none}
 #tw-ups,#tw-abs{background:none!important;border:0!important;padding:0;gap:max(18px,1.7vh);box-shadow:none}
 .up{--c:var(--bone)!important;position:relative;display:grid;grid-template-columns:auto auto;grid-template-rows:auto auto;column-gap:10px;row-gap:1px;justify-content:center;align-items:center;
   width:auto;min-width:max(88px,8.3vh);height:auto;padding:4px 10px 4px 6px;background:none;border:0;border-radius:0;box-shadow:none;transform:none;translate:none;
@@ -12054,10 +12054,11 @@ function openPick(S) {
     const c = Sim.card(id, S), taken = S.picks.filter(p => p === id).length;
     const m = cardMeta(c), pips = c.max ? Array.from({ length: c.max }, (_, k) => `<i class="${k < taken ? 'on' : ''}"></i>`).join('') : '';
     const b = el('button', 'card' + (c.loud ? ' loud' : ''), `${c.loud ? '<span class="lr">BUILD-BREAKER</span><s class="cfoil"></s>' : ''}<div class="md">${m.art}</div><h3 class="disp"></h3><div class="tg"><div class="br"></div></div><div class="mid"><div class="chip"><b class="bn num"></b><span class="lb"></span></div><p></p></div>
-      <div class="ft"><span class="ck">${i + 1}</span><span class="pp">${pips}${c.max ? `&nbsp;${taken}/${c.max}` : taken ? `Taken ${taken}x` : ''}</span></div>`);
+      <div class="ft"><span class="ck">${i + 1}</span><span class="pp">${pips}${c.max > 1 ? `&nbsp;${taken}/${c.max}` : taken ? `Taken ${taken}x` : ''}</span></div>`);
     b.style.setProperty('--c', m.c); b.querySelector('.br').textContent = m.br;
     b.querySelector('h3').textContent = c.name; b.querySelector('.bn').textContent = m.big; b.querySelector('.lb').textContent = m.lb;
-    b.querySelector('p').textContent = /Ability damage/.test(c.text) ? c.text.replace(/\.$/, '') + ' to your ' + Object.keys(S.ab).map(k => AB[k].name).join(', ') + '.' : m.desc;
+    const abN = Object.keys(S.ab).map(k => AB[k].name), abM = /Ability damage x(\d+)/.exec(c.text);   // LAS-119: plain words, no 'Ability damage 0/1'
+    b.querySelector('p').textContent = abM ? 'Your ' + abN.slice(0, -1).join(', ') + (abN.length > 1 ? ' and ' : '') + abN[abN.length - 1] + ' hit ' + abM[1] + 'x harder.' : m.desc;
     b.onclick = () => choose(i);
     b.dataset.i = i; b.style.setProperty('--torn', torn(i + 3 + (S.pick.wave || 0))); b.style.setProperty('--i', i); const jj = i - (len - 1) / 2; b.style.setProperty('--j', jj); b.style.setProperty('--aj', Math.abs(jj));
     return b;
@@ -12277,6 +12278,7 @@ function abHint(S, k, b, a, now) {
   if (hints[key]) return;
   if (b._ah) { if (now - b._ah > 8000 || a.cd > 0 || S.pick) { hintDone(key); b.classList.remove('hint'); U.abHint = null; } return; }
   if (U.abHint || a.cd > 0 || S.pick || U.paused || S.t < 6) return;
+  if (k !== 'beam' && !S.picks.length) return;   // LAS-119: one instruction at a time: the click-the-sea lines wait for the first pick
   const I = Sim.abInfo(S, k);
   const txt = { beam: '<b>Q</b> &middot; Flare: lights the whole sea for ' + I.flareFor + ' s', flood: '<b>E</b> &middot; Flood Gate: press E, then click the sea to push the tide back',
     keg: '<b>R</b> &middot; Powder Keg: press R, then click where it should land' }[k];
