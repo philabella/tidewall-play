@@ -3873,7 +3873,10 @@ const TUNE = {
   // LAS-85 hotfix + LAS-80 (Philippe: "the max rotation speed making me dizzy ... upgrade should be wider cone not purely speed"): a slow,
   // steady turn of `turn` s, and nothing turns it faster than one turn in minTurn s. Upgrades widen the beam or add beams:
   // like a multi-panel lighthouse lens, 2-4 beams at fixed, even angles turn together (maxLamps); see lampCount().
-  light: { mode: 'plain', width: 0.7, len: 35, lenPer: 3, turn: 10, minTurn: 6, maxLamps: 4, linger: 0, sweep: 'turn' },   // LAS-80: turn 3 -> 10 s
+  light: { mode: 'plain', width: 0.7, len: 35, lenPer: 3, turn: 10, minTurn: 6, maxLamps: 4, linger: 0, sweep: 'turn',
+    // LAS-135: where the (preview-42) beam VISIBLY lights the sea, measured from its own luma (checks/las135.js): a tapered wedge,
+    // half-width min(w/2 + pad, hMax) x (1 - taper x^2) at x = d / reach, reach = min(len x reachK, maxD) m. Lit, shot and drawn = this.
+    vis: { pad: 0.05, hMax: 0.40, taper: 0.35, reachK: 0.94, maxD: 49 } },   // LAS-80: turn 3 -> 10 s
   // LAS-53 the Wall Guard (Philippe: "basic shooters near the base that only shoot within that smaller radius"): braziers
   // light a ring of sea r m out from the wall; n swivel guns on the wall fire only at creatures inside it (dmg x cannon
   // damage, rate shots/s each, no crits, no splash). The big mounts still fire only at what the beam lights.
@@ -5145,6 +5148,16 @@ function lampCount(S) {
 function beamWidth(S) { return S.T.light.width * (1 + (S.T.up.rot.wPer || 0) * S.lv.rot + M(S, 'beamW') + G(S, 'beamW')); }
 // LAS-38: the beam's reach (m) starts short and grows: lenPer per Spyglass level, Long Sight cards, Forge nodes.
 function beamLen(S) { const L = S.T.light; return L.len + (L.lenPer || 0) * S.lv.range + M(S, 'len') + G(S, 'len'); }
+// LAS-135: the visible beam (T.light.vis): metres inside its edge for a point d m out at angle off (rad) from a beam's axis (< 0 = dark).
+// render.js evaluates the same function per pixel (VIS_GLSL) for the sea and the creatures, from S.beam.vh / vl.
+function beamVisSet(S) { const V = S.T.light.vis, B = S.beam; B.vh = Math.min(B.w / 2 + V.pad, V.hMax); B.vl = Math.min(B.len * V.reachK, V.maxD); B.vt = V.taper; }
+function visMargin(B, d, off) { if (d > B.vl) return B.vl - d; const x = d / B.vl; return Math.min((B.vh * (1 - B.vt * x * x) - off) * d, B.vl - d); }
+function beamVis(S, x, y) {   // true: (x, y) is in the visible light of one of the beams
+  const B = S.beam, d = Math.sqrt(x * x + y * y); if (d > B.vl) return false;
+  const a = datan2(y, x), as = B.as && B.as.length ? B.as : [B.a];
+  for (const q of as) if (visMargin(B, d, Math.abs(angDiff(a, q))) >= 0) return true;
+  return false;
+}
 function moveBeam(S) {
   const L = S.T.light, B = S.beam, dt = S.T.dt, TAU = 2 * Math.PI;
   const w = TAU / beamTurn(S) * (B.hold && G(S, 'eye') ? S.T.forge.key.eyeSlow : 1);   // Lantern Eye: slow on a Hulk or boss
@@ -5159,22 +5172,17 @@ function moveBeam(S) {
   const nL = lampCount(S); B.lamps = nL; B.as = [B.a];
   for (let i = 1; i < nL; i++) B.as.push((B.a + i * TAU / nL) % TAU);
   B.a2 = nL > 1 ? B.as[1] : null;   // render draws a and a2 (beams 3-4: render follow-up)
-  B.flare = Math.max(0, S.flareT - S.t);
+  B.flare = Math.max(0, S.flareT - S.t); beamVisSet(S);
   // mark: a creature inside a cone is lit until now (+ linger in the old 'linger' mode, A/B only)
   const lit = S.t + (L.mode === 'plain' ? 0 : L.linger), glow = S.t + M(S, 'glow');
   S.ringR = S.rim + S.T.guard.r + M(S, 'ring') + G(S, 'ring') + (S.pulseUntil > S.t ? S.pulseAdd : 0);   // Braziers III flare the ring
-  const hw = B.w / 2, ch = dcos(hw), ca = dcos(B.a), sa = dsin(B.a), r2 = B.len * B.len;
-  const cs = [], sn = [];
-  for (let i = 1; i < nL; i++) { cs.push(dcos(B.as[i])); sn.push(dsin(B.as[i])); }
+  const r2 = B.vl * B.vl;   // LAS-135: lit = in the visible beam (beamVis), not the whole cone B.w x B.len
   let hold = false, gl = null;   // hold: a Hulk or boss is lit (Lantern Eye slows next step). Living Gloams (LAS-32): their murk hides the creatures around them (and them) beyond near m (Whale Oil: no murk)
   if (!M(S, 'oil')) for (const e of S.enemies) if (e.dimR && !e.dead) (gl = gl || []).push(e);
   for (const e of S.enemies) {
     if (e.under > S.t) continue;   // a Sounder under water: the beam can't find it
     const d2 = e.x * e.x + e.y * e.y; if (d2 > r2) continue;
-    const d = Math.sqrt(d2) * ch;
-    let inCone = e.x * ca + e.y * sa >= d;
-    for (let i = 0; !inCone && i < cs.length; i++) inCone = e.x * cs[i] + e.y * sn[i] >= d;
-    if (!inCone) continue;
+    if (!beamVis(S, e.x, e.y)) continue;
     const nr = S.T.kinds.dimmer.near + S.T.citadel.r;
     if (gl && !e.boss && d2 > nr * nr && inMurk(e, gl)) continue;
     e.litT = lit; if (e.boss || e.kind === 'brute') hold = true;
@@ -5267,8 +5275,8 @@ function packSpots(S, reach, cell, k) {
 function litAt(S, a, r) {
   const B = S.beam;
   if (S.flareT > S.t || r <= S.ringR) return true;
-  if (r <= B.len && (Math.abs(angDiff(a, B.a)) <= B.w / 2 || (B.a2 !== null && Math.abs(angDiff(a, B.a2)) <= B.w / 2))) return true;
   const x = r * dcos(a), y = r * dsin(a);
+  if (B.vl !== undefined && beamVis(S, x, y)) return true;   // LAS-135: the visible beam (all lamps)
   for (const L of S.lights) if (L.from <= S.t && L.until > S.t) { const dx = x - L.x, dy = y - L.y; if (dx * dx + dy * dy <= L.r * L.r) return true; }
   return false;
 }
@@ -6698,7 +6706,7 @@ const RLOOK = {
   maxEnemies: 6000, maxShots: 1024, maxSparks: 512, plateau: 1.2, shore: 7.5, gunY: 4.6, deck: 4.1, walk: 1.7,
   skyTop: '#040b10', skyMid: '#0b2129', moon: '#e8f4ee', moonGlow: '#8fd6e0', foam: '#bff3ea', crest: '#2f7f80',
   smoke: '#2a3134', fire: '#ff8a3a', bossScale: 2.1, bossRise: 2.4, creatureK: 1.8, creatureQ: 1.67,
-  litGain: 1.9,   // LAS-128: lit creature flesh x this, so it stands out of the restored beam haze (pale on grey; was 27 vs 29 luma at w20)
+  litGain: 1.0,   // LAS-135: 1.0 as in preview 42 (LAS-128 had 1.9: lit creature flesh x this, so it stands out of the restored beam haze (pale on grey; was 27 vs 29 luma at w20)
   kindK: { drowned: 1.5, swarmer: 1.85 },   // LAS-117: the small kinds read at the game camera (Drowned was x1.15: 21 px tall at 2560; Spawn 8 px)
  warmK: 0.55,   // LAS-104: warmK = every fire glow card x this (the lamp stays the brightest thing in the late city); // LAS-73: creatureQ = more facets (loft 6 -> 10 sides)
     // LAS-49: creatures 80% bigger, the boss x2.1 (it must read from 74 m)
@@ -6726,7 +6734,7 @@ const RLOOK = {
   breachAt: 0.25, maxPuffs: 1200, maxWallFx: 6,
 };
 // shared shader time (gait, sea, banners, foam): one uniform object, every patched material points at it
-const U = { t: { value: 0 }, shore: { value: 6.4 }, ba: { value: [9, 9, 9, 9] }, bw: { value: 0.3 }, bl: { value: 40 }, fl: { value: 0 }, fr: { value: 40 }, base: { value: 0 }, dk: { value: 0.07 } };   // LAS-73: fr = the Flare's lit radius (it shrinks as it fades)   // LAS-51: darkness uniforms (beam angles/width/length, Flare, base-light radius, unlit sea level)
+const U = { t: { value: 0 }, shore: { value: 6.4 }, ba: { value: [9, 9, 9, 9] }, bw: { value: 0.3 }, bl: { value: 40 }, fl: { value: 0 }, fr: { value: 40 }, base: { value: 0 }, dk: { value: 0.07 }, vis: { value: [0.4, 40, 0.35, 0] }, so: { value: [0, 3, 0, 0] } };   // LAS-135: vis = the sim's visible beam (S.beam.vh, vl, vt), so = [R.off, SIMW]   // LAS-73: fr = the Flare's lit radius (it shrinks as it fades)   // LAS-51: darkness uniforms (beam angles/width/length, Flare, base-light radius, unlit sea level)
 // patch a built-in material's shaders (three r160 chunks); key keeps one program per variant
 function patch(m, key, fn) { m.onBeforeCompile = sh => { sh.uniforms.uT = U.t; fn(sh); }; m.customProgramCacheKey = () => key; return m; }
 const vHead = (sh, s) => { sh.vertexShader = 'uniform float uT;\n' + s + '\n' + sh.vertexShader; };
@@ -7627,7 +7635,7 @@ function buildSea(scene) {
   // the fragment shader. The water is black unless lit: the body colour is a trace of teal under the beam, the glitter is the beam's
   // specular (strongest along the core), foam shows only where the beam or a lamp reaches it. No sparkle texture, no reflection pass.
   const m = patch(new T3.MeshStandardMaterial({ color: RLOOK.sea, roughness: 0.35, metalness: 0.15, flatShading: true }), 'sea2', sh => {
-    sh.uniforms.uShore = U.shore; sh.uniforms.uBa = U.ba; sh.uniforms.uBw = U.bw; sh.uniforms.uBl = U.bl; sh.uniforms.uFl = U.fl; sh.uniforms.uFr = U.fr; sh.uniforms.uBase = U.base; sh.uniforms.uDk = U.dk;
+    sh.uniforms.uShore = U.shore; sh.uniforms.uBa = U.ba; sh.uniforms.uBw = U.bw; sh.uniforms.uBl = U.bl; sh.uniforms.uFl = U.fl; sh.uniforms.uFr = U.fr; sh.uniforms.uBase = U.base; sh.uniforms.uDk = U.dk; sh.uniforms.uVis = U.vis; sh.uniforms.uSo = U.so;
     sh.uniforms.uLamp = BU.uLamp; sh.uniforms.uBraz = R.brazU;
     const GER = 'vec3 gerst(vec2 d,float st,float wl,vec3 p,inout vec3 Tt,inout vec3 Bb){float k=6.2832/wl,c=sqrt(9.8/k);vec2 dn=normalize(d);float f=k*(dot(dn,p.xz)-c*uT),a=st/k;' +
       'Tt+=vec3(-dn.x*dn.x*st*sin(f),dn.x*st*cos(f),-dn.x*dn.y*st*sin(f));Bb+=vec3(-dn.x*dn.y*st*sin(f),dn.y*st*cos(f),-dn.y*dn.y*st*sin(f));' +
@@ -7636,7 +7644,7 @@ function buildSea(scene) {
     vAfter(sh, 'begin_vertex', `{ vec3 p=position; vec3 Tt=vec3(1.,0.,0.),Bb=vec3(0.,0.,1.),q=p; float A=0.42*smoothstep(11.,27.,length(p.xz));
       q+=gerst(vec2(1.,.3),.16*A,22.,p,Tt,Bb); q+=gerst(vec2(-.4,1.),.13*A,13.,p,Tt,Bb); q+=gerst(vec2(.7,-.8),.10*A,7.5,p,Tt,Bb); q+=gerst(vec2(-1.,-.2),.08*A,4.2,p,Tt,Bb);
       q.y-=0.12; transformed=q; vW=q; vGN=normalize(cross(Bb,Tt)); }`);
-    fHead(sh, 'varying vec3 vW;\nvarying vec3 vGN;\nuniform vec3 uLamp;\nuniform vec3 uBraz[4];\nuniform vec4 uBa;\nuniform float uShore,uBw,uBl,uFl,uFr,uBase,uDk;\nfloat vLm=0.0,vBs=0.0,vPr=0.0;\n' + BMASK + GLSL_NOISE +
+    fHead(sh, 'varying vec3 vW;\nvarying vec3 vGN;\nuniform vec3 uLamp;\nuniform vec3 uBraz[4];\nuniform vec4 uBa;\nuniform float uShore,uBw,uBl,uFl,uFr,uBase,uDk;\nfloat vLm=0.0,vBs=0.0,vPr=0.0,vVm=0.0;\n' + BMASK + VIS_GLSL + GLSL_NOISE +
       '\nfloat shoreD(vec2 p){return length(p)-uShore+0.35*sin(atan(p.y,p.x)*7.0)+0.2*sin(atan(p.y,p.x)*13.0+1.3);}\n' +
       'vec2 ripple(vec2 p,float t){vec2 g=vec2(0.);for(int i=0;i<9;i++){float fi=float(i);float an=fi*2.399+0.7;vec2 d=vec2(cos(an),sin(an));float k=0.9+fi*0.62,w=sqrt(9.8*k)*0.55;float s=0.075/(1.+fi*0.45);g+=d*k*s*cos(dot(d,p)*k-w*t+fi*1.7);}return g;}\n');
     fAfter(sh, 'color_fragment', `{
@@ -7646,7 +7654,8 @@ function buildSea(scene) {
       foam+=smoothstep(0.26,0.4,vW.y)*smoothstep(0.55,0.8,n)*0.5; vFoam=clamp(foam,0.0,1.0);
       vec2 q=vW.xz; float rq=length(q); vLm=max(max(bmask(q,uBa.x,uBw,uBl),bmask(q,uBa.y,uBw,uBl)),max(bmask(q,uBa.z,uBw,uBl),bmask(q,uBa.w,uBw,uBl))); vLm=max(vLm,uFl*smoothstep(uFr+2.5,uFr-2.5,rq));
       vPr=max(max(max(bpr(q,uBa.x,uBw,uBl),bpr(q,uBa.y,uBw,uBl)),max(bpr(q,uBa.z,uBw,uBl),bpr(q,uBa.w,uBw,uBl))),uFl*smoothstep(uFr+2.5,uFr-2.5,rq));   // LAS-98: core + faint spill (the Flare stays even)
-      for(int i=0;i<4;i++){ vBs=max(vBs,smoothstep(4.5,0.0,length(uBraz[i].xz-q))*step(0.0,uBraz[i].y)); } }`);
+      for(int i=0;i<4;i++){ vBs=max(vBs,smoothstep(4.5,0.0,length(uBraz[i].xz-q))*step(0.0,uBraz[i].y)); }
+      vVm=max(smoothstep(0.0,1.0,visM(q)),uFl*smoothstep(uFr+2.5,uFr-2.5,rq)); }`);   // LAS-135: the sim's visible beam (1 m soft inside its edge) + the Flare
     sh.fragmentShader = 'float vFoam=0.0;\n' + sh.fragmentShader;
     fAfter(sh, 'opaque_fragment', `{
       vec3 V=normalize(cameraPosition-vW); vec3 Lv=uLamp-vW; float dl=length(Lv); vec3 L=Lv/dl;
@@ -7655,15 +7664,13 @@ function buildSea(scene) {
       vec3 Hh=normalize(L+V); float nh=max(dot(N,Hh),0.); float fres=0.02+0.98*pow(1.-max(dot(N,V),0.),5.);
       float spec=(pow(nh,180.)*4.2+pow(nh,40.)*0.9)*fres;
       vec3 cool=vec3(0.72,0.84,1.0);
-      vec3 col=vec3(0.052,0.080,0.094)*lit*(0.06+0.34*max(dot(N,L),0.))+cool*spec*lit;   // LAS-85: the fog no longer lights the cone, so the lit sea carries the searchlight pool   // LAS-134: body 0.35+0.65 -> 0.06+0.34 (less grey sheet)
-      col+=cool*(lit*38.+vLm*6.)*fres*pow(nh,900.);   // LAS-134: glitter: pin-point glints on the ripple crests, out to the reach
+      vec3 col=vec3(0.052,0.080,0.094)*lit*(0.35+0.65*max(dot(N,L),0.))+cool*spec*lit;   // LAS-85: the fog no longer lights the cone, so the lit sea carries the searchlight pool   // LAS-135: preview-42 body again
       col+=vFoam*cool*lit*0.2;
-      col+=cool*vLm*(0.026+0.03*pow(nh,4.));   // LAS-128: the water reads lit out to the drawn edge (= the sim's lit edge), no attenuation; LAS-134: as a wet sheen that follows the ripples (was an even 0.025 lift)
       
       float surf=smoothstep(uShore+2.0,uShore-0.3,length(vW.xz)); col+=vec3(0.3,0.4,0.45)*vFoam*surf*0.05;
       gl_FragColor=vec4(col,1.0); }`);
     // LAS-55: pure black outside the light: the beam, the Flare, the lamp pools and the surf at the island's foot are all that show
-    fAfter(sh, 'fog_fragment', 'gl_FragColor.rgb*=clamp(vLm+smoothstep(uShore+2.0,uShore-0.3,length(vW.xz)),0.0,1.0);');   // LAS-128 (Philippe's core look rule): no brazier pool on the sea, only their own flame
+    fAfter(sh, 'fog_fragment', 'gl_FragColor.rgb*=clamp(min(vLm,vVm)+smoothstep(uShore+2.0,uShore-0.3,length(vW.xz)),0.0,1.0);');   // LAS-135: lit sea = where the sim lights (visM), cut where the preview-42 light has already faded to near black   // LAS-128 (Philippe's core look rule): no brazier pool on the sea, only their own flame
   });
   const sea = new T3.Mesh(sg, m); sea.receiveShadow = true; sea.frustumCulled = false; scene.add(sea);
   // the moon path: a soft additive streak of glints on the water, from the far left toward the citadel
@@ -7681,24 +7688,29 @@ function buildSea(scene) {
 // plus a soft wedge (wide/fogWide x bwide, sigma 45% of the cone) so the whole sim cone reads as light out to its edge and reach: a lit creature never stands on black water
 // LAS-134 (Philippe: "the inside reads as a misty grey sheet"): the haze mostly leaves the cone (fogSpill 0.07 -> 0.02, fogWide 0.22 -> 0.04,
 // fogCore 0.75 -> 0.5) and the water carries the light as sheen and glitter on its ripples, not a flat lift (opaque_fragment below)
-const BCONE = { spill: 0.25, core: 1.15, fogSpill: 0.02, fogCore: 0.5, wide: 0.5, fogWide: 0.04 };
+// LAS-135 (Philippe: "a flat rotating triangle ruined the atmosphere"): the preview-42 beam again (LAS-98 shaft: core + faint spill, no wedge)
+const BCONE = { spill: 0.25, core: 1.15, fogSpill: 0.07, fogCore: 0.75 };
 // LAS-134 (Philippe: crisp edges, no mist): full to 0 inside the last ~0.35 m (0.35-1.5 deg) of the sim's edge, nothing outside it; the far end still fades
-const BMASK = 'float bmask(vec2 q,float a,float w,float L){float r=length(q);if(a>8.0||r<0.05)return 0.0;float c=dot(q/r,vec2(cos(a),sin(a)));float ang=acos(clamp(c,-1.0,1.0));float sf=clamp(0.35/r,0.006,0.026);float m=smoothstep(w*0.5,w*0.5-sf,ang);return m*smoothstep(L+0.5,L-0.06*L,r);}\n' +
+const BMASK = 'float bmask(vec2 q,float a,float w,float L){float r=length(q);if(a>8.0||r<0.05)return 0.0;float c=dot(q/r,vec2(cos(a),sin(a)));float ang=acos(clamp(c,-1.0,1.0));float sf=clamp(0.8/r,0.004,0.12);float m=smoothstep(w*0.5+sf,w*0.5-sf-w*0.22,ang);return m*smoothstep(L+1.0,L-0.22*L,r);}\n' +
   // LAS-98: a searchlight: a narrow soft core (sigma 14% of the cone, 2.6-6.3 deg) over a faint spill the width of the cone
   'float bcore(float ang,float w){float sg=clamp(w*0.14,0.045,0.11);return exp(-ang*ang/(2.0*sg*sg));}\n' +
-  'float bwide(float ang,float w){float sg=max(w*0.45,0.045);return exp(-ang*ang/(2.0*sg*sg));}\n' +
-  `float bpr(vec2 q,float a,float w,float L){float r=length(q);if(a>8.0||r<0.05)return 0.0;float ang=acos(clamp(dot(q/r,vec2(cos(a),sin(a))),-1.0,1.0));return bmask(q,a,w,L)*(${BCONE.spill.toFixed(3)}+${BCONE.core.toFixed(3)}*bcore(ang,w)+${BCONE.wide.toFixed(3)}*bwide(ang,w));}\n`; // LAS-55: the edge sits on the sim's cone; LAS-81: a soft falloff inward (22% of the half-width, the last 22% of the reach), no hard rim
+  `float bpr(vec2 q,float a,float w,float L){float r=length(q);if(a>8.0||r<0.05)return 0.0;float ang=acos(clamp(dot(q/r,vec2(cos(a),sin(a))),-1.0,1.0));return bmask(q,a,w,L)*(${BCONE.spill.toFixed(3)}+${BCONE.core.toFixed(3)}*bcore(ang,w));}\n`; // LAS-55: the edge sits on the sim's cone; LAS-81: a soft falloff inward (22% of the half-width, the last 22% of the reach), no hard rim
 // LAS-134 (Philippe: "part of an enemy inside the cone? only that part is visible"): the creatures' body and eyes multiply by the
 // same world-space cone mask per fragment, so one straddling the edge shows only its inside part. aCut (per instance) = 1 when the
 // beam alone lights it; 0 under the Flare, auto light or a bought lit patch (those reveal it whole). No aCut on a geometry = 0.
 function cutMask(sh) {
-  Object.assign(sh.uniforms, { uBa: U.ba, uBw: U.bw, uBl: U.bl });
+  Object.assign(sh.uniforms, { uBa: U.ba, uBw: U.bw, uBl: U.bl, uVis: U.vis, uSo: U.so });
   sh.vertexShader = 'attribute float aCut;\nvarying vec3 vCW;\nvarying float vCut;\n' + sh.vertexShader;
   vAfter(sh, 'project_vertex', 'vec4 cwp = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\ncwp = instanceMatrix * cwp;\n#endif\nvCW = (modelMatrix * cwp).xyz; vCut = aCut;');
-  fHead(sh, 'varying vec3 vCW;\nvarying float vCut;\nuniform vec4 uBa;\nuniform float uBw,uBl;\n' + BMASK);
-  fAfter(sh, 'dithering_fragment', 'if (vCut > 0.5) { vec2 cq = vCW.xz; float cm = max(max(bmask(cq,uBa.x,uBw,uBl),bmask(cq,uBa.y,uBw,uBl)),max(bmask(cq,uBa.z,uBw,uBl),bmask(cq,uBa.w,uBw,uBl)));' +
-    ' if (cm < 0.02) discard; gl_FragColor.rgb *= cm; }');
+  fHead(sh, 'varying vec3 vCW;\nvarying float vCut;\nuniform vec4 uBa;\nuniform float uBw,uBl;\n' + VIS_GLSL);
+  fAfter(sh, 'dithering_fragment', 'if (vCut > 0.5) { float cm = visM(vCW.xz); if (cm < 0.0) discard; gl_FragColor.rgb *= mix(0.55, 1.0, smoothstep(0.0, 1.2, cm)); }');   // LAS-135: the sim's visible beam (visM), a soft last 1.2 m
 }
+// LAS-135: the sim's visible beam (sim.js visMargin / beamVis), per pixel: metres inside its edge (< 0 = dark). q = a view point (x, z);
+// it goes back to sim units (render toSim: uSo = [R.off, SIMW]) and is tested against every beam in uBa (needs uBa declared first).
+const VIS_GLSL = 'uniform vec4 uVis,uSo;\n' +
+  'float visM(vec2 q){float rv=length(q);if(rv<0.05)return -1.0;float o=uSo.x,sw=uSo.y;float d=rv<=sw+o?rv*sw/(sw+o):rv-o;if(d>uVis.y)return uVis.y-d;' +
+  'float x=d/uVis.y,h=uVis.x*(1.0-uVis.z*x*x),m=-1e3;vec2 n=q/rv;for(int i=0;i<4;i++){float a=i==0?uBa.x:i==1?uBa.y:i==2?uBa.z:uBa.w;if(a>8.0)continue;' +
+  'float ang=acos(clamp(dot(n,vec2(cos(a),sin(a))),-1.0,1.0));m=max(m,min((h-ang)*d,uVis.y-d));}return m;}\n';
 const hex3 = c => { const k = new T3.Color(c); return `vec3(${k.r.toFixed(3)},${k.g.toFixed(3)},${k.b.toFixed(3)})`; };
 
 // the sky behind the fog bank (screen space, under everything): a deep gradient, faint stars, the moon low on the left
@@ -9703,16 +9715,15 @@ const f5 = x => (+x).toFixed(5), v5 = a => a.map(f5).join(',');
 const BEAM_GLSL = `
 uniform vec3 uLamp, uDirs[4]; uniform float uN, uCosWideIn, uCosWideOut, uLen, uFl, uFr;
 float bcore(float ang, float w){ float sg = clamp(w * 0.14, 0.045, 0.11); return exp(-ang * ang / (2.0 * sg * sg)); }   // LAS-98: same core as the sea (BMASK)
-float bwide(float ang, float w){ float sg = max(w * 0.45, 0.045); return exp(-ang * ang / (2.0 * sg * sg)); }   // LAS-128: the soft wedge (same as the sea)
 // LAS-81: the shaft is even across the cone: flat inside, a soft falloff at the edges (wide in/out) and over the last 30% of the reach
 float wideOf(vec3 v, vec3 d){ vec2 h = normalize(v.xz + 1e-5); float c = dot(h, normalize(d.xz + 1e-5)); float down = smoothstep(0.05, -0.12, normalize(v).y);
   return smoothstep(uCosWideOut, uCosWideIn, c) * mix(0.15, 1.0, down); }
 float beamWide(vec3 v){ float m = 0.; for (int i = 0; i < 4; i++) if (float(i) < uN) m = max(m, wideOf(v, uDirs[i])); float r = length(v.xz);
-  return max(m * smoothstep(uLen + 1., uLen * 0.92, r), uFl * mix(0.25, 1.0, smoothstep(0.05, -0.12, normalize(v).y)) * smoothstep(uFr + 2.5, uFr - 2.5, r)); }
+  return max(m * smoothstep(uLen + 1.5, uLen * 0.7, r), uFl * mix(0.25, 1.0, smoothstep(0.05, -0.12, normalize(v).y)) * smoothstep(uFr + 2.5, uFr - 2.5, r)); }
 // LAS-85: how much fog the light shows here; LAS-98: a faint spill across the cone + the narrow core shaft (bcore), no edge haze
 float beamHaze(vec3 v){ float m = 0., w = 2. * acos(uCosWideOut); vec2 h = normalize(v.xz + 1e-5); for (int i = 0; i < 4; i++) if (float(i) < uN) {
-    float a = acos(clamp(dot(h, normalize(uDirs[i].xz + 1e-5)), -1., 1.)); m = max(m, wideOf(v, uDirs[i]) * (${f5(BCONE.fogSpill)} + ${f5(BCONE.fogCore)} * bcore(a, w) + ${f5(BCONE.fogWide)} * bwide(a, w))); }
-  float r = length(v.xz), cone = m * smoothstep(uLen + 1., uLen * 0.92, r);
+    float a = acos(clamp(dot(h, normalize(uDirs[i].xz + 1e-5)), -1., 1.)); m = max(m, wideOf(v, uDirs[i]) * (${f5(BCONE.fogSpill)} + ${f5(BCONE.fogCore)} * bcore(a, w))); }
+  float r = length(v.xz), cone = m * smoothstep(uLen + 1.5, uLen * 0.7, r);
   return max(cone, uFl * ${f5(BL.fogFlare)} * mix(0.25, 1.0, smoothstep(0.05, -0.12, normalize(v).y)) * smoothstep(uFr + 2.5, uFr - 2.5, r)); }
 float beamAtt(float d){ return 1.0 / (1.0 + 0.045 * d + 0.0009 * d * d); }`;
 const POST_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }';
@@ -10091,15 +10102,15 @@ function specialEnd(X, cnt) {
 const DEEP = { headR: 5.4, hump: [12, 8, 9], eyeR: 1.75, tentR: [1.25, 0.06], beardN: 7, rings: 72, sides: 12, rise: 3.2, sink: 4.5, Z: 2.6, eyeZ: 2.9,
   suck: 0.42, curl: 0.22, rev: [0.3, 1.8, 1.0, 0.8, 0.35] };   // suck: cup rows +-rad from the underside; curl: the tip's share of the length;
 // rev (seconds of light on the eye): wait, lid open, pupil starts, slit; then the share of that clock that runs in the dark
-const DMASK = 'varying vec3 vDW;\nuniform vec4 uBa;\nuniform float uBw,uBl,uFl,uFr,uBase;\n' + BMASK +
-  'float dmask(vec2 q){float r=length(q);float m=max(max(bmask(q,uBa.x,uBw,uBl),bmask(q,uBa.y,uBw,uBl)),max(bmask(q,uBa.z,uBw,uBl),bmask(q,uBa.w,uBw,uBl)));' +
+const DMASK = 'varying vec3 vDW;\nuniform vec4 uBa;\nuniform float uBw,uBl,uFl,uFr,uBase;\n' + VIS_GLSL +
+  'float dmask(vec2 q){float r=length(q);float m=smoothstep(0.0,1.0,visM(q));' +   // LAS-135: the sim's visible beam
   'm=max(m,uFl*max(0.12,smoothstep(uFr+2.5,uFr-2.5,r)));return max(m,0.6*smoothstep(uBase+1.0,uBase-1.0,r));}\n';   // the Flare: a dim glimpse of all of it (as litAmt: never 0 while the sim lights it)
 const DMAW = { value: new Float32Array([0, -999, 0, 0]) }, DMAWR = { value: 15 };   // the open maw (xyz, gape) and its light's reach: the jaw lit from below
 function deepMat(o, wet) {   // wet black flesh that exists only in the light (R.deepAll: the turntable shows it whole)
   const m = new T3.MeshStandardMaterial(Object.assign({ vertexColors: true, flatShading: false, roughness: 0.3, metalness: 0.12 }, o));   // smooth wet skin (faceted read as rock)
   const uAll = { value: 0 }, uWet = { value: new T3.Vector2(wet ? wet[0] : 0.35, wet ? wet[1] : 40) }; m.userData.all = uAll;
   return patch(m, 'deep-mask', sh => {
-    Object.assign(sh.uniforms, { uBa: U.ba, uBw: U.bw, uBl: U.bl, uFl: U.fl, uFr: U.fr, uBase: U.base, uAll, uWet, uMaw: DMAW, uMawR: DMAWR });
+    Object.assign(sh.uniforms, { uBa: U.ba, uBw: U.bw, uBl: U.bl, uVis: U.vis, uSo: U.so, uFl: U.fl, uFr: U.fr, uBase: U.base, uAll, uWet, uMaw: DMAW, uMawR: DMAWR });
     vHead(sh, 'varying vec3 vDW;\nvarying vec3 vDN;');
     vAfter(sh, 'project_vertex', 'vec4 dwp = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\ndwp = instanceMatrix * dwp;\n#endif\nvDW = (modelMatrix * dwp).xyz; vDN = normalize((vec4(transformedNormal, 0.0) * viewMatrix).xyz);');
     fHead(sh, DMASK + 'uniform float uAll, uMawR;\nuniform vec2 uWet;\nuniform vec4 uMaw;\nvarying vec3 vDN;');
@@ -10615,6 +10626,7 @@ function flareEnv(S, L) {
 function lightFrame(S, t, burning) {
   const SB = S.beam, off = R.off || 0, br = baseRad(S);
   const as = beamAs(SB); for (let i = 0; i < 4; i++) U.ba.value[i] = i < as.length ? as[i] : 9; U.bw.value = SB ? SB.w : 0.3; U.bl.value = SB ? SB.len + off : 40;
+  if (SB && SB.vl !== undefined) U.vis.value = [SB.vh, SB.vl, SB.vt, 0]; U.so.value = [off, SIMW, 0, 0];   // LAS-135: the sim's visible beam
   flareEnv(S, (SB ? SB.len : 40) + off);
   U.base.value = br > 0 ? br + off : 5.5 + off;
   // LAS-65: the same numbers for the fog march: a narrow cool core shaft that slopes to the water near the reach, plus the wedge's spill
@@ -10622,7 +10634,7 @@ function lightFrame(S, t, burning) {
   const pit = Math.max(Math.atan2(hh, 0.85 * L), 4 * Math.PI / 180), cp = Math.cos(pit), sp = -Math.sin(pit), hw = w / 2;
   BU.uLamp.value.set(R.LAMP[0], R.LAMP[1], R.LAMP[2]); BU.uLen.value = L; BU.uFl.value = U.fl.value; BU.uFr.value = U.fr.value;
   const da = SB ? as : [a]; BU.uN.value = da.length; da.forEach((q, i) => BU.uDirs.value[i].set(Math.cos(q) * cp, sp, Math.sin(q) * cp));
-  BU.uCosWideOut.value = Math.cos(hw); BU.uCosWideIn.value = Math.cos(hw - Math.min(0.026, hw * 0.07));   // LAS-134: the haze's side edge as crisp as the sea's (<= 1.5 deg)
+  BU.uCosWideOut.value = Math.cos(hw); BU.uCosWideIn.value = Math.cos(hw * 0.7);   // LAS-135: the preview-42 soft side edge
   // the key light IS the beam: it shines along the beam's heading from behind the lamp, so lit creatures and the citadel's flank facing it are cool-lit
   const kd = 30, kp = 0.45, ka = a;
   R.key.position.set(-Math.cos(ka) * kd, 2 + kd * kp, -Math.sin(ka) * kd);
